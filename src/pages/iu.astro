@@ -1,0 +1,557 @@
+---
+import Footer from "../components/Footer.astro";
+---
+
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <link rel="icon" type="image/jpg" href="/cactus-in-bloom.png" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta name="generator" content={Astro.generator} />
+        <title>Mad Cactus — IU Case Study</title>
+        <meta
+            name="description"
+            content="How we built an autonomous data engineering agent for Indiana University that increased productivity by 45%."
+        />
+    </head>
+    <body>
+        <!-- ════════ HERO ════════ -->
+        <div class="case-hero">
+            <div class="case-hero-inner">
+                <div class="case-hero-left">
+                    <p class="case-hero-tag">Case Study — Data Engineering</p>
+                    <h1 class="case-hero-title">
+                        INDIANA<br /><span class="gold-text">UNIVERSITY</span>
+                    </h1>
+                </div>
+                <div class="case-hero-right">
+                    <p>
+                        IU's data engineering team was drowning in tickets.
+                        Senior engineers spent more time triaging than building.
+                        We deployed an autonomous AI agent that performs
+                        intelligent first-pass analysis — transforming their
+                        resolution pipeline and freeing the team to focus on
+                        architecture, not triage.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ════════ STATS ════════ -->
+        <div class="stats-bar">
+            <div class="stats-bar-inner">
+                <div class="stat-item">
+                    <strong>45%</strong>
+                    <span>Productivity Increase</span>
+                </div>
+                <div class="stat-item">
+                    <strong>MTTR</strong>
+                    <span>Reduced Significantly</span>
+                </div>
+                <div class="stat-item">
+                    <strong>Q2–Q3</strong>
+                    <span>Measured Impact Period</span>
+                </div>
+                <div class="stat-item">
+                    <strong>24/7</strong>
+                    <span>Agent Uptime</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- ════════ THE PROBLEM ════════ -->
+        <div class="case-section">
+            <div class="case-section-grid">
+                <h2 class="case-section-label">
+                    THE<br /><span class="gold-text">PROBLEM</span>
+                </h2>
+                <div class="case-section-body">
+                    <p>
+                        IU's data engineering team managed a high-throughput
+                        ticket queue serving researchers, faculty, and staff
+                        across the university. As data infrastructure grew, so
+                        did the volume and complexity of incoming issues.
+                    </p>
+                    <p>
+                        Senior engineers were spending a disproportionate amount
+                        of time on initial triage — reading tickets,
+                        categorizing issues, identifying root causes, and
+                        routing them to the right person. This created a
+                        bottleneck that slowed resolution times and pulled
+                        experienced engineers away from higher-value work.
+                    </p>
+                    <h4>Key Challenges</h4>
+                    <ul>
+                        <li>
+                            High ticket volume with inconsistent categorization
+                        </li>
+                        <li>
+                            Senior engineers spending hours on triage instead of
+                            engineering
+                        </li>
+                        <li>
+                            Long mean time to resolution (MTTR) on common issues
+                        </li>
+                        <li>
+                            Knowledge silos — only senior staff could accurately
+                            route tickets
+                        </li>
+                        <li>
+                            No automated first-pass analysis or prioritization
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- ════════ THE SOLUTION ════════ -->
+        <div class="case-section">
+            <div class="case-section-grid">
+                <h2 class="case-section-label">
+                    THE<br /><span class="gold-text">SOLUTION</span>
+                </h2>
+                <div class="case-section-body">
+                    <p>
+                        We designed and deployed a custom AI agent purpose-built
+                        for IU's data engineering workflow. The agent integrates
+                        directly with their ticketing system and performs an
+                        intelligent first-pass analysis on every incoming issue.
+                    </p>
+                    <p>
+                        Using their institutional knowledge base and historical
+                        ticket data, the agent categorizes issues, identifies
+                        likely root causes, suggests resolution paths, and
+                        routes tickets to the appropriate engineer with full
+                        context attached.
+                    </p>
+                    <h4>Agent Capabilities</h4>
+                    <ul>
+                        <li>
+                            Automatic ticket categorization and priority scoring
+                        </li>
+                        <li>
+                            Root cause analysis based on historical patterns
+                        </li>
+                        <li>
+                            Context-rich routing with suggested resolution steps
+                        </li>
+                        <li>Continuous learning from resolution outcomes</li>
+                        <li>
+                            Integration with existing tooling and documentation
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- ════════ PROCESS ════════ -->
+        <div class="case-section">
+            <h2 class="case-section-label" style="margin-bottom: 40px;">
+                HOW WE<br /><span class="gold-text">BUILT IT</span>
+            </h2>
+            <div class="process-grid">
+                <div class="process-step">
+                    <div class="process-num">01</div>
+                    <h4>Discovery</h4>
+                    <p>
+                        Deep-dive into IU's ticketing data, workflows, team
+                        structure, and pain points.
+                    </p>
+                </div>
+                <div class="process-step">
+                    <div class="process-num">02</div>
+                    <h4>Intelligence Layer</h4>
+                    <p>
+                        Built the knowledge base from historical tickets,
+                        runbooks, and institutional docs.
+                    </p>
+                </div>
+                <div class="process-step">
+                    <div class="process-num">03</div>
+                    <h4>Agent Development</h4>
+                    <p>
+                        Designed and trained the autonomous agent with custom
+                        workflows for triage and routing.
+                    </p>
+                </div>
+                <div class="process-step">
+                    <div class="process-num">04</div>
+                    <h4>Deployment</h4>
+                    <p>
+                        Rolled out incrementally, measured impact across Q2–Q3,
+                        iterated on feedback.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ════════ QUOTE ════════ -->
+        <div class="case-quote">
+            <blockquote>
+                "The agent handles the first pass on every ticket. My team now <span
+                    class="gold-text">focuses on engineering</span
+                >, not inbox management."
+            </blockquote>
+            <cite>— Data Engineering Lead, Indiana University</cite>
+        </div>
+
+        <!-- ════════ RESULTS ════════ -->
+        <div class="case-section">
+            <div class="case-section-grid">
+                <h2 class="case-section-label">
+                    THE<br /><span class="gold-text">RESULTS</span>
+                </h2>
+                <div class="case-section-body">
+                    <p>
+                        Measured over Q2 and Q3, the agent's impact was
+                        immediate and substantial. Overall team productivity
+                        increased by 45%, driven primarily by the elimination of
+                        manual triage and faster routing accuracy.
+                    </p>
+                    <p>
+                        Mean time to resolution dropped significantly as
+                        engineers received tickets that were already
+                        categorized, prioritized, and enriched with likely root
+                        causes and suggested fixes.
+                    </p>
+                    <h4>Impact Summary</h4>
+                    <ul>
+                        <li>45% increase in team productivity across Q2–Q3</li>
+                        <li>
+                            Significant reduction in mean time to resolution
+                            (MTTR)
+                        </li>
+                        <li>
+                            Senior engineers reclaimed architecture and systems
+                            time
+                        </li>
+                        <li>
+                            Ticket routing accuracy improved with context-rich
+                            handoffs
+                        </li>
+                        <li>
+                            Agent accuracy continued to improve through
+                            continuous learning
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- ════════ CTA ════════ -->
+        <div class="case-cta">
+            <h2>
+                WANT THIS FOR<br /><span class="gold-text">YOUR TEAM?</span>
+            </h2>
+            <p>
+                Get a free audit of your business operations. We'll show you
+                exactly where an AI agent can make the biggest impact.
+            </p>
+            <a
+                href="https://cal.com/cpfeifer/info-meeting"
+                target="_blank"
+                class="btn-primary">GET YOUR FREE AUDIT</a
+            >
+            <a href="/" class="btn-outline">BACK TO HOME</a>
+        </div>
+
+        <Footer />
+    </body>
+</html>
+
+<style is:global>
+    :root {
+        --bg: #000000;
+        --bg-elevated: #0a0a0a;
+        --bg-card: #0d0d0d;
+        --text: #ffffff;
+        --text-muted: #999999;
+        --text-subtle: #555555;
+        --gold: #c9a84c;
+        --gold-light: #d4b85a;
+        --border: rgba(255, 255, 255, 0.1);
+        --border-gold: rgba(201, 168, 76, 0.3);
+        --display:
+            "Anton", Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif;
+        --sans: "Inter", -apple-system, "Segoe UI", sans-serif;
+    }
+    .gold-text {
+        color: var(--gold);
+    }
+
+    .case-hero {
+        padding: 160px 48px 80px;
+        border-bottom: 1px solid var(--border);
+    }
+    .case-hero-inner {
+        max-width: 1400px;
+        margin: 0 auto;
+        display: grid;
+        grid-template-columns: 1fr 1.5fr;
+        gap: 80px;
+        align-items: end;
+    }
+    .case-hero-tag {
+        font-family: var(--display);
+        font-size: 13px;
+        letter-spacing: 3px;
+        text-transform: uppercase;
+        color: var(--gold);
+        margin-bottom: 16px;
+    }
+    .case-hero-title {
+        font-family: var(--display);
+        font-size: clamp(40px, 6vw, 80px);
+        line-height: 0.92;
+        letter-spacing: -1px;
+        text-transform: uppercase;
+    }
+    .case-hero-right p {
+        font-family: var(--sans);
+        font-weight: 300;
+        font-size: 16px;
+        line-height: 1.8;
+        color: var(--text-muted);
+        max-width: 560px;
+    }
+
+    .stats-bar {
+        border-bottom: 1px solid var(--border);
+        padding: 48px;
+    }
+    .stats-bar-inner {
+        max-width: 1400px;
+        margin: 0 auto;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 48px;
+    }
+    .stat-item strong {
+        font-family: var(--display);
+        font-size: clamp(40px, 5vw, 64px);
+        color: var(--gold);
+        line-height: 1;
+        display: block;
+    }
+    .stat-item span {
+        font-family: var(--display);
+        font-size: 12px;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        color: var(--text-subtle);
+        margin-top: 8px;
+        display: block;
+    }
+
+    .case-section {
+        padding: 100px 48px;
+        max-width: 1400px;
+        margin: 0 auto;
+    }
+    .case-section + .case-section {
+        border-top: 1px solid var(--border);
+    }
+    .case-section-grid {
+        display: grid;
+        grid-template-columns: 1fr 1.5fr;
+        gap: 64px;
+        align-items: start;
+    }
+    .case-section-label {
+        font-family: var(--display);
+        font-size: clamp(24px, 3vw, 40px);
+        line-height: 0.95;
+        letter-spacing: -0.5px;
+        text-transform: uppercase;
+    }
+    .case-section-body {
+        font-family: var(--sans);
+        font-weight: 300;
+        font-size: 15px;
+        line-height: 1.8;
+        color: var(--text-muted);
+    }
+    .case-section-body p + p {
+        margin-top: 20px;
+    }
+    .case-section-body h4 {
+        font-family: var(--display);
+        font-size: 18px;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        color: var(--text);
+        margin-top: 32px;
+        margin-bottom: 12px;
+    }
+    .case-section-body ul {
+        list-style: none;
+    }
+    .case-section-body li {
+        font-weight: 300;
+        font-size: 14px;
+        line-height: 1.7;
+        color: var(--text-muted);
+        padding: 8px 0;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    .case-section-body li::before {
+        content: "";
+        width: 6px;
+        height: 6px;
+        border: 1px solid var(--gold);
+        transform: rotate(45deg);
+        flex-shrink: 0;
+    }
+
+    .process-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1px;
+        background: var(--border);
+        border: 1px solid var(--border);
+    }
+    .process-step {
+        background: var(--bg);
+        padding: 40px 32px;
+    }
+    .process-num {
+        font-family: var(--display);
+        font-size: 48px;
+        color: var(--gold);
+        opacity: 0.25;
+        line-height: 1;
+        margin-bottom: 16px;
+    }
+    .process-step h4 {
+        font-family: var(--display);
+        font-size: 16px;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        margin-bottom: 8px;
+    }
+    .process-step p {
+        font-family: var(--sans);
+        font-weight: 300;
+        font-size: 13px;
+        line-height: 1.6;
+        color: var(--text-subtle);
+    }
+
+    .case-quote {
+        padding: 80px 48px;
+        border-top: 1px solid var(--border);
+        border-bottom: 1px solid var(--border);
+        text-align: center;
+    }
+    .case-quote blockquote {
+        font-family: var(--display);
+        font-size: clamp(24px, 3.5vw, 44px);
+        line-height: 1.15;
+        letter-spacing: -0.5px;
+        text-transform: uppercase;
+        max-width: 800px;
+        margin: 0 auto;
+    }
+    .case-quote cite {
+        font-family: var(--sans);
+        font-style: normal;
+        font-size: 13px;
+        color: var(--text-subtle);
+        margin-top: 20px;
+        display: block;
+    }
+
+    .case-cta {
+        padding: 120px 48px;
+        text-align: center;
+    }
+    .case-cta h2 {
+        font-family: var(--display);
+        font-size: clamp(32px, 5vw, 64px);
+        line-height: 0.95;
+        letter-spacing: -0.5px;
+        text-transform: uppercase;
+        margin-bottom: 24px;
+    }
+    .case-cta p {
+        font-family: var(--sans);
+        font-weight: 300;
+        font-size: 15px;
+        line-height: 1.7;
+        color: var(--text-muted);
+        max-width: 480px;
+        margin: 0 auto 40px;
+    }
+    .btn-primary {
+        display: inline-block;
+        padding: 14px 36px;
+        background: var(--gold);
+        color: var(--bg);
+        font-family: var(--display);
+        font-size: 16px;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        text-decoration: none;
+        transition:
+            background 0.3s,
+            transform 0.2s;
+    }
+    .btn-primary:hover {
+        background: var(--gold-light);
+        transform: translateY(-2px);
+    }
+    .btn-outline {
+        display: inline-block;
+        padding: 14px 36px;
+        background: transparent;
+        color: var(--text);
+        font-family: var(--display);
+        font-size: 16px;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        text-decoration: none;
+        border: 1px solid var(--border);
+        margin-left: 16px;
+        transition: border-color 0.3s;
+    }
+    .btn-outline:hover {
+        border-color: var(--gold);
+    }
+
+    @media (max-width: 768px) {
+        .case-hero {
+            padding: 120px 24px 60px;
+        }
+        .case-hero-inner {
+            grid-template-columns: 1fr;
+            gap: 32px;
+        }
+        .stats-bar {
+            padding: 32px 24px;
+        }
+        .stats-bar-inner {
+            grid-template-columns: repeat(2, 1fr);
+            gap: 24px;
+        }
+        .case-section {
+            padding: 60px 24px;
+        }
+        .case-section-grid {
+            grid-template-columns: 1fr;
+            gap: 32px;
+        }
+        .process-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
+        .case-cta {
+            padding: 80px 24px;
+        }
+        .btn-outline {
+            margin-left: 0;
+            margin-top: 16px;
+        }
+    }
+</style>

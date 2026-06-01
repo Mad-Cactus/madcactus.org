@@ -1,0 +1,99 @@
+:root {
+	--bg: #000000;
+	--bg-elevated: #0a0a0a;
+	--bg-card: #0d0d0d;
+	--text: #ffffff;
+	--text-muted: #999999;
+	--text-subtle: #555555;
+	--gold: #c9a84c;
+	--gold-light: #d4b85a;
+	--border: rgba(255, 255, 255, 0.1);
+	--border-gold: rgba(201, 168, 76, 0.3);
+	--display: "Anton", Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif;
+	--serif: "Playfair Display", Georgia, "Times New Roman", serif;
+	--sans: "Inter", -apple-system, "Segoe UI", sans-serif;
+}
+
+*,
+*::before,
+*::after {
+	margin: 0;
+	padding: 0;
+	box-sizing: border-box;
+}
+
+html {
+	scroll-behavior: smooth;
+	scroll-padding-top: 80px;
+}
+
+body {
+	background: var(--bg);
+	color: var(--text);
+	font-family: var(--sans);
+	font-weight: 400;
+	overflow-x: hidden;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+	background: var(--gold);
+	color: var(--bg);
+}
+
+/* ── Buttons ── */
+.btn-primary {
+	display: inline-block;
+	padding: 14px 36px;
+	background: var(--gold);
+	color: var(--bg);
+	font-family: var(--display);
+	font-weight: 400;
+	font-size: 16px;
+	letter-spacing: 1.5px;
+	text-transform: uppercase;
+	text-decoration: none;
+	transition:
+		background 0.3s,
+		transform 0.2s;
+}
+
+.btn-primary:hover {
+	background: var(--gold-light);
+	transform: translateY(-2px);
+}
+
+.btn-outline {
+	display: inline-block;
+	padding: 14px 36px;
+	background: transparent;
+	color: var(--text);
+	font-family: var(--display);
+	font-weight: 400;
+	font-size: 16px;
+	letter-spacing: 1.5px;
+	text-transform: uppercase;
+	text-decoration: none;
+	border: 1px solid var(--border);
+	transition:
+		border-color 0.3s,
+		transform 0.2s;
+}
+
+.btn-outline:hover {
+	border-color: var(--gold);
+	transform: translateY(-2px);
+}
+
+/* ── Animations ── */
+@keyframes fadeUp {
+	from {
+		opacity: 0;
+		transform: translateY(30px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
