@@ -1,0 +1,58 @@
+import { getCookie, setCookie } from "@solidjs/start/http";
+import { supabaseAdmin } from "./supabase";
+import type { User } from "@supabase/supabase-js";
+
+const COOKIE_OPTS = {
+	httpOnly: true,
+	secure: false, // local dev
+	sameSite: "lax" as const,
+	path: "/",
+	maxAge: 60 * 60 * 24 * 7, // 7 days
+};
+
+/** Authenticated Supabase client, or null if not logged in. */
+export async function getAuthedClient() {
+	const accessToken = getCookie("mc-access-token");
+	const refreshToken = getCookie("mc-refresh-token");
+	if (!accessToken || !refreshToken) return null;
+
+	const supabase = supabaseAdmin();
+	const { data, error } = await supabase.auth.setSession({
+		access_token: accessToken,
+		refresh_token: refreshToken,
+	});
+	if (error || !data.session) return null;
+
+	// Refresh tokens rotated — update the cookie
+	if (data.session.access_token !== accessToken) {
+		setCookie("mc-access-token", data.session.access_token, COOKIE_OPTS);
+		setCookie("mc-refresh-token", data.session.refresh_token, COOKIE_OPTS);
+	}
+	return supabase;
+}
+
+export async function getCurrentUser(): Promise<User | null> {
+	const client = await getAuthedClient();
+	if (!client) return null;
+	const { data } = await client.auth.getUser();
+	return data.user;
+}
+
+export async function signIn(email: string, password: string) {
+	const supabase = supabaseAdmin();
+	const { data, error } = await supabase.auth.signInWithPassword({
+		email,
+		password,
+	});
+	if (error || !data.session) {
+		return { error: error?.message ?? "Login failed" };
+	}
+	setCookie("mc-access-token", data.session.access_token, COOKIE_OPTS);
+	setCookie("mc-refresh-token", data.session.refresh_token, COOKIE_OPTS);
+	return { error: null };
+}
+
+export async function signOut() {
+	setCookie("mc-access-token", "", { ...COOKIE_OPTS, maxAge: 0 });
+	setCookie("mc-refresh-token", "", { ...COOKIE_OPTS, maxAge: 0 });
+}

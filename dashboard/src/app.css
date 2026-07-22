@@ -1,0 +1,382 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Dark theme = default (brand: black/gold) */
+    --background: 0 0% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 0 0% 5%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 5%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 43 53% 55%; /* gold #c9a84c */
+    --primary-foreground: 0 0% 3.9%;
+    --secondary: 0 0% 14.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 14.9%;
+    --muted-foreground: 0 0% 63.9%;
+    --accent: 0 0% 14.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 14.9%;
+    --input: 0 0% 14.9%;
+    --ring: 43 53% 55%;
+    --radius: 0.5rem;
+
+    /* Legacy aliases for dashboard custom classes */
+    --bg: #000000;
+    --bg-elevated: #0a0a0a;
+    --bg-card: #0d0d0d;
+    --text: #ffffff;
+    --text-muted: #999999;
+    --text-subtle: #555555;
+    --gold: #c9a84c;
+    --gold-light: #d4b85a;
+    --gold-border: rgba(201, 168, 76, 0.3);
+    --green: #4ade80;
+    --orange: #fbbf24;
+    --red: #f87171;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Inter", -apple-system, "Segoe UI", sans-serif;
+  }
+}
+
+/* ═══════ Dashboard custom classes ═══════ */
+
+.layout {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 240px;
+  background: var(--bg-elevated);
+  border-right: 1px solid hsl(var(--border));
+  display: flex;
+  flex-direction: column;
+  padding: 24px 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+
+.sidebar-brand {
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  padding: 0 24px 24px;
+  border-bottom: 1px solid hsl(var(--border));
+  color: var(--gold);
+}
+
+.sidebar-brand span {
+  color: var(--text-subtle);
+  font-weight: 400;
+}
+
+.sidebar-nav {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 16px 0;
+}
+
+.nav-link {
+  padding: 10px 24px;
+  font-size: 14px;
+  color: var(--text-muted);
+  transition: color 0.2s, background 0.2s;
+  border-left: 2px solid transparent;
+  text-decoration: none;
+  display: block;
+}
+
+.nav-link:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.nav-link.active {
+  color: var(--gold);
+  border-left-color: var(--gold);
+  background: rgba(201, 168, 76, 0.05);
+}
+
+.sidebar-footer {
+  padding: 16px 24px;
+  border-top: 1px solid hsl(var(--border));
+  font-size: 12px;
+  color: var(--text-subtle);
+}
+
+.sidebar-footer button {
+  background: none;
+  border: none;
+  color: var(--text-subtle);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.sidebar-footer button:hover {
+  color: var(--red);
+}
+
+.content {
+  flex: 1;
+  padding: 40px 48px;
+  max-width: 1100px;
+}
+
+/* ── Typography ── */
+.page-title {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  margin-bottom: 4px;
+}
+
+.page-subtitle {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-bottom: 32px;
+}
+
+.section-heading {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+  margin-bottom: 16px;
+  margin-top: 40px;
+}
+
+/* ── Stat grid ── */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.stat-card {
+  background: var(--bg-card);
+  border: 1px solid hsl(var(--border));
+  border-radius: 12px;
+  padding: 24px;
+}
+
+.stat-card .label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+  margin-bottom: 8px;
+}
+
+.stat-card .value {
+  font-size: 36px;
+  font-weight: 700;
+  font-family: var(--mono, "SF Mono", "Fira Code", monospace);
+  line-height: 1;
+}
+
+.stat-card .value .unit {
+  font-size: 18px;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.stat-card .sub {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+
+/* ── Progress bar ── */
+.progress {
+  height: 8px;
+  background: hsl(var(--border));
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 12px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--gold);
+  border-radius: 4px;
+  transition: width 0.4s;
+}
+
+.progress-fill.warn {
+  background: var(--orange);
+}
+
+.progress-fill.over {
+  background: var(--red);
+}
+
+/* ── Tables ── */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+  padding: 12px 16px;
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid hsl(var(--border));
+  font-size: 14px;
+}
+
+.table td.hours {
+  font-family: var(--mono, "SF Mono", monospace);
+  font-weight: 600;
+}
+
+.table tr:hover td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* ── Badges ── */
+.badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 100px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.badge-active {
+  background: rgba(74, 222, 128, 0.1);
+  color: var(--green);
+}
+
+.badge-paused {
+  background: rgba(251, 191, 36, 0.1);
+  color: var(--orange);
+}
+
+.badge-completed {
+  background: rgba(248, 113, 113, 0.1);
+  color: var(--red);
+}
+
+/* ── Forms ── */
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+  width: 100%;
+  padding: 10px 14px;
+  background: var(--bg-card);
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 14px;
+  transition: border-color 0.2s;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+  outline: none;
+  border-color: var(--gold);
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+/* ── Card ── */
+.card {
+  background: var(--bg-card);
+  border: 1px solid hsl(var(--border));
+  border-radius: 12px;
+  padding: 24px;
+}
+
+.card + .card {
+  margin-top: 16px;
+}
+
+/* ── Misc ── */
+.empty {
+  color: var(--text-subtle);
+  font-size: 14px;
+  padding: 40px;
+  text-align: center;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.gold {
+  color: var(--gold);
+}
+
+.mono {
+  font-family: var(--mono, "SF Mono", monospace);
+}
+
+.delete-btn {
+  background: none;
+  border: none;
+  color: var(--text-subtle);
+  cursor: pointer;
+  font-size: 18px;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.delete-btn:hover {
+  color: var(--red);
+  background: rgba(248, 113, 113, 0.1);
+}
+
+.login-error {
+  color: var(--red);
+  font-size: 13px;
+  margin-top: 12px;
+}
