@@ -14,12 +14,6 @@ const typeLabel: Record<DocumentType, string> = {
 	transcript: "Transcript",
 };
 
-const typeIcon: Record<DocumentType, string> = {
-	link: "🔗",
-	file: "📄",
-	transcript: "🎙",
-};
-
 interface SearchHit {
 	id: string;
 	title: string;
@@ -59,7 +53,7 @@ export default function PortalDocuments() {
 			<div style={{ "margin-top": "24px", "margin-bottom": "24px", position: "relative" }}>
 				<input
 					type="text"
-					placeholder="🔍 Search documents and transcripts…"
+					placeholder="Search documents and transcripts…"
 					value={searchQuery()}
 					onInput={(e) => setSearchQuery(e.currentTarget.value)}
 					style={{
@@ -91,7 +85,6 @@ export default function PortalDocuments() {
 						<For each={searchResults() ?? []}>
 							{(hit) => (
 								<div class="card" style={{ display: "flex", "align-items": "flex-start", gap: "16px", padding: "20px", border: "1px solid rgba(201,168,76,0.2)" }}>
-									<div style={{ "font-size": "28px" }}>{typeIcon[hit.type]}</div>
 									<div style={{ flex: "1" }}>
 										<div style={{ "font-size": "15px", "font-weight": "500" }}>
 											{hit.title}
@@ -125,7 +118,7 @@ export default function PortalDocuments() {
 											}
 										>
 											<a href={hit.url!} target="_blank" rel="noopener noreferrer" class="btn btn-sm">
-												Open ↗
+												Open
 											</a>
 										</Show>
 									</div>
@@ -145,7 +138,6 @@ export default function PortalDocuments() {
 								<For each={list()}>
 									{(doc) => (
 										<div class="card" style={{ display: "flex", "align-items": "center", gap: "16px", padding: "20px" }}>
-											<div style={{ "font-size": "28px" }}>{typeIcon[doc.type]}</div>
 											<div style={{ flex: "1" }}>
 												<div style={{ "font-size": "15px", "font-weight": "500" }}>
 													{doc.title}
@@ -185,7 +177,7 @@ export default function PortalDocuments() {
 														rel="noopener noreferrer"
 														class="btn btn-sm"
 													>
-														Open ↗
+														Open
 													</a>
 												</Show>
 											</div>

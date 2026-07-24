@@ -69,7 +69,7 @@ export default function Clients() {
 					class="btn btn-primary"
 					onClick={() => setShowForm(!showForm())}
 				>
-					{showForm() ? "Cancel" : "+ New Client"}
+					{showForm() ? "Cancel" : "New Client"}
 				</button>
 			</div>
 

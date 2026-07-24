@@ -39,7 +39,7 @@ export default function Projects() {
 					<p class="page-subtitle" style={{ "margin-bottom": "0" }}>All engagements</p>
 				</div>
 				<button class="btn btn-primary" onClick={() => setShowForm(!showForm())}>
-					{showForm() ? "Cancel" : "+ New Project"}
+					{showForm() ? "Cancel" : "New Project"}
 				</button>
 			</div>
 

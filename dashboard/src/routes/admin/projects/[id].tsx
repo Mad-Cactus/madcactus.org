@@ -50,7 +50,7 @@ export default function ProjectDetail() {
 						<>
 							<Title>{p().name} — Mad Cactus</Title>
 							<A href="/admin/projects" class="muted" style={{ "font-size": "13px", "margin-bottom": "8px", display: "inline-block" }}>
-								← All Projects
+								All Projects
 							</A>
 							<h1 class="page-title">{p().name}</h1>
 							<p class="page-subtitle">
@@ -133,7 +133,7 @@ export default function ProjectDetail() {
 													<td>{e.description}</td>
 													<td class="hours" style={{ "text-align": "right" }}>{e.hours}</td>
 													<td style={{ width: "40px" }}>
-														<button class="delete-btn" onClick={() => handleDelete(e.id)}>×</button>
+														<button class="delete-btn" onClick={() => handleDelete(e.id)}>Delete</button>
 													</td>
 												</tr>
 											)}

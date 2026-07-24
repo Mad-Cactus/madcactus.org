@@ -106,7 +106,7 @@ export default function PortalApiKeys() {
 							{newKey()}
 						</code>
 						<button class="btn btn-primary" onClick={copyKey}>
-							{copied() ? "✓ Copied" : "Copy"}
+							{copied() ? "Copied" : "Copy"}
 						</button>
 					</div>
 				</div>
@@ -193,7 +193,7 @@ export default function PortalApiKeys() {
 							setTimeout(() => setCopied(false), 2000);
 						}}
 					>
-						{copied() ? "✓" : "Copy"}
+						{copied() ? "Copied" : "Copy"}
 					</button>
 					<pre
 						style={{

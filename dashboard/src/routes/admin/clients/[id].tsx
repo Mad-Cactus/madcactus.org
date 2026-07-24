@@ -72,7 +72,7 @@ export default function ClientDetail() {
 		<Layout user={user()}>
 			<Title>Client Detail — Mad Cactus</Title>
 			<A href="/admin/clients" class="muted" style={{ "font-size": "13px", "margin-bottom": "8px", display: "inline-block" }}>
-				← All Clients
+				All Clients
 			</A>
 
 			<Show when={client()} fallback={<p class="muted">Loading…</p>}>
@@ -89,7 +89,7 @@ export default function ClientDetail() {
 								<div class="section-heading" style={{ margin: "0" }}>Documents</div>
 								<div style={{ display: "flex", gap: "8px" }}>
 									<button class="btn btn-sm" onClick={() => setShowDocForm(!showDocForm())}>
-										+ Add Link
+										Add Link
 									</button>
 									<form method="post" action="/api/upload" enctype="multipart/form-data">
 										<input type="hidden" name="project_id" value={projectId()} />
@@ -172,7 +172,7 @@ export default function ClientDetail() {
 															</Show>
 														</div>
 														<Show when={doc.type === "link" && doc.url}>
-															<a href={doc.url!} target="_blank" rel="noopener noreferrer" class="btn btn-sm">Open ↗</a>
+															<a href={doc.url!} target="_blank" rel="noopener noreferrer" class="btn btn-sm">Open</a>
 														</Show>
 														<Show when={doc.url && doc.type !== "link"}>
 															<a href={`/api/download?path=${encodeURIComponent(doc.url!)}`} class="btn btn-sm" download="">Download</a>
@@ -280,7 +280,7 @@ export default function ClientDetail() {
 															<td class="muted">{inv.due_date ?? "—"}</td>
 															<td>
 																<Show when={inv.payment_url}>
-																	<a href={inv.payment_url!} target="_blank" rel="noopener noreferrer" class="muted">Link ↗</a>
+																	<a href={inv.payment_url!} target="_blank" rel="noopener noreferrer" class="muted">Link</a>
 																</Show>
 															</td>
 															<td>
