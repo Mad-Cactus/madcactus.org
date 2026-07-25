@@ -75,6 +75,31 @@ export interface Invoice {
 	created_at: string;
 }
 
+export type DeliverableStatus =
+	| "planned"
+	| "in_progress"
+	| "review"
+	| "completed"
+	| "blocked";
+
+export interface Deliverable {
+	id: string;
+	project_id: string;
+	title: string;
+	description: string;
+	status: DeliverableStatus;
+	sort_order: number;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface DeliverableUpdate {
+	id: string;
+	deliverable_id: string;
+	body: string;
+	created_at: string;
+}
+
 export interface ApiKey {
 	id: string;
 	client_id: string;

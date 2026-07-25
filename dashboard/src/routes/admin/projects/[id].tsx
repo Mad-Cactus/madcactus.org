@@ -9,6 +9,24 @@ import {
 	getProjectQuery,
 	getUserQuery,
 } from "~/lib/queries";
+import { getDeliverablesQuery } from "~/lib/admin-queries";
+import type { DeliverableStatus } from "~/lib/supabase";
+
+const STATUS_OPTIONS: DeliverableStatus[] = [
+	"planned",
+	"in_progress",
+	"review",
+	"completed",
+	"blocked",
+];
+
+const statusBadge: Record<DeliverableStatus, string> = {
+	planned: "badge-paused",
+	in_progress: "badge-active",
+	review: "badge-active",
+	completed: "badge-completed",
+	blocked: "badge-paused",
+};
 
 export default function ProjectDetail() {
 	const params = useParams();
@@ -16,9 +34,12 @@ export default function ProjectDetail() {
 	const user = createAsync(() => getUserQuery(), { deferStream: true });
 	const project = createAsync(() => getProjectQuery(params.id!), { deferStream: true });
 	const entries = createAsync(() => getProjectEntriesQuery(params.id!), { deferStream: true });
+	const deliverables = createAsync(() => getDeliverablesQuery(params.id!), { deferStream: true });
 	const createEntry = useAction(createTimeEntryAction);
 	const deleteEntry = useAction(deleteTimeEntryAction);
 	const [error, setError] = createSignal("");
+	const [showDeliverableForm, setShowDeliverableForm] = createSignal(false);
+	const [updateDeliverableId, setUpdateDeliverableId] = createSignal<string | null>(null);
 
 	const today = new Date().toISOString().slice(0, 10);
 	const totalHours = () =>
@@ -65,7 +86,116 @@ export default function ProjectDetail() {
 								</div>
 							</Show>
 
-							{/* Log form */}
+							{/* Deliverables — client-visible */}
+							<div style={{ display: "flex", "justify-content": "space-between", "align-items": "center", "margin-bottom": "16px" }}>
+								<div class="section-heading" style={{ margin: "0" }}>Deliverables</div>
+								<button class="btn btn-sm" onClick={() => setShowDeliverableForm(!showDeliverableForm())}>
+									{showDeliverableForm() ? "Cancel" : "Add Deliverable"}
+								</button>
+							</div>
+
+							<Show when={showDeliverableForm()}>
+								<div class="card" style={{ "margin-bottom": "16px" }}>
+									<form method="post" action="/admin/projects/create-deliverable">
+										<input type="hidden" name="project_id" value={p().id} />
+										<input type="hidden" name="_referer" value={`/admin/projects/${params.id}`} />
+										<div class="form-group">
+											<label for="delv_title">Title</label>
+											<input type="text" id="delv_title" name="title" required placeholder="Discovery & Requirements" />
+										</div>
+										<div class="form-group">
+											<label for="delv_desc">Description</label>
+											<textarea id="delv_desc" name="description" rows={2} placeholder="What does this deliverable include?" />
+										</div>
+										<button type="submit" class="btn btn-primary">Create Deliverable</button>
+									</form>
+								</div>
+							</Show>
+
+							<Suspense fallback={<p class="muted">Loading…</p>}>
+								<Show when={deliverables()} fallback={<p class="muted">Loading…</p>}>
+									{(list) => (
+										<Show when={list().length > 0} fallback={<div class="card empty">No deliverables yet.</div>}>
+											<div style={{ display: "flex", "flex-direction": "column", gap: "12px", "margin-bottom": "40px" }}>
+												<For each={list()}>
+													{(delv) => (
+														<div class="card" style={{ padding: "20px" }}>
+															<div style={{ display: "flex", "justify-content": "space-between", "align-items": "flex-start", gap: "12px" }}>
+																<div style={{ flex: "1" }}>
+																	<span style={{ "font-size": "15px", "font-weight": "500" }}>{delv.title}</span>
+																	<span class={`badge ${statusBadge[delv.status]}`} style={{ "margin-left": "8px", "text-transform": "capitalize" }}>
+																		{delv.status.replace("_", " ")}
+																	</span>
+																</div>
+																{/* Status changer */}
+																<form method="post" action="/admin/projects/update-deliverable" style={{ display: "inline-flex", gap: "0" }}>
+																	<input type="hidden" name="id" value={delv.id} />
+																	<input type="hidden" name="_referer" value={`/admin/projects/${params.id}`} />
+																	<select name="status" onchange={(e) => e.currentTarget.form?.submit()} class="btn btn-sm" style={{ "padding-right": "8px" }}>
+																		<For each={STATUS_OPTIONS}>
+																			{(opt) => (
+																				<option value={opt} selected={opt === delv.status}>
+																					{opt.replace("_", " ")}
+																				</option>
+																			)}
+																		</For>
+																	</select>
+																</form>
+															</div>
+															<Show when={delv.description}>
+																<p class="muted" style={{ "font-size": "13px", "margin-top": "6px" }}>{delv.description}</p>
+															</Show>
+
+															{/* Updates */}
+															<Show when={delv.updates.length > 0}>
+																<div style={{ "margin-top": "12px", "padding-left": "12px", "border-left": "2px solid rgba(201,168,76,0.2)" }}>
+																	<For each={delv.updates}>
+																		{(upd) => (
+																			<div style={{ "margin-bottom": "8px" }}>
+																				<div class="muted" style={{ "font-size": "11px" }}>
+																					{new Date(upd.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+																				</div>
+																				<div style={{ "font-size": "13px", "line-height": "1.5" }}>{upd.body}</div>
+																			</div>
+																		)}
+																	</For>
+																</div>
+															</Show>
+
+															{/* Add update + delete */}
+															<div style={{ display: "flex", gap: "8px", "margin-top": "12px", "align-items": "center" }}>
+																<Show
+																	when={updateDeliverableId() === delv.id}
+																	fallback={
+																		<button class="btn btn-sm" onClick={() => setUpdateDeliverableId(delv.id)}>
+																			Add Update
+																		</button>
+																	}
+																>
+																	<form method="post" action="/admin/projects/add-update" style={{ flex: "1", display: "flex", gap: "8px" }}>
+																		<input type="hidden" name="deliverable_id" value={delv.id} />
+																		<input type="hidden" name="_referer" value={`/admin/projects/${params.id}`} />
+																		<input type="text" name="body" placeholder="Progress update…" required style={{ flex: "1" }} />
+																		<button type="submit" class="btn btn-sm btn-primary">Post</button>
+																		<button type="button" class="btn btn-sm" onClick={() => setUpdateDeliverableId(null)}>Cancel</button>
+																	</form>
+																</Show>
+																<form method="post" action="/admin/projects/delete-deliverable" style={{ display: "inline", "margin-left": "auto" }}>
+																	<input type="hidden" name="id" value={delv.id} />
+																	<input type="hidden" name="_referer" value={`/admin/projects/${params.id}`} />
+																	<button type="submit" class="btn btn-sm" style={{ color: "#ef4444" }}>Delete</button>
+																</form>
+															</div>
+														</div>
+													)}
+												</For>
+											</div>
+										</Show>
+									)}
+								</Show>
+							</Suspense>
+
+							{/* Log form — admin only */}
 							<div class="section-heading">Log Time</div>
 							<div class="card" style={{ "margin-bottom": "32px" }}>
 								<form onSubmit={handleLog}>

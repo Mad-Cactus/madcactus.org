@@ -6,17 +6,9 @@ import type {
 	Document,
 	Invoice,
 	Project,
-	TimeEntry,
+	Deliverable,
+	DeliverableUpdate,
 } from "./supabase";
-
-function monthRange() {
-	const now = new Date();
-	const start = new Date(now.getFullYear(), now.getMonth(), 1);
-	return {
-		start: start.toISOString().slice(0, 10),
-		end: now.toISOString().slice(0, 10),
-	};
-}
 
 // ── Client portal queries ──────────────────────────────────────────
 
@@ -39,19 +31,11 @@ export const getClientDashboardQuery = query(async () => {
 		.eq("id", client.project_id)
 		.single();
 
-	const month = monthRange();
-	const { data: monthEntries } = await supabase
-		.from("time_entries")
-		.select("hours, description, entry_date, billable")
+	const { data: deliverables } = await supabase
+		.from("deliverables")
+		.select("*, updates:deliverable_updates(*)")
 		.eq("project_id", client.project_id)
-		.gte("entry_date", month.start)
-		.lte("entry_date", month.end)
-		.order("entry_date", { ascending: false });
-
-	const hoursUsed = (monthEntries ?? []).reduce(
-		(sum, e) => sum + e.hours,
-		0,
-	);
+		.order("sort_order");
 
 	const { count: docCount } = await supabase
 		.from("documents")
@@ -67,9 +51,9 @@ export const getClientDashboardQuery = query(async () => {
 
 	return {
 		project: project as Project,
-		hoursUsed,
-		hoursCap: project?.monthly_cap_hours ?? null,
-		recentEntries: (monthEntries ?? []) as TimeEntry[],
+		deliverables: (deliverables ?? []) as (Deliverable & {
+			updates: DeliverableUpdate[];
+		})[],
 		docCount: docCount ?? 0,
 		invoiceCount: invoiceCount ?? 0,
 	};

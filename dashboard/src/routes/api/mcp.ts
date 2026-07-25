@@ -89,7 +89,7 @@ const TOOLS = [
 	{
 		name: "get_project_status",
 		description:
-			"Get the current status of the client's project with Mad Cactus, including hours used this month, retainer cap progress, and project details.",
+			"Get the current status of the client's project — engagement type, rate, deliverables progress, and overall status.",
 		inputSchema: { type: "object", properties: {} },
 	},
 	{
@@ -105,18 +105,10 @@ const TOOLS = [
 		inputSchema: { type: "object", properties: {} },
 	},
 	{
-		name: "get_recent_activity",
+		name: "get_deliverables",
 		description:
-			"Get recent work entries — what was done, when, and how many hours. Useful for understanding what Mad Cactus has been working on.",
-		inputSchema: {
-			type: "object",
-			properties: {
-				limit: {
-					type: "number",
-					description: "Number of entries to return (default 10, max 30)",
-				},
-			},
-		},
+			"List all project deliverables with their current status (planned, in progress, review, completed, blocked) and progress updates. This is the primary way to see what work has been done and what's coming next.",
+		inputSchema: { type: "object", properties: {} },
 	},
 	{
 		name: "search_documents",
@@ -139,19 +131,13 @@ const TOOLS = [
 
 async function getProjectStatus(ctx: AuthedClient) {
 	const svc = supabaseService();
-	const now = new Date();
-	const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-		.toISOString()
-		.slice(0, 10);
+	const { data: deliverables } = await svc
+		.from("deliverables")
+		.select("id, status")
+		.eq("project_id", ctx.project.id);
 
-	const { data: entries } = await svc
-		.from("time_entries")
-		.select("hours")
-		.eq("project_id", ctx.project.id)
-		.gte("entry_date", monthStart);
-
-	const hoursUsed = (entries ?? []).reduce((s, e) => s + e.hours, 0);
-	const cap = ctx.project.monthly_cap_hours;
+	const all = deliverables ?? [];
+	const completed = all.filter((d) => d.status === "completed").length;
 
 	return {
 		project: {
@@ -162,10 +148,8 @@ async function getProjectStatus(ctx: AuthedClient) {
 			status: ctx.project.status,
 			notes: ctx.project.notes,
 		},
-		hours_used_this_month: hoursUsed,
-		monthly_cap_hours: cap,
-		cap_progress: cap ? `${hoursUsed.toFixed(1)} / ${cap}h (${((hoursUsed / cap) * 100).toFixed(0)}%)` : null,
-		remaining_hours: cap ? Math.max(0, cap - hoursUsed).toFixed(1) : null,
+		deliverables_progress: `${completed} / ${all.length} completed`,
+		deliverable_statuses: all.map((d) => d.status),
 	};
 }
 
@@ -207,24 +191,22 @@ async function getInvoices(ctx: AuthedClient) {
 	}));
 }
 
-async function getRecentActivity(
-	ctx: AuthedClient,
-	params: { limit?: number },
-) {
+async function getDeliverables(ctx: AuthedClient) {
 	const svc = supabaseService();
-	const limit = Math.min(params.limit ?? 10, 30);
 	const { data } = await svc
-		.from("time_entries")
-		.select("entry_date, hours, description, billable")
+		.from("deliverables")
+		.select("title, description, status, updates:deliverable_updates(body, created_at)")
 		.eq("project_id", ctx.project.id)
-		.order("entry_date", { ascending: false })
-		.limit(limit);
+		.order("sort_order");
 
-	return (data ?? []).map((e) => ({
-		date: e.entry_date,
-		hours: e.hours,
-		description: e.description,
-		billable: e.billable,
+	return (data ?? []).map((d: any) => ({
+		title: d.title,
+		description: d.description,
+		status: d.status,
+		updates: (d.updates ?? []).map((u: any) => ({
+			date: u.created_at,
+			body: u.body,
+		})),
 	}));
 }
 
@@ -310,8 +292,8 @@ export async function POST(event: APIEvent) {
 					case "get_invoices":
 						result = await getInvoices(ctx);
 						break;
-					case "get_recent_activity":
-						result = await getRecentActivity(ctx, toolArgs);
+					case "get_deliverables":
+						result = await getDeliverables(ctx);
 						break;
 					case "search_documents":
 						result = await searchDocuments(ctx, toolArgs);
