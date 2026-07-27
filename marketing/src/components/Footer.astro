@@ -3,9 +3,12 @@
 
 <footer class="site-footer">
     <div class="footer-inner">
-        <div class="footer-wordmark">Mad Cactus</div>
+        <div class="footer-brand">
+            <img src="/cactus-seal.svg" alt="Mad Cactus" class="footer-logo" />
+            <div class="footer-wordmark">Mad Cactus</div>
+        </div>
         <div class="footer-meta">
-            <small>&copy; 2025 Mad Cactus Consulting</small>
+            <small>&copy; 2026 Mad Cactus Consulting</small>
             <div class="footer-links">
                 <a href="mailto:cpfeifer@madcactus.org">Email</a>
                 <a
@@ -26,13 +29,27 @@
         max-width: var(--page-max-width);
         margin: 0 auto;
     }
+    .footer-brand {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: var(--spacing-48);
+        margin-bottom: var(--spacing-64);
+    }
+    .footer-logo {
+        width: 100px;
+        height: 100px;
+        color: var(--color-silver-wash);
+    }
     .footer-wordmark {
         font-family: var(--font-serif);
         font-weight: 400;
-        font-size: var(--text-heading);
+        font-size: clamp(80px, 14vw, 180px);
         line-height: var(--leading-display);
-        color: var(--color-silver-wash);
-        margin-bottom: var(--spacing-48);
+        color: rgba(179, 179, 179, 0.25);
+        letter-spacing: -2px;
+        text-align: center;
+        width: 100%;
     }
     .footer-meta {
         display: flex;

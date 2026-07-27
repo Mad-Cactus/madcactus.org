@@ -1,0 +1,32 @@
+<svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Outer circle -->
+  <circle cx="60" cy="60" r="58" stroke="currentColor" stroke-width="1" fill="none"/>
+  <!-- Inner circle -->
+  <circle cx="60" cy="60" r="52" stroke="currentColor" stroke-width="0.5" fill="none"/>
+
+  <!-- Cactus: stylized saguaro, centered -->
+  <!-- Main trunk -->
+  <path d="M60 28 L60 82" stroke="currentColor" stroke-width="3" stroke-linecap="round" fill="none"/>
+  <!-- Left arm -->
+  <path d="M60 48 C50 48 48 42 48 36 L48 30" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- Right arm -->
+  <path d="M60 40 C70 40 72 34 72 28 L72 22" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- Base pot line -->
+  <line x1="48" y1="82" x2="72" y2="82" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+
+  <!-- Top text arc: MAD CACTUS -->
+  <path id="topArc" d="M 18 60 A 42 42 0 0 1 102 60" fill="none"/>
+  <text font-family="'Playfair Display', Georgia, serif" font-size="9" letter-spacing="3" fill="currentColor">
+    <textPath href="#topArc" startOffset="50%" text-anchor="middle">MAD CACTUS</textPath>
+  </text>
+
+  <!-- Bottom text arc: EST 2024 -->
+  <path id="botArc" d="M 22 60 A 38 38 0 0 0 98 60" fill="none"/>
+  <text font-family="'Playfair Display', Georgia, serif" font-style="italic" font-size="8" letter-spacing="2" fill="currentColor">
+    <textPath href="#botArc" startOffset="50%" text-anchor="middle">est. 2024</textPath>
+  </text>
+
+  <!-- Decorative dots flanking bottom text -->
+  <circle cx="22" cy="70" r="1" fill="currentColor"/>
+  <circle cx="98" cy="70" r="1" fill="currentColor"/>
+</svg>

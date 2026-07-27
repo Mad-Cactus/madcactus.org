@@ -19,11 +19,9 @@ import Footer from "../components/Footer.astro";
         {/* ════════ TOP BAR ════════ */}
         <header class="top-bar">
             <div class="top-bar-inner">
-                <a href="/" class="monogram">MC</a>
-                <div class="wordmark">
-                    <span class="wordmark-name">Mad Cactus</span>
-                    <span class="wordmark-sub">AI Consulting</span>
-                </div>
+                <a href="/" class="logo-link">
+                    <img src="/cactus-seal.svg" alt="Mad Cactus" class="logo-seal" />
+                </a>
             </div>
         </header>
 
@@ -245,33 +243,16 @@ import Footer from "../components/Footer.astro";
         max-width: var(--page-max-width);
         margin: 0 auto;
         display: flex;
-        justify-content: space-between;
+        justify-content: flex-start;
         align-items: center;
     }
-    .monogram {
-        font-family: var(--font-serif);
-        font-weight: 700;
-        font-size: 24px;
-        letter-spacing: -1px;
-        color: var(--color-letterpress-black);
-        text-decoration: none;
-    }
-    .wordmark {
-        text-align: right;
-        line-height: 1.1;
-    }
-    .wordmark-name {
-        font-family: var(--font-serif);
-        font-size: var(--text-body-sm);
-        color: var(--color-letterpress-black);
+    .logo-link {
         display: block;
     }
-    .wordmark-sub {
-        font-family: var(--font-serif);
-        font-style: italic;
-        font-size: var(--text-caption);
-        color: var(--color-silver-wash);
-        display: block;
+    .logo-seal {
+        width: 64px;
+        height: 64px;
+        color: var(--color-letterpress-black);
     }
 
     /* ═══ Case Hero ═══ */

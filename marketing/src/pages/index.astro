@@ -19,11 +19,9 @@ import Footer from "../components/Footer.astro";
         {/* ════════ TOP BAR ════════ */}
         <header class="top-bar">
             <div class="top-bar-inner">
-                <a href="/" class="monogram">MC</a>
-                <div class="wordmark">
-                    <span class="wordmark-name">Mad Cactus</span>
-                    <span class="wordmark-sub">AI Consulting</span>
-                </div>
+                <a href="/" class="logo-link">
+                    <img src="/cactus-seal.svg" alt="Mad Cactus" class="logo-seal" />
+                </a>
             </div>
         </header>
 
@@ -44,7 +42,7 @@ import Footer from "../components/Footer.astro";
                     <a
                         href="https://cal.com/cpfeifer/info-meeting"
                         target="_blank"
-                        class="cta-bracketed">&#123; SCHEDULE A CONVERSATION &#125;</a
+                        class="cta-bracketed cta-hero">&#123; SCHEDULE A CONVERSATION &#125;</a
                     >
                 </div>
                 <div class="hero-plate">
@@ -203,24 +201,6 @@ import Footer from "../components/Footer.astro";
         color: var(--color-letterpress-black);
         text-decoration: none;
     }
-    .wordmark {
-        text-align: right;
-        line-height: 1.1;
-    }
-    .wordmark-name {
-        font-family: var(--font-serif);
-        font-size: var(--text-body-sm);
-        color: var(--color-letterpress-black);
-        display: block;
-    }
-    .wordmark-sub {
-        font-family: var(--font-serif);
-        font-style: italic;
-        font-size: var(--text-caption);
-        color: var(--color-silver-wash);
-        display: block;
-    }
-
     /* ═══ Hero ═══ */
     .hero {
         padding: var(--spacing-64) var(--spacing-64) var(--spacing-128);

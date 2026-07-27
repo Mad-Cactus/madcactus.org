@@ -140,6 +140,19 @@ img {
     color: var(--color-burnished-gold);
 }
 
+/* Hero CTA — bolder, larger */
+.cta-hero {
+    font-size: var(--text-body);
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--color-letterpress-black);
+    padding-bottom: 6px;
+}
+
+.cta-hero:hover {
+    border-bottom-color: var(--color-burnished-gold);
+}
+
 /* Utility sans label */
 .label-sans {
     font-family: var(--font-sans);
