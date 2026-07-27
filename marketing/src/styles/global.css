@@ -1,0 +1,196 @@
+/* ═══════════════════════════════════════════════════════════════
+   Mad Cactus — Franco Maria Ricci Editore Design System
+   Art Déco gallery catalogue: burnished gold hairlines on vellum
+   ═══════════════════════════════════════════════════════════════ */
+
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600&display=swap');
+
+:root {
+    /* Colors */
+    --color-vellum-white: #f6f6f6;
+    --color-paper: #ffffff;
+    --color-gallery-ink: #0a0a0a;
+    --color-letterpress-black: #000000;
+    --color-silver-wash: #b3b3b3;
+    --color-burnished-gold: #bc9c5c;
+
+    /* Typography — Font Families */
+    --font-serif: 'Playfair Display', Georgia, 'Times New Roman', serif;
+    --font-serif-italic: 'Playfair Display', Georgia, serif;
+    --font-sans: 'Arial', Helvetica, -apple-system, 'Segoe UI', sans-serif;
+
+    /* Typography — Scale */
+    --text-caption: 12px;
+    --text-body-sm: 14px;
+    --text-body: 16px;
+    --text-subheading: 22px;
+    --text-heading: 42px;
+
+    /* Leading */
+    --leading-display: 0.95;
+    --leading-body: 1.25;
+
+    /* Spacing */
+    --spacing-8: 8px;
+    --spacing-16: 16px;
+    --spacing-24: 24px;
+    --spacing-32: 32px;
+    --spacing-40: 40px;
+    --spacing-48: 48px;
+    --spacing-64: 64px;
+    --spacing-80: 80px;
+    --spacing-128: 128px;
+
+    /* Layout */
+    --page-max-width: 1280px;
+    --section-gap: 48px;
+    --card-padding: 40px;
+    --element-gap: 20px;
+
+    /* Surfaces */
+    --surface-vellum: #f6f6f6;
+    --surface-paper: #ffffff;
+    --surface-silver-wash: #b3b3b3;
+    --surface-gallery-ink: #0a0a0a;
+    --surface-letterpress-black: #000000;
+}
+
+*,
+*::before,
+*::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html {
+    scroll-behavior: smooth;
+}
+
+body {
+    background: var(--color-vellum-white);
+    color: var(--color-letterpress-black);
+    font-family: var(--font-serif);
+    font-weight: 400;
+    font-size: var(--text-body);
+    line-height: var(--leading-body);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+    background: var(--color-burnished-gold);
+    color: var(--color-vellum-white);
+}
+
+a {
+    color: inherit;
+    text-decoration: none;
+}
+
+img {
+    display: block;
+    max-width: 100%;
+}
+
+/* ═══ Top Bar (shared across all pages) ═══ */
+.top-bar {
+    padding: var(--spacing-40) var(--spacing-64);
+}
+.top-bar-inner {
+    max-width: var(--page-max-width);
+    margin: 0 auto;
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+}
+.logo-link {
+    display: block;
+}
+.top-bar-signin {
+    margin-left: auto;
+    font-family: var(--font-sans);
+    font-size: var(--text-caption);
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--color-letterpress-black);
+    background: var(--color-paper);
+    border: 1px solid var(--color-letterpress-black);
+    padding: 8px 18px;
+    transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+.top-bar-signin:hover {
+    background: var(--color-letterpress-black);
+    color: var(--color-paper);
+}
+.logo-seal {
+    width: 64px;
+    height: 64px;
+    color: var(--color-letterpress-black);
+}
+
+/* ═══ Editorial Components ═══ */
+
+/* Section title — italic serif with gold underline rule */
+.section-title {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-weight: 400;
+    font-size: var(--text-subheading);
+    text-align: center;
+    color: var(--color-letterpress-black);
+    margin-bottom: var(--spacing-16);
+}
+
+.section-rule {
+    width: 100%;
+    height: 1px;
+    background: var(--color-burnished-gold);
+    border: none;
+    margin-bottom: var(--spacing-48);
+}
+
+/* Editorial CTA — bracketed text link */
+.cta-link {
+    font-family: var(--font-serif);
+    font-size: var(--text-body-sm);
+    color: var(--color-letterpress-black);
+    border-bottom: 1px solid var(--color-letterpress-black);
+    padding-bottom: 4px;
+    display: inline-block;
+}
+
+.cta-link:hover {
+    color: var(--color-burnished-gold);
+    border-bottom-color: var(--color-burnished-gold);
+}
+
+/* Bracketed CTAs — bold sans-serif, uppercase, letter-spaced */
+.cta-bracketed {
+    font-family: var(--font-sans);
+    font-size: var(--text-body-sm);
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--color-letterpress-black);
+    display: inline-block;
+    white-space: nowrap;
+}
+
+.cta-bracketed:hover {
+    color: var(--color-burnished-gold);
+}
+
+/* Hero CTA — larger variant, no underline */
+.cta-hero {
+    font-size: var(--text-body);
+    letter-spacing: 2.5px;
+}
+
+/* Utility sans label */
+.label-sans {
+    font-family: var(--font-sans);
+    font-size: var(--text-caption);
+    color: var(--color-silver-wash);
+}

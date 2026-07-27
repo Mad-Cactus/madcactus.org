@@ -1,0 +1,520 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Light vellum theme — Franco Maria Ricci editorial (matches marketing) */
+    --background: 0 0% 96.5%; /* vellum #f6f6f6 */
+    --foreground: 0 0% 0%; /* letterpress black */
+    --card: 0 0% 100%; /* paper #ffffff */
+    --card-foreground: 0 0% 0%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 0%;
+    --primary: 40 42% 55%; /* burnished gold #bc9c5c */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 90%;
+    --secondary-foreground: 0 0% 0%;
+    --muted: 0 0% 90%;
+    --muted-foreground: 0 0% 35%; /* dark enough to read on vellum */
+    --accent: 0 0% 90%;
+    --accent-foreground: 0 0% 0%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 0%; /* FMR: black hairlines */
+    --input: 0 0% 85%;
+    --ring: 40 42% 55%;
+    --radius: 0px; /* Art Déco: sharp corners */
+
+    /* Legacy aliases for dashboard custom classes */
+    --bg: #f6f6f6; /* vellum */
+    --bg-elevated: #0a0a0a; /* gallery ink — sidebar */
+    --bg-card: #ffffff; /* paper */
+    --text: #000000; /* letterpress black */
+    --text-muted: #707070;
+    --text-subtle: #999999;
+    --gold: #bc9c5c; /* burnished gold */
+    --gold-light: #cdb372;
+    --gold-border: rgba(188, 156, 92, 0.3);
+    --green: #3d9970;
+    --orange: #c4862a;
+    --red: #c0392b;
+
+    /* Typography */
+    --font-serif: 'Playfair Display', Georgia, 'Times New Roman', serif;
+    --font-sans: Arial, Helvetica, -apple-system, 'Segoe UI', sans-serif;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-sans);
+  }
+}
+
+/* ═══════ Dashboard custom classes — FMR editorial ═══════ */
+
+.layout {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* ── Sidebar — gallery-ink dark band (editorial split) ── */
+.sidebar {
+  width: 240px;
+  background: var(--bg-elevated);
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+
+.sidebar-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sidebar-logo img {
+  width: 40px;
+  height: 40px;
+  filter: brightness(0) invert(1);
+}
+
+.sidebar-logo-text {
+  font-family: var(--font-serif);
+  font-size: 16px;
+  color: #fff;
+  line-height: 1;
+}
+
+.sidebar-logo-text small {
+  display: block;
+  font-family: var(--font-sans);
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.4);
+  margin-top: 4px;
+}
+
+.sidebar-nav {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 16px 0;
+}
+
+.nav-link {
+  padding: 10px 24px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  letter-spacing: 0.5px;
+  color: rgba(255, 255, 255, 0.5);
+  transition: color 0.2s, background 0.2s;
+  border-left: 2px solid transparent;
+  text-decoration: none;
+  display: block;
+}
+
+.nav-link:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.nav-link.active {
+  color: var(--gold);
+  border-left-color: var(--gold);
+  background: rgba(188, 156, 92, 0.06);
+}
+
+.sidebar-footer {
+  padding: 16px 24px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.sidebar-footer button {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.4);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.sidebar-footer button:hover {
+  color: var(--red);
+}
+
+.content {
+  flex: 1;
+  padding: 40px 48px;
+  max-width: 1100px;
+}
+
+/* ── Typography ── */
+.page-title {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: 32px;
+  letter-spacing: -0.5px;
+  margin-bottom: 4px;
+}
+
+.page-subtitle {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 32px;
+}
+
+.section-heading {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 16px;
+  color: var(--text);
+  margin-bottom: 16px;
+  margin-top: 40px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--gold-border);
+}
+
+/* ── Stat grid ── */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0;
+  background: var(--bg-card);
+  border-top: 1px solid var(--text);
+  border-bottom: 1px solid var(--text);
+}
+
+.stat-card {
+  padding: 24px;
+  border-right: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.stat-card:last-child {
+  border-right: none;
+}
+
+.stat-card .label {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+  margin-bottom: 10px;
+}
+
+.stat-card .value {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: 36px;
+  line-height: 1;
+}
+
+.stat-card .value .unit {
+  font-size: 18px;
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+}
+
+.stat-card .sub {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+
+/* ── Progress bar ── */
+.progress {
+  height: 6px;
+  background: rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  margin-top: 12px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--gold);
+  transition: width 0.4s;
+}
+
+.progress-fill.warn {
+  background: var(--orange);
+}
+
+.progress-fill.over {
+  background: var(--red);
+}
+
+/* ── Tables ── */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th {
+  text-align: left;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--text);
+}
+
+.table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  font-family: var(--font-serif);
+  font-size: 14px;
+}
+
+.table td.hours {
+  font-family: var(--font-sans);
+  font-weight: 700;
+}
+
+.table tr:hover td {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+/* ── Badges ── */
+.badge {
+  display: inline-block;
+  padding: 3px 10px;
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  border: 1px solid currentColor;
+}
+
+.badge-active {
+  color: var(--green);
+}
+
+.badge-paused {
+  color: var(--orange);
+}
+
+.badge-completed {
+  color: var(--text-subtle);
+}
+
+/* ── Forms ── */
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  display: block;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+  width: 100%;
+  padding: 10px 14px;
+  background: var(--bg-card);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  transition: border-color 0.2s;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+  outline: none;
+  border-color: var(--gold);
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+/* ── Card ── */
+.card {
+  background: var(--bg-card);
+  border-top: 1px solid var(--text);
+  border-bottom: 1px solid var(--text);
+  padding: 24px;
+}
+
+.card + .card {
+  margin-top: 12px;
+}
+
+/* ── Buttons ── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 20px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  border: 1px solid var(--text);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.btn:hover {
+  background: var(--text);
+  color: var(--bg-card);
+}
+
+.btn-primary {
+  background: var(--gold);
+  color: #fff;
+  border-color: var(--gold);
+}
+
+.btn-primary:hover {
+  background: var(--gold-light);
+  border-color: var(--gold-light);
+  color: #fff;
+}
+
+.btn-sm {
+  padding: 6px 14px;
+  font-size: 11px;
+}
+
+/* ── Standalone form elements (outside .form-group) ── */
+select {
+  background: var(--bg-card);
+  color: var(--text);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+}
+
+select option {
+  background: var(--bg-card);
+  color: var(--text);
+}
+
+input[type="date"] {
+  background: var(--bg-card);
+  color: var(--text);
+  color-scheme: light;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="file"]):not(.form-group input) {
+  background: var(--bg-card);
+  color: var(--text);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  padding: 10px 14px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+}
+
+input:not(.form-group input):focus {
+  outline: none;
+  border-color: var(--gold);
+}
+
+/* ── Misc ── */
+.empty {
+  font-family: var(--font-serif);
+  font-style: italic;
+  color: var(--text-subtle);
+  font-size: 14px;
+  padding: 40px;
+  text-align: center;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.gold {
+  color: var(--gold);
+}
+
+.mono {
+  font-family: var(--font-sans);
+  font-weight: 700;
+}
+
+.delete-btn {
+  background: none;
+  border: none;
+  color: var(--text-subtle);
+  cursor: pointer;
+  font-size: 18px;
+  padding: 4px 8px;
+}
+
+.delete-btn:hover {
+  color: var(--red);
+}
+
+.login-error {
+  color: var(--red);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  margin-top: 12px;
+}
+
+/* ── Login shell ── */
+.login-shell {
+  position: relative;
+  display: flex;
+  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+  background-image: url("/cactus-in-bloom.jpg");
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  padding: 40px 20px;
+}
+/* ponytail: dark scrim so the paper card pops; gallery-ink tint ties to sidebar. Swap opacity if card feels lost. */
+.login-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 10, 10, 0.55);
+}
+.login-shell > * {
+  position: relative;
+  z-index: 1;
+}

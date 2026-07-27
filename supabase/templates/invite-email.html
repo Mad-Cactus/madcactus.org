@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin:0;padding:0;background:#f6f6f6;font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f6f6f6;padding:48px 24px;">
+    <tr>
+      <td align="center">
+        <table width="520" cellpadding="0" cellspacing="0" style="background:#ffffff;border-top:1px solid #000;border-bottom:1px solid #000;">
+          <!-- Logo -->
+          <tr>
+            <td align="center" style="padding:40px 40px 0;">
+              <img src="https://madcactus.org/cactus-seal.png" alt="Mad Cactus" width="56" height="56" style="display:block;margin:0 auto;" />
+            </td>
+          </tr>
+          <!-- Headline -->
+          <tr>
+            <td style="padding:32px 40px 0;font-family:Georgia,'Times New Roman',serif;font-size:24px;line-height:1.2;text-align:center;color:#000;">
+              You're invited
+            </td>
+          </tr>
+          <!-- Body -->
+          <tr>
+            <td style="padding:16px 40px 0;font-family:Georgia,'Times New Roman',serif;font-size:15px;line-height:1.5;color:#000;">
+              I'd like to give you access to your Mad Cactus client portal, where you can track deliverables, view documents, and check invoices.
+            </td>
+          </tr>
+          <!-- CTA -->
+          <tr>
+            <td align="center" style="padding:32px 40px;">
+              <a href="{{ .ConfirmationURL }}" style="display:inline-block;padding:12px 28px;background:#bc9c5c;color:#fff;font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;text-decoration:none;">
+                Accept Invite
+              </a>
+            </td>
+          </tr>
+          <!-- Fallback link -->
+          <tr>
+            <td style="padding:0 40px 32px;font-family:Georgia,serif;font-size:12px;line-height:1.4;color:#999;font-style:italic;text-align:center;">
+              Or paste this link into your browser:<br>
+              <span style="word-break:break-all;color:#999;">{{ .ConfirmationURL }}</span>
+            </td>
+          </tr>
+          <!-- Sign-off -->
+          <tr>
+            <td style="padding:0 40px 24px;font-family:Georgia,serif;font-size:15px;color:#000;">
+              Best,<br>Collin
+            </td>
+          </tr>
+          <!-- P.S. -->
+          <tr>
+            <td style="padding:0 40px 32px;font-family:Georgia,serif;font-size:15px;line-height:1.5;color:#000;">
+              P.S. I read and reply to every email. If you have any questions or run into issues, just reply to this one.
+            </td>
+          </tr>
+          <!-- Footer rule -->
+          <tr>
+            <td style="padding:24px 40px 32px;border-top:1px solid rgba(0,0,0,0.08);">
+              <p style="margin:0;font-size:11px;color:#999;line-height:1.5;">
+                Mad Cactus LLC · <a href="mailto:cpfeifer@madcactus.org" style="color:#999;text-decoration:none;">Email</a> · <a href="https://cal.com/cpfeifer/info-meeting" style="color:#999;text-decoration:none;">Calendar</a>
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

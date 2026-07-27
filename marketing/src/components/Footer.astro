@@ -1,0 +1,104 @@
+---
+---
+
+<footer class="site-footer">
+    <div class="footer-inner">
+        <div class="footer-brand">
+            <img src="/cactus-seal.svg" alt="Mad Cactus" class="footer-logo" />
+            <div class="footer-wordmark">Mad Cactus</div>
+        </div>
+        <div class="footer-meta">
+            <small>&copy; 2026 Mad Cactus LLC</small>
+            <div class="footer-links">
+                <a href="mailto:cpfeifer@madcactus.org">Email</a>
+                <a
+                    href="https://cal.com/cpfeifer/info-meeting"
+                    target="_blank">Calendar</a
+                >
+            </div>
+        </div>
+    </div>
+</footer>
+
+<style>
+    .site-footer {
+        background: var(--color-gallery-ink);
+        padding: var(--spacing-80) var(--spacing-64) var(--spacing-32);
+    }
+    .footer-inner {
+        max-width: var(--page-max-width);
+        margin: 0 auto;
+    }
+    .footer-brand {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: var(--spacing-32);
+        margin-bottom: var(--spacing-64);
+    }
+    .footer-logo {
+        width: 108px;
+        height: 108px;
+        flex-shrink: 0;
+        order: 1;
+        filter: brightness(0) invert(1);
+    }
+    .footer-wordmark {
+        font-family: var(--font-serif);
+        font-weight: 400;
+        font-size: clamp(48px, 14vw, 180px);
+        line-height: var(--leading-display);
+        color: #ffffff;
+        letter-spacing: -2px;
+        order: 2;
+        text-align: right;
+    }
+    .footer-meta {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        padding-top: var(--spacing-16);
+    }
+    .footer-meta small {
+        font-family: var(--font-sans);
+        font-size: var(--text-caption);
+        color: rgba(255, 255, 255, 0.3);
+    }
+    .footer-links {
+        display: flex;
+        gap: var(--spacing-24);
+    }
+    .footer-links a {
+        font-family: var(--font-serif);
+        font-style: italic;
+        font-size: var(--text-body-sm);
+        color: var(--color-silver-wash);
+        text-decoration: none;
+    }
+    .footer-links a:hover {
+        color: var(--color-burnished-gold);
+    }
+
+    @media (max-width: 900px) {
+        .site-footer {
+            padding: var(--spacing-48) var(--spacing-24) var(--spacing-24);
+        }
+        .footer-brand {
+            justify-content: center;
+        }
+        .footer-wordmark {
+            font-size: clamp(40px, 10vw, 80px);
+        }
+        .footer-meta {
+            flex-direction: column;
+            gap: var(--spacing-16);
+            text-align: center;
+        }
+    }
+    @media (max-width: 480px) {
+        .footer-wordmark {
+            display: none;
+        }
+    }
+</style>

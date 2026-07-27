@@ -1,0 +1,543 @@
+---
+import "../styles/global.css";
+import Footer from "../components/Footer.astro";
+---
+
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <link rel="icon" type="image/svg+xml" href="/cactus-seal.svg" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta name="generator" content={Astro.generator} />
+        <title>Mad Cactus — Turn Your Business AI-Native</title>
+        <meta
+            name="description"
+            content="We build the intelligence layer, custom agents, and workflows that make AI actually work for your business."
+        />
+    </head>
+    <body>
+        {/* ════════ TOP BAR ════════ */}
+        <header class="top-bar">
+            <div class="top-bar-inner">
+                <a href="/" class="logo-link">
+                    <img src="/cactus-seal.svg" alt="Mad Cactus" class="logo-seal" />
+                </a>
+                <a href="https://app.madcactus.org/portal/login" class="top-bar-signin">Sign In</a>
+            </div>
+        </header>
+
+        {/* ════════ HERO ════════ */}
+        <section class="hero">
+            <div class="hero-inner">
+                <div class="hero-text">
+                    <h1 class="hero-headline">
+                        Turn Your<br />Business<br />
+                        <em>AI-Native.</em>
+                    </h1>
+                    <p class="hero-body">
+                        We build the intelligence layer, custom agents, and
+                        workflows that make AI actually work for your business.
+                        Letting your team of five operate like a team of
+                        twenty-five.
+                    </p>
+                    <a
+                        href="https://cal.com/cpfeifer/info-meeting"
+                        target="_blank"
+                        class="cta-bracketed cta-hero">&#123; SCHEDULE A CONVERSATION &#125;</a
+                    >
+                </div>
+                <div class="hero-plate">
+                    <img
+                        src="/cactus-in-bloom.jpg"
+                        alt="Cactus in bloom"
+                    />
+                </div>
+            </div>
+        </section>
+
+        {/* ════════ SERVICES ════════ */}
+        <section id="services">
+            <div class="section-header">
+                <h2 class="section-title">Our Method</h2>
+                <hr class="section-rule" />
+            </div>
+            <div class="services-grid">
+                <div class="service-col">
+                    <div class="service-num">01</div>
+                    <h3>Business Audit</h3>
+                    <p>
+                        Our agent books meetings with you and every one of your
+                        employees to learn about each workflow, the
+                        dependencies, and how everyone does their job. This
+                        gives insights into how your business generates value
+                        and reveals what workflows can be augmented by AI.
+                    </p>
+                </div>
+                <div class="service-col">
+                    <div class="service-num">02</div>
+                    <h3>Intelligence Layer</h3>
+                    <p>
+                        Your company's brain. Unify your data, docs, and
+                        institutional knowledge into a single intelligence layer
+                        that agents can reason over in real time — across Slack,
+                        Google Drive, Box, Teams, and every meeting, customer
+                        interaction, and sale.
+                    </p>
+                </div>
+                <div class="service-col">
+                    <div class="service-num">03</div>
+                    <h3>Agent Development</h3>
+                    <p>
+                        We build custom agents that automate and augment your
+                        workflows, allowing your team to hand off entire tasks
+                        to AI and spend more time on what matters most. Allowing
+                        your business to grow faster than ever before.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        {/* ════════ DARK BAND — PHILOSOPHY ════════ */}
+        <div class="dark-band">
+            <div class="dark-band-inner">
+                <h2 class="dark-band-headline">
+                    If you can't hand off tasks<br />
+                    to agents, <em>you don't pay.</em>
+                </h2>
+                <p class="dark-band-body">
+                    We don't sell hours or piecemeal tools. We embed with your
+                    team, audit your operations, build your AI intelligence
+                    layer, deploy custom agents, and train your people to run
+                    them. The work speaks for itself.
+                </p>
+            </div>
+        </div>
+
+        {/* ════════ CASE STUDY ════════ */}
+        <section id="case-studies">
+            <div class="section-header">
+                <h2 class="section-title">Proven in Production</h2>
+                <hr class="section-rule" />
+            </div>
+            <a href="/iu" class="case-study-card">
+                <div class="case-study-visual">
+                    <span class="case-study-institution">INDIANA<br /><em>UNIVERSITY</em></span>
+                    <span class="case-study-sector">Data Engineering</span>
+                </div>
+                <div class="case-study-content">
+                    <h3 class="case-study-title">
+                        Autonomous data engineering agent that
+                        transformed IU's ticket resolution pipeline.
+                    </h3>
+                    <p class="case-study-desc">
+                        A custom AI agent performing intelligent first-pass
+                        analysis on incoming data engineering tickets —
+                        triaging issues, identifying root causes, and routing
+                        with context.
+                    </p>
+                    <div class="case-study-stats">
+                        <div class="stat">
+                            <strong>45%</strong>
+                            <span>Productivity Increase</span>
+                        </div>
+                        <div class="stat">
+                            <strong>MTTR</strong>
+                            <span>Significantly Reduced</span>
+                        </div>
+                        <div class="stat">
+                            <strong>Q2—Q3</strong>
+                            <span>Measured Impact</span>
+                        </div>
+                    </div>
+                    <span class="case-study-link">Read Full Case Study</span>
+                </div>
+            </a>
+        </section>
+
+        {/* ════════ SCORECARD CTA ════════ */}
+        <section class="lead-section">
+            <div class="lead-inner">
+                <div class="lead-left">
+                    <h3 class="lead-heading">
+                        How much is manual work<br />
+                        <em>costing your firm?</em>
+                    </h3>
+                </div>
+                <div class="lead-right">
+                    <p>
+                        Take our free AI Readiness Scorecard. In five minutes,
+                        you'll see exactly where your team wastes the most time,
+                        the estimated annual cost, and where AI can have the
+                        biggest impact.
+                    </p>
+                    <a href="/scorecard" class="cta-bracketed">&#123; TAKE THE SCORECARD &#125;</a
+                    >
+                </div>
+            </div>
+        </section>
+
+        <Footer />
+    </body>
+</html>
+
+<style is:global>
+    /* ═══ Hero ═══ */
+    /* ponytail: on this page the top bar overlays the hero so the painting bleeds top + right; scoped here so /iu and /scorecard keep flow layout. Upgrade path: move to a shared page wrapper if more pages want it. */
+    .top-bar {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 30;
+        background: transparent;
+    }
+    .top-bar-signin {
+        background: rgba(0, 0, 0, 0.6);
+        color: #fff;
+        border-color: #fff;
+    }
+    .top-bar-signin:hover {
+        background: #fff;
+        color: var(--color-letterpress-black);
+    }
+    .hero {
+        padding: 0;
+        min-height: 100vh;
+    }
+    .hero-inner {
+        display: flex;
+        align-items: stretch;
+        min-height: 100vh;
+        gap: var(--spacing-48);
+    }
+    .hero-text {
+        align-self: center;
+        margin-left: max(
+            var(--spacing-64),
+            calc((100vw - var(--page-max-width)) / 2 + var(--spacing-64))
+        );
+        max-width: 520px;
+        flex-shrink: 0;
+        padding-right: var(--spacing-32);
+    }
+    .hero-headline {
+        font-family: var(--font-serif);
+        font-weight: 400;
+        font-size: var(--text-heading);
+        line-height: var(--leading-display);
+        color: var(--color-letterpress-black);
+        margin-bottom: var(--spacing-24);
+    }
+    .hero-headline em {
+        font-style: italic;
+        font-weight: 400;
+    }
+    .hero-body {
+        font-family: var(--font-serif);
+        font-size: var(--text-body);
+        line-height: var(--leading-body);
+        color: var(--color-letterpress-black);
+        max-width: 360px;
+        margin-bottom: var(--spacing-32);
+    }
+    .hero-plate {
+        flex: 1;
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+    }
+    .hero-plate img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+    /* ponytail: scroll-tied parallax, progressive enhancement. No JS. Overscan height covers translateY gaps; @support guard avoids broken layout in older browsers. */
+    @supports (animation-timeline: scroll()) {
+        .hero-plate img {
+            height: 130%;
+            animation: hero-parallax linear both;
+            animation-timeline: scroll(root);
+        }
+        @keyframes hero-parallax {
+            from {
+                transform: translateY(-15%);
+            }
+            to {
+                transform: translateY(0);
+            }
+        }
+    }
+
+    /* ═══ Section Header ═══ */
+    .section-header {
+        max-width: var(--page-max-width);
+        margin: 0 auto var(--spacing-48);
+        padding: 0 var(--spacing-64);
+    }
+    #services,
+    #case-studies,
+    .lead-section {
+        padding: var(--spacing-80) 0;
+    }
+
+    /* ═══ Services Grid ═══ */
+    .services-grid {
+        max-width: var(--page-max-width);
+        margin: 0 auto;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        background: var(--color-paper);
+        border-top: 1px solid var(--color-letterpress-black);
+        border-bottom: 1px solid var(--color-letterpress-black);
+    }
+    .service-col {
+        padding: var(--card-padding);
+        border-right: 1px solid var(--color-letterpress-black);
+    }
+    .service-col:last-child {
+        border-right: none;
+    }
+    .service-num {
+        font-family: var(--font-sans);
+        font-size: var(--text-caption);
+        color: var(--color-silver-wash);
+        margin-bottom: var(--spacing-16);
+    }
+    .service-col h3 {
+        font-family: var(--font-serif);
+        font-weight: 400;
+        font-size: var(--text-subheading);
+        color: var(--color-letterpress-black);
+        margin-bottom: var(--spacing-16);
+    }
+    .service-col p {
+        font-family: var(--font-serif);
+        font-size: var(--text-body-sm);
+        line-height: var(--leading-body);
+        color: var(--color-letterpress-black);
+    }
+
+    /* ═══ Dark Band ═══ */
+    .dark-band {
+        background: var(--color-gallery-ink);
+        padding: var(--spacing-128) var(--spacing-64);
+    }
+    .dark-band-inner {
+        max-width: 800px;
+        margin: 0 auto;
+        text-align: center;
+    }
+    .dark-band-label {
+        font-family: var(--font-sans);
+        font-size: var(--text-caption);
+        color: var(--color-silver-wash);
+        margin-bottom: var(--spacing-24);
+    }
+    .dark-band-headline {
+        font-family: var(--font-serif);
+        font-weight: 400;
+        font-size: var(--text-heading);
+        line-height: var(--leading-display);
+        color: var(--color-paper);
+        margin-bottom: var(--spacing-32);
+    }
+    .dark-band-headline em {
+        font-style: italic;
+        color: var(--color-burnished-gold);
+    }
+    .dark-band-body {
+        font-family: var(--font-serif);
+        font-size: var(--text-body);
+        line-height: var(--leading-body);
+        color: var(--color-silver-wash);
+        max-width: 520px;
+        margin: 0 auto;
+    }
+
+    /* ═══ Case Study ═══ */
+    .case-study-card {
+        display: block;
+        max-width: var(--page-max-width);
+        margin: 0 auto;
+        padding: 0 var(--spacing-64);
+    }
+    .case-study-content {
+        background: var(--color-paper);
+        padding: var(--spacing-48) var(--card-padding);
+        border-top: 1px solid var(--color-letterpress-black);
+        border-bottom: 1px solid var(--color-letterpress-black);
+    }
+    .case-study-visual {
+        background: var(--color-gallery-ink);
+        padding: var(--spacing-48) var(--card-padding);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        gap: var(--spacing-16);
+        min-height: 200px;
+        text-align: center;
+    }
+    .case-study-institution {
+        font-family: var(--font-serif);
+        font-weight: 400;
+        font-size: var(--text-heading);
+        line-height: var(--leading-display);
+        color: var(--color-paper);
+        letter-spacing: -1px;
+    }
+    .case-study-institution em {
+        font-style: italic;
+    }
+    .case-study-sector {
+        font-family: var(--font-sans);
+        font-size: var(--text-caption);
+        letter-spacing: 3px;
+        text-transform: uppercase;
+        color: var(--color-burnished-gold);
+    }
+    .case-study-title {
+        font-family: var(--font-serif);
+        font-weight: 400;
+        font-size: var(--text-subheading);
+        line-height: 1.3;
+        color: var(--color-letterpress-black);
+        margin-bottom: var(--spacing-16);
+    }
+    .case-study-desc {
+        font-family: var(--font-serif);
+        font-size: var(--text-body-sm);
+        line-height: var(--leading-body);
+        color: var(--color-letterpress-black);
+        margin-bottom: var(--spacing-32);
+    }
+    .case-study-stats {
+        display: flex;
+        gap: var(--spacing-48);
+        padding-top: var(--spacing-24);
+        border-top: 1px solid var(--color-letterpress-black);
+    }
+    .stat strong {
+        font-family: var(--font-serif);
+        font-weight: 400;
+        font-size: var(--text-subheading);
+        color: var(--color-burnished-gold);
+        display: block;
+        line-height: 1;
+    }
+    .stat span {
+        font-family: var(--font-sans);
+        font-size: var(--text-caption);
+        color: var(--color-silver-wash);
+        margin-top: var(--spacing-8);
+        display: block;
+    }
+    .case-study-link {
+        font-family: var(--font-serif);
+        font-style: italic;
+        font-size: var(--text-body-sm);
+        color: var(--color-letterpress-black);
+        border-bottom: 1px solid var(--color-letterpress-black);
+        padding-bottom: 4px;
+        margin-top: var(--spacing-32);
+        display: inline-block;
+    }
+
+    /* ═══ Lead Magnet ═══ */
+    .lead-section {
+        padding-bottom: var(--spacing-128);
+    }
+    .lead-inner {
+        max-width: var(--page-max-width);
+        margin: 0 auto;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--spacing-48);
+        padding: 0 var(--spacing-64);
+    }
+    .lead-heading {
+        font-family: var(--font-serif);
+        font-weight: 400;
+        font-size: var(--text-heading);
+        line-height: var(--leading-display);
+        color: var(--color-letterpress-black);
+    }
+    .lead-heading em {
+        font-style: italic;
+    }
+    .lead-right p {
+        font-family: var(--font-serif);
+        font-size: var(--text-body);
+        line-height: var(--leading-body);
+        color: var(--color-letterpress-black);
+        margin-bottom: var(--spacing-32);
+        max-width: 400px;
+    }
+
+    /* ═══ Responsive ═══ */
+    @media (max-width: 900px) {
+        .top-bar {
+            padding: var(--spacing-24) var(--spacing-24);
+        }
+        .top-bar {
+            position: static;
+        }
+        .hero {
+            padding: var(--spacing-32) var(--spacing-24) var(--spacing-80);
+            min-height: auto;
+        }
+        .hero-inner {
+            flex-direction: column;
+            align-items: stretch;
+            min-height: auto;
+            gap: var(--spacing-32);
+        }
+        .hero-text {
+            margin-left: 0;
+            max-width: none;
+            padding-right: 0;
+            align-self: auto;
+        }
+        .hero-plate {
+            flex: none;
+            height: 340px;
+            min-height: 340px;
+        }
+        .hero-plate img {
+            height: 100%;
+            animation: none;
+        }
+        .section-header {
+            padding: 0 var(--spacing-24);
+        }
+        .services-grid {
+            grid-template-columns: 1fr;
+        }
+        .service-col {
+            border-right: none;
+            border-bottom: 1px solid var(--color-letterpress-black);
+        }
+        .service-col:last-child {
+            border-bottom: none;
+        }
+        .dark-band {
+            padding: var(--spacing-80) var(--spacing-24);
+        }
+        .case-study-card {
+            padding: 0 var(--spacing-24);
+        }
+        .case-study-stats {
+            flex-wrap: wrap;
+            gap: var(--spacing-24);
+        }
+        .lead-inner {
+            grid-template-columns: 1fr;
+            padding: 0 var(--spacing-24);
+        }
+        #services,
+        #case-studies,
+        .lead-section {
+            padding: var(--spacing-48) 0;
+        }
+    }
+</style>
