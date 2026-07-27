@@ -22,6 +22,7 @@ import Footer from "../components/Footer.astro";
                 <a href="/" class="logo-link">
                     <img src="/cactus-seal.svg" alt="Mad Cactus" class="logo-seal" />
                 </a>
+                <a href="https://app.madcactus.org/portal/login" class="top-bar-signin">Sign In</a>
             </div>
         </header>
 
@@ -189,6 +190,15 @@ import Footer from "../components/Footer.astro";
         right: 0;
         z-index: 30;
         background: transparent;
+    }
+    .top-bar-signin {
+        background: rgba(0, 0, 0, 0.6);
+        color: #fff;
+        border-color: #fff;
+    }
+    .top-bar-signin:hover {
+        background: #fff;
+        color: var(--color-letterpress-black);
     }
     .hero {
         padding: 0;

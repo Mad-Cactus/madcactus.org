@@ -107,9 +107,26 @@ img {
 .logo-link {
     display: block;
 }
+.top-bar-signin {
+    margin-left: auto;
+    font-family: var(--font-sans);
+    font-size: var(--text-caption);
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--color-letterpress-black);
+    background: var(--color-paper);
+    border: 1px solid var(--color-letterpress-black);
+    padding: 8px 18px;
+    transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+.top-bar-signin:hover {
+    background: var(--color-letterpress-black);
+    color: var(--color-paper);
+}
 .logo-seal {
-    width: 96px;
-    height: 96px;
+    width: 64px;
+    height: 64px;
     color: var(--color-letterpress-black);
 }
 
