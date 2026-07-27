@@ -199,7 +199,7 @@ export default function ClientDetail() {
 							<div style={{ display: "flex", "justify-content": "space-between", "align-items": "center", "margin-bottom": "16px" }}>
 								<div class="section-heading" style={{ margin: "0" }}>Invoices</div>
 								<button class="btn btn-sm" onClick={() => setShowInvForm(!showInvForm())}>
-									+ New Invoice
+									New Invoice
 								</button>
 							</div>
 

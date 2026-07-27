@@ -131,7 +131,7 @@ export default function ProjectDetail() {
 																<form method="post" action="/admin/projects/update-deliverable" style={{ display: "inline-flex", gap: "0" }}>
 																	<input type="hidden" name="id" value={delv.id} />
 																	<input type="hidden" name="_referer" value={`/admin/projects/${params.id}`} />
-																	<select name="status" onchange={(e) => e.currentTarget.form?.submit()} class="btn btn-sm" style={{ "padding-right": "8px" }}>
+																	<select name="status" onchange={(e) => e.currentTarget.form?.submit()} style={{ "padding": "6px 12px", "font-size": "13px", "border-radius": "6px", "cursor": "pointer" }}>
 																		<For each={STATUS_OPTIONS}>
 																			{(opt) => (
 																				<option value={opt} selected={opt === delv.status}>
@@ -175,7 +175,7 @@ export default function ProjectDetail() {
 																	<form method="post" action="/admin/projects/add-update" style={{ flex: "1", display: "flex", gap: "8px" }}>
 																		<input type="hidden" name="deliverable_id" value={delv.id} />
 																		<input type="hidden" name="_referer" value={`/admin/projects/${params.id}`} />
-																		<input type="text" name="body" placeholder="Progress update…" required style={{ flex: "1" }} />
+																		<input type="text" name="body" placeholder="Progress update…" required style={{ flex: "1", "padding": "8px 14px", "font-size": "13px" }} />
 																		<button type="submit" class="btn btn-sm btn-primary">Post</button>
 																		<button type="button" class="btn btn-sm" onClick={() => setUpdateDeliverableId(null)}>Cancel</button>
 																	</form>
