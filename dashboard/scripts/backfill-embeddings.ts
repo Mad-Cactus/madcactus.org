@@ -5,8 +5,8 @@
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
-	process.env.VITE_SUPABASE_URL!,
-	process.env.VITE_SUPABASE_SERVICE_KEY!,
+	process.env.SUPABASE_URL!,
+	process.env.SUPABASE_SERVICE_KEY!,
 	{ auth: { persistSession: false, autoRefreshToken: false } },
 );
 
@@ -14,7 +14,7 @@ async function embed(text: string): Promise<number[]> {
 	const res = await fetch("https://openrouter.ai/api/v1/embeddings", {
 		method: "POST",
 		headers: {
-			Authorization: `Bearer ${process.env.VITE_OPENROUTER_API_KEY}`,
+			Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
 			"Content-Type": "application/json",
 		},
 		body: JSON.stringify({
@@ -28,8 +28,8 @@ async function embed(text: string): Promise<number[]> {
 }
 
 async function main() {
-	if (!process.env.VITE_OPENROUTER_API_KEY || process.env.VITE_OPENROUTER_API_KEY === "your-openrouter-key-here") {
-		console.error("Set VITE_OPENROUTER_API_KEY in .env first");
+	if (!process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY === "your-openrouter-key-here") {
+		console.error("Set OPENROUTER_API_KEY in .env first");
 		process.exit(1);
 	}
 

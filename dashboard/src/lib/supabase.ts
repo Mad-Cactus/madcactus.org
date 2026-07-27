@@ -116,8 +116,8 @@ export interface ApiKey {
  */
 export function supabaseAdmin() {
 	return createClient(
-		import.meta.env.VITE_SUPABASE_URL,
-		import.meta.env.VITE_SUPABASE_ANON_KEY,
+		process.env.SUPABASE_URL!,
+		process.env.SUPABASE_ANON_KEY!,
 		{ auth: { persistSession: false, autoRefreshToken: false } },
 	);
 }
@@ -129,8 +129,8 @@ export function supabaseAdmin() {
  */
 export function supabaseService() {
 	return createClient(
-		import.meta.env.VITE_SUPABASE_URL,
-		import.meta.env.VITE_SUPABASE_SERVICE_KEY,
+		process.env.SUPABASE_URL!,
+		process.env.SUPABASE_SERVICE_KEY!,
 		{ auth: { persistSession: false, autoRefreshToken: false } },
 	);
 }

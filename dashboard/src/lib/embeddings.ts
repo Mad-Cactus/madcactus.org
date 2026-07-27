@@ -5,8 +5,8 @@ const OPENROUTER_URL = "https://openrouter.ai/api/v1/embeddings";
  * Returns 1536-dim float array. Throws on error.
  */
 export async function embed(text: string): Promise<number[]> {
-	const key = import.meta.env.VITE_OPENROUTER_API_KEY;
-	if (!key) throw new Error("VITE_OPENROUTER_API_KEY not set");
+	const key = process.env.OPENROUTER_API_KEY;
+	if (!key) throw new Error("OPENROUTER_API_KEY not set");
 
 	const truncated = text.slice(0, 8000);
 
