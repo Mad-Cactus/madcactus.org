@@ -31,25 +31,28 @@
     }
     .footer-brand {
         display: flex;
-        flex-direction: column;
         align-items: center;
-        gap: var(--spacing-48);
+        justify-content: flex-end;
+        gap: var(--spacing-32);
         margin-bottom: var(--spacing-64);
     }
     .footer-logo {
-        width: 72px;
-        height: 72px;
-        color: var(--color-silver-wash);
+        width: 80px;
+        height: 80px;
+        color: #ffffff;
+        flex-shrink: 0;
+        order: 1;
     }
     .footer-wordmark {
         font-family: var(--font-serif);
         font-weight: 400;
         font-size: clamp(80px, 14vw, 180px);
         line-height: var(--leading-display);
-        color: rgba(179, 179, 179, 0.25);
+        color: #ffffff;
         letter-spacing: -2px;
-        text-align: center;
-        width: 100%;
+        order: 2;
+        text-align: right;
+        white-space: nowrap;
     }
     .footer-meta {
         display: flex;
@@ -81,6 +84,9 @@
     @media (max-width: 900px) {
         .site-footer {
             padding: var(--spacing-48) var(--spacing-24) var(--spacing-24);
+        }
+        .footer-brand {
+            justify-content: center;
         }
         .footer-meta {
             flex-direction: column;

@@ -158,6 +158,7 @@ img {
     text-transform: uppercase;
     color: var(--color-letterpress-black);
     display: inline-block;
+    white-space: nowrap;
 }
 
 .cta-bracketed:hover {

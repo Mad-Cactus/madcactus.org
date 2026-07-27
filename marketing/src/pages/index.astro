@@ -120,8 +120,11 @@ import Footer from "../components/Footer.astro";
                 <hr class="section-rule" />
             </div>
             <a href="/iu" class="case-study-card">
+                <div class="case-study-visual">
+                    <span class="case-study-institution">INDIANA<br /><em>UNIVERSITY</em></span>
+                    <span class="case-study-sector">Data Engineering</span>
+                </div>
                 <div class="case-study-content">
-                    <p class="case-study-tag">Data Engineering — Indiana University</p>
                     <h3 class="case-study-title">
                         Autonomous data engineering agent that
                         transformed IU's ticket resolution pipeline.
@@ -324,11 +327,34 @@ import Footer from "../components/Footer.astro";
         border-top: 1px solid var(--color-letterpress-black);
         border-bottom: 1px solid var(--color-letterpress-black);
     }
-    .case-study-tag {
+    .case-study-visual {
+        background: var(--color-gallery-ink);
+        padding: var(--spacing-48) var(--card-padding);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        gap: var(--spacing-16);
+        min-height: 200px;
+        text-align: center;
+    }
+    .case-study-institution {
+        font-family: var(--font-serif);
+        font-weight: 400;
+        font-size: var(--text-heading);
+        line-height: var(--leading-display);
+        color: var(--color-paper);
+        letter-spacing: -1px;
+    }
+    .case-study-institution em {
+        font-style: italic;
+    }
+    .case-study-sector {
         font-family: var(--font-sans);
         font-size: var(--text-caption);
-        color: var(--color-silver-wash);
-        margin-bottom: var(--spacing-16);
+        letter-spacing: 3px;
+        text-transform: uppercase;
+        color: var(--color-burnished-gold);
     }
     .case-study-title {
         font-family: var(--font-serif);
