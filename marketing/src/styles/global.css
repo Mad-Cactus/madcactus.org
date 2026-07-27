@@ -1,99 +1,148 @@
+/* ═══════════════════════════════════════════════════════════════
+   Mad Cactus — Franco Maria Ricci Editore Design System
+   Art Déco gallery catalogue: burnished gold hairlines on vellum
+   ═══════════════════════════════════════════════════════════════ */
+
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600&display=swap');
+
 :root {
-	--bg: #000000;
-	--bg-elevated: #0a0a0a;
-	--bg-card: #0d0d0d;
-	--text: #ffffff;
-	--text-muted: #999999;
-	--text-subtle: #555555;
-	--gold: #c9a84c;
-	--gold-light: #d4b85a;
-	--border: rgba(255, 255, 255, 0.1);
-	--border-gold: rgba(201, 168, 76, 0.3);
-	--display: "Anton", Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif;
-	--serif: "Playfair Display", Georgia, "Times New Roman", serif;
-	--sans: "Inter", -apple-system, "Segoe UI", sans-serif;
+    /* Colors */
+    --color-vellum-white: #f6f6f6;
+    --color-paper: #ffffff;
+    --color-gallery-ink: #0a0a0a;
+    --color-letterpress-black: #000000;
+    --color-silver-wash: #b3b3b3;
+    --color-burnished-gold: #bc9c5c;
+
+    /* Typography — Font Families */
+    --font-serif: 'Playfair Display', Georgia, 'Times New Roman', serif;
+    --font-serif-italic: 'Playfair Display', Georgia, serif;
+    --font-sans: 'Arial', Helvetica, -apple-system, 'Segoe UI', sans-serif;
+
+    /* Typography — Scale */
+    --text-caption: 12px;
+    --text-body-sm: 14px;
+    --text-body: 16px;
+    --text-subheading: 22px;
+    --text-heading: 42px;
+
+    /* Leading */
+    --leading-display: 0.95;
+    --leading-body: 1.25;
+
+    /* Spacing */
+    --spacing-8: 8px;
+    --spacing-16: 16px;
+    --spacing-24: 24px;
+    --spacing-32: 32px;
+    --spacing-40: 40px;
+    --spacing-48: 48px;
+    --spacing-64: 64px;
+    --spacing-80: 80px;
+    --spacing-128: 128px;
+
+    /* Layout */
+    --page-max-width: 1280px;
+    --section-gap: 48px;
+    --card-padding: 40px;
+    --element-gap: 20px;
+
+    /* Surfaces */
+    --surface-vellum: #f6f6f6;
+    --surface-paper: #ffffff;
+    --surface-silver-wash: #b3b3b3;
+    --surface-gallery-ink: #0a0a0a;
+    --surface-letterpress-black: #000000;
 }
 
 *,
 *::before,
 *::after {
-	margin: 0;
-	padding: 0;
-	box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
 }
 
 html {
-	scroll-behavior: smooth;
-	scroll-padding-top: 80px;
+    scroll-behavior: smooth;
 }
 
 body {
-	background: var(--bg);
-	color: var(--text);
-	font-family: var(--sans);
-	font-weight: 400;
-	overflow-x: hidden;
-	-webkit-font-smoothing: antialiased;
-	-moz-osx-font-smoothing: grayscale;
+    background: var(--color-vellum-white);
+    color: var(--color-letterpress-black);
+    font-family: var(--font-serif);
+    font-weight: 400;
+    font-size: var(--text-body);
+    line-height: var(--leading-body);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 ::selection {
-	background: var(--gold);
-	color: var(--bg);
+    background: var(--color-burnished-gold);
+    color: var(--color-vellum-white);
 }
 
-/* ── Buttons ── */
-.btn-primary {
-	display: inline-block;
-	padding: 14px 36px;
-	background: var(--gold);
-	color: var(--bg);
-	font-family: var(--display);
-	font-weight: 400;
-	font-size: 16px;
-	letter-spacing: 1.5px;
-	text-transform: uppercase;
-	text-decoration: none;
-	transition:
-		background 0.3s,
-		transform 0.2s;
+a {
+    color: inherit;
+    text-decoration: none;
 }
 
-.btn-primary:hover {
-	background: var(--gold-light);
-	transform: translateY(-2px);
+img {
+    display: block;
+    max-width: 100%;
 }
 
-.btn-outline {
-	display: inline-block;
-	padding: 14px 36px;
-	background: transparent;
-	color: var(--text);
-	font-family: var(--display);
-	font-weight: 400;
-	font-size: 16px;
-	letter-spacing: 1.5px;
-	text-transform: uppercase;
-	text-decoration: none;
-	border: 1px solid var(--border);
-	transition:
-		border-color 0.3s,
-		transform 0.2s;
+/* ═══ Editorial Components ═══ */
+
+/* Section title — italic serif with gold underline rule */
+.section-title {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-weight: 400;
+    font-size: var(--text-subheading);
+    text-align: center;
+    color: var(--color-letterpress-black);
+    margin-bottom: var(--spacing-16);
 }
 
-.btn-outline:hover {
-	border-color: var(--gold);
-	transform: translateY(-2px);
+.section-rule {
+    width: 100%;
+    height: 1px;
+    background: var(--color-burnished-gold);
+    border: none;
+    margin-bottom: var(--spacing-48);
 }
 
-/* ── Animations ── */
-@keyframes fadeUp {
-	from {
-		opacity: 0;
-		transform: translateY(30px);
-	}
-	to {
-		opacity: 1;
-		transform: translateY(0);
-	}
+/* Editorial CTA — bracketed text link with hairline border */
+.cta-link {
+    font-family: var(--font-serif);
+    font-size: var(--text-body-sm);
+    color: var(--color-letterpress-black);
+    border-bottom: 1px solid var(--color-letterpress-black);
+    padding-bottom: 4px;
+    display: inline-block;
+}
+
+.cta-link:hover {
+    color: var(--color-burnished-gold);
+    border-bottom-color: var(--color-burnished-gold);
+}
+
+.cta-bracketed {
+    font-family: var(--font-serif);
+    font-size: var(--text-body-sm);
+    color: var(--color-letterpress-black);
+    display: inline-block;
+}
+
+.cta-bracketed:hover {
+    color: var(--color-burnished-gold);
+}
+
+/* Utility sans label */
+.label-sans {
+    font-family: var(--font-sans);
+    font-size: var(--text-caption);
+    color: var(--color-silver-wash);
 }

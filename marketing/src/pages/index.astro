@@ -1,4 +1,5 @@
 ---
+import "../styles/global.css";
 import Footer from "../components/Footer.astro";
 ---
 
@@ -11,170 +12,139 @@ import Footer from "../components/Footer.astro";
         <title>Mad Cactus — Turn Your Business AI-Native</title>
         <meta
             name="description"
-            content="We build the intelligence layer, agents, and workflows that make AI actually work for your business."
+            content="We build the intelligence layer, custom agents, and workflows that make AI actually work for your business."
         />
     </head>
     <body>
-        <!-- ════════ HERO ════════ -->
-        <section class="hero">
-            <div class="hero-bg"></div>
-            <div class="hero-overlay"></div>
-            <div class="hero-main">
-                <div class="hero-top-row">
-                    <div class="hero-headline">
-                        TURN YOUR<br />
-                        BUSINESS<br />
-                        <span class="gold-text">AI-NATIVE.</span>
-                    </div>
+        {/* ════════ TOP BAR ════════ */}
+        <header class="top-bar">
+            <div class="top-bar-inner">
+                <a href="/" class="monogram">MC</a>
+                <div class="wordmark">
+                    <span class="wordmark-name">Mad Cactus</span>
+                    <span class="wordmark-sub">AI Consulting</span>
                 </div>
-                <div class="hero-rule-cta">
-                    <div class="hero-rule"></div>
+            </div>
+        </header>
+
+        {/* ════════ HERO ════════ */}
+        <section class="hero">
+            <div class="hero-inner">
+                <div class="hero-text">
+                    <h1 class="hero-headline">
+                        Turn Your<br />Business<br />
+                        <em>AI-Native.</em>
+                    </h1>
+                    <p class="hero-body">
+                        We build the intelligence layer, custom agents, and
+                        workflows that make AI actually work for your business.
+                        Letting your team of five operate like a team of
+                        twenty-five.
+                    </p>
                     <a
                         href="https://cal.com/cpfeifer/info-meeting"
                         target="_blank"
-                        class="hero-cta">GET YOUR FREE AUDIT</a
+                        class="cta-bracketed">&#123; SCHEDULE A CONVERSATION &#125;</a
                     >
                 </div>
-                <div class="hero-bottom-row">
-                    <div class="hero-bottom-headline">
-                        THE REVOLUTION<br />
-                        IS HERE
-                    </div>
-                    <div class="hero-bottom-body">
-                        We build the intelligence layer, custom agents, and
-                        workflows that make AI actually work for your business.
-                        Letting your team of 5 operate like a team of 25, making
-                        you more money and wondering why you didn't do this
-                        sooner.
-                    </div>
+                <div class="hero-plate">
+                    <img
+                        src="/cactus-in-bloom.jpg"
+                        alt="Cactus in bloom"
+                    />
                 </div>
             </div>
         </section>
 
-        <!-- ════════ SERVICES ════════ -->
+        {/* ════════ SERVICES ════════ */}
         <section id="services">
-            <div class="services-header">
-                <div class="services-header-left">
-                    ONE ENGAGEMENT.<br />
-                    <span class="gold-text">COMPLETE TRANSFORMATION.</span>
-                </div>
-                <div class="services-header-right">
-                    We don't sell hours or piecemeal tools. If that is all you
-                    need, we are not your people. We embed with your team, audit
-                    your operations, build your AI intelligence layer, deploy
-                    custom agents, and train your people to run them. If you
-                    can't actually hand-off tasks to agents, you don't pay a
-                    cent.
-                </div>
+            <div class="section-header">
+                <h2 class="section-title">Our Method</h2>
+                <hr class="section-rule" />
             </div>
             <div class="services-grid">
-                <div class="service-item">
+                <div class="service-col">
                     <div class="service-num">01</div>
                     <h3>Business Audit</h3>
                     <p>
-                        Our agent books meeting with you and every one fo your
+                        Our agent books meetings with you and every one of your
                         employees to learn about each workflow, the
                         dependencies, and how everyone does their job. This
-                        gives incredibly valuable insights into how your
-                        business generates value and makes it easy to see what
-                        workflows can be augmented by AI. Totally free, if you
-                        are interested in AI, this is the place to start.
+                        gives insights into how your business generates value
+                        and reveals what workflows can be augmented by AI.
                     </p>
                 </div>
-                <div class="service-item">
+                <div class="service-col">
                     <div class="service-num">02</div>
                     <h3>Intelligence Layer</h3>
                     <p>
                         Your company's brain. Unify your data, docs, and
                         institutional knowledge into a single intelligence layer
-                        that agents can reason over in real time. Let your
-                        agents reason across Slack, Google Drive, Box, Teams,
-                        and every meeting, interaction with a customer and sale,
-                        so you can make the best decisions possible.
+                        that agents can reason over in real time — across Slack,
+                        Google Drive, Box, Teams, and every meeting, customer
+                        interaction, and sale.
                     </p>
                 </div>
-                <div class="service-item">
+                <div class="service-col">
                     <div class="service-num">03</div>
                     <h3>Agent Development</h3>
                     <p>
-                        Look, we're all here for AI that does real work, that's
-                        where your audit comes in handy. We will build out
-                        custom agents that automate and augment your workflows,
-                        allowing your team to hand off entire tasks to AI and
-                        spend more time on what matters most. Allowing your
-                        business to grow fast and for you to make more money
-                        than ever before.
+                        We build custom agents that automate and augment your
+                        workflows, allowing your team to hand off entire tasks
+                        to AI and spend more time on what matters most. Allowing
+                        your business to grow faster than ever before.
                     </p>
                 </div>
             </div>
         </section>
 
-        <!-- ════════ PACKAGE ════════ -->
-        <div class="package-section">
-            <div class="package-inner">
-                <div class="package-left">
-                    <h2 class="package-heading">AI<br />TRANFORMATION</h2>
-                    <p class="package-price">
-                        <small>starting</small> $100,000
-                    </p>
-                </div>
-                <div class="package-right">
-                    <ul class="package-includes">
-                        <li>Full business operations audit</li>
-                        <li>Custom intelligence layer build</li>
-                        <li>Purpose-built AI agents</li>
-                        <li>Team training & workshops</li>
-                        <li>Complete documentation</li>
-                        <li>Ongoing support period</li>
-                    </ul>
-                    <a
-                        href="https://cal.com/cpfeifer/info-meeting"
-                        target="_blank"
-                        class="btn-primary">SCHEDULE A CONVERSATION</a
-                    >
-                </div>
+        {/* ════════ DARK BAND — PHILOSOPHY ════════ */}
+        <div class="dark-band">
+            <div class="dark-band-inner">
+                <p class="dark-band-label">THE PROMISE</p>
+                <h2 class="dark-band-headline">
+                    If you can't hand off tasks<br />
+                    to agents, <em>you don't pay.</em>
+                </h2>
+                <p class="dark-band-body">
+                    We don't sell hours or piecemeal tools. We embed with your
+                    team, audit your operations, build your AI intelligence
+                    layer, deploy custom agents, and train your people to run
+                    them. The work speaks for itself.
+                </p>
             </div>
         </div>
 
-        <!-- ════════ CASE STUDIES ════════ -->
+        {/* ════════ CASE STUDY ════════ */}
         <section id="case-studies">
-            <div class="case-studies-header">
-                <div class="case-studies-header-left">
-                    PROVEN IN<br />
-                    <span class="gold-text">PRODUCTION.</span>
-                </div>
-                <div class="case-studies-header-right">
-                    Real results for real companies. Here's what happens when AI
-                    meets operational excellence.
-                </div>
+            <div class="section-header">
+                <h2 class="section-title">Proven in Production</h2>
+                <hr class="section-rule" />
             </div>
             <a href="/iu" class="case-study-card">
-                <!-- <div class="case-study-visual">
-                    <img src="/iu_visual.png" alt="IU visual" />
-                </div> -->
                 <div class="case-study-content">
-                    <p class="case-study-tag">Data Engineering</p>
-                    <h3>
-                        Autonomous data engineering agent that transformed IU's
-                        ticket resolution pipeline.
+                    <p class="case-study-tag">Data Engineering — Indiana University</p>
+                    <h3 class="case-study-title">
+                        Autonomous data engineering agent that
+                        transformed IU's ticket resolution pipeline.
                     </h3>
-                    <p>
+                    <p class="case-study-desc">
                         A custom AI agent performing intelligent first-pass
-                        analysis on incoming data engineering tickets — triaging
-                        issues, identifying root causes, and routing with
-                        context.
+                        analysis on incoming data engineering tickets —
+                        triaging issues, identifying root causes, and routing
+                        with context.
                     </p>
                     <div class="case-study-stats">
-                        <div class="case-study-stat">
+                        <div class="stat">
                             <strong>45%</strong>
                             <span>Productivity Increase</span>
                         </div>
-                        <div class="case-study-stat">
+                        <div class="stat">
                             <strong>MTTR</strong>
                             <span>Significantly Reduced</span>
                         </div>
-                        <div class="case-study-stat">
-                            <strong>Q2–Q3</strong>
+                        <div class="stat">
+                            <strong>Q2—Q3</strong>
                             <span>Measured Impact</span>
                         </div>
                     </div>
@@ -183,597 +153,350 @@ import Footer from "../components/Footer.astro";
             </a>
         </section>
 
-        <!-- ════════ LEAD MAGNET ════════ -->
-        <div class="lead-magnet">
-            <div class="lead-magnet-inner">
-                <h2 class="lead-magnet-heading">
-                    GET A FREE AUDIT<br />
-                    <span class="gold-text">OF YOUR BUSINESS.</span>
-                </h2>
-                <div class="lead-magnet-right">
+        {/* ════════ LEAD MAGNET / CTA ════════ */}
+        <section class="lead-section">
+            <div class="section-header">
+                <h2 class="section-title">Start Here</h2>
+                <hr class="section-rule" />
+            </div>
+            <div class="lead-inner">
+                <div class="lead-left">
+                    <h3 class="lead-heading">
+                        A free audit of<br />
+                        <em>your business.</em>
+                    </h3>
+                </div>
+                <div class="lead-right">
                     <p>
-                        Nothing else sounded interesting? We would love to audit
-                        your business and see where AI can make the most impact.
-                        No strings attached. Use this audit to find your low
-                        hanging fruit whenever you are ready to start using AI.
+                        We would love to audit your business and see where AI
+                        can make the most impact. No strings attached. Use this
+                        audit to find your low-hanging fruit whenever you are
+                        ready to start using AI.
                     </p>
                     <a
                         href="https://cal.com/cpfeifer/info-meeting"
                         target="_blank"
-                        class="btn-primary">GET YOUR FREE AUDIT</a
+                        class="cta-bracketed">&#123; GET YOUR FREE AUDIT &#125;</a
                     >
                 </div>
             </div>
-        </div>
+        </section>
 
         <Footer />
     </body>
 </html>
 
 <style is:global>
-    :root {
-        --bg: #000000;
-        --bg-elevated: #0a0a0a;
-        --bg-card: #0d0d0d;
-        --text: #ffffff;
-        --text-muted: #999999;
-        --text-subtle: #555555;
-        --gold: #c9a84c;
-        --gold-light: #d4b85a;
-        --border: rgba(255, 255, 255, 0.1);
-        --border-gold: rgba(201, 168, 76, 0.3);
-        --display:
-            "Anton", Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif;
-        --sans: "Inter", -apple-system, "Segoe UI", sans-serif;
+    /* ═══ Top Bar ═══ */
+    .top-bar {
+        padding: var(--spacing-40) var(--spacing-64);
     }
-
-    section {
-        padding: 120px 48px;
-        position: relative;
-    }
-
-    .gold-text {
-        color: var(--gold);
-    }
-
-    /* ── Hero ── */
-    .hero {
-        position: relative;
-        min-height: 100vh;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-    }
-    .hero-bg {
-        position: absolute;
-        inset: 0;
-        background: url("/cactus-in-bloom.jpg") center 30% / cover no-repeat;
-    }
-    .hero-overlay {
-        position: absolute;
-        inset: 0;
-        background: linear-gradient(
-            180deg,
-            rgba(0, 0, 0, 0.5) 0%,
-            rgba(0, 0, 0, 0.35) 35%,
-            rgba(0, 0, 0, 0.55) 70%,
-            rgba(0, 0, 0, 0.97) 100%
-        );
-    }
-    .hero-main {
-        position: relative;
-        z-index: 2;
-        max-width: 1400px;
+    .top-bar-inner {
+        max-width: var(--page-max-width);
         margin: 0 auto;
-        width: 100%;
-    }
-    .hero-top-row {
         display: flex;
-        gap: 32px;
-        align-items: end;
-        margin-bottom: 32px;
-        padding: 0 48px;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .monogram {
+        font-family: var(--font-serif);
+        font-weight: 700;
+        font-size: 24px;
+        letter-spacing: -1px;
+        color: var(--color-letterpress-black);
+        text-decoration: none;
+    }
+    .wordmark {
+        text-align: right;
+        line-height: 1.1;
+    }
+    .wordmark-name {
+        font-family: var(--font-serif);
+        font-size: var(--text-body-sm);
+        color: var(--color-letterpress-black);
+        display: block;
+    }
+    .wordmark-sub {
+        font-family: var(--font-serif);
+        font-style: italic;
+        font-size: var(--text-caption);
+        color: var(--color-silver-wash);
+        display: block;
+    }
+
+    /* ═══ Hero ═══ */
+    .hero {
+        padding: var(--spacing-64) var(--spacing-64) var(--spacing-128);
+    }
+    .hero-inner {
+        max-width: var(--page-max-width);
+        margin: 0 auto;
+        display: grid;
+        grid-template-columns: 2fr 3fr;
+        gap: var(--spacing-48);
+        align-items: center;
     }
     .hero-headline {
-        font-family: var(--display);
-        font-size: clamp(64px, 11vw, 150px);
-        line-height: 0.88;
-        letter-spacing: -1px;
-        text-transform: uppercase;
-        opacity: 0;
-        animation: fadeUp 1s 0.2s forwards;
+        font-family: var(--font-serif);
+        font-weight: 400;
+        font-size: var(--text-heading);
+        line-height: var(--leading-display);
+        color: var(--color-letterpress-black);
+        margin-bottom: var(--spacing-24);
     }
-    .hero-right-headline {
-        font-family: var(--display);
-        font-size: clamp(24px, 3.5vw, 48px);
-        line-height: 1;
-        text-transform: uppercase;
-        padding-bottom: 8px;
-        opacity: 0;
-        animation: fadeUp 1s 0.4s forwards;
+    .hero-headline em {
+        font-style: italic;
+        font-weight: 400;
     }
-    .hero-rule-cta {
-        display: flex;
-        gap: 32px;
-        align-items: center;
-        margin-bottom: 80px;
-        padding: 0 48px;
-        opacity: 0;
-        animation: fadeUp 1s 0.6s forwards;
+    .hero-body {
+        font-family: var(--font-serif);
+        font-size: var(--text-body);
+        line-height: var(--leading-body);
+        color: var(--color-letterpress-black);
+        max-width: 360px;
+        margin-bottom: var(--spacing-32);
     }
-    .hero-rule {
-        height: 1px;
-        background: linear-gradient(90deg, var(--gold), transparent 70%);
+    .hero-plate {
+        height: 60vh;
+        min-height: 480px;
+        overflow: hidden;
     }
-    .hero-cta {
-        font-family: var(--display);
-        font-size: 18px;
-        letter-spacing: 1px;
-        text-transform: uppercase;
-        color: var(--text);
-        text-decoration: none;
-        padding: 10px 28px;
-        border: 1px solid var(--gold);
-        transition:
-            background 0.3s,
-            color 0.3s;
-        white-space: nowrap;
-    }
-    .hero-cta:hover {
-        background: var(--gold);
-        color: var(--bg);
-    }
-    .hero-bottom-row {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 48px;
-        padding-bottom: 48px;
-        padding-left: 48px;
-        padding-right: 48px;
-        opacity: 0;
-        animation: fadeUp 1s 0.8s forwards;
-    }
-    .hero-bottom-headline {
-        font-family: "Playfair Display", Georgia, serif;
-        font-size: clamp(28px, 4vw, 56px);
-        line-height: 0.95;
-        letter-spacing: -0.5px;
-        text-transform: uppercase;
-    }
-    .hero-bottom-body {
-        font-family: var(--sans);
-        font-weight: 300;
-        font-size: 14px;
-        line-height: 1.7;
-        max-width: 420px;
-        padding-top: 4px;
+    .hero-plate img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
     }
 
-    /* ── Services ── */
-    #services {
-        background: var(--bg);
+    /* ═══ Section Header ═══ */
+    .section-header {
+        max-width: var(--page-max-width);
+        margin: 0 auto var(--spacing-48);
+        padding: 0 var(--spacing-64);
     }
-    .services-header {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 48px;
-        max-width: 1400px;
-        margin: 0 auto 64px;
-        align-items: end;
+    #services,
+    #case-studies,
+    .lead-section {
+        padding: var(--spacing-80) 0;
     }
-    .services-header-left {
-        font-family: var(--display);
-        font-size: clamp(36px, 5vw, 72px);
-        line-height: 0.95;
-        letter-spacing: -0.5px;
-        text-transform: uppercase;
-    }
-    .services-header-right {
-        font-family: var(--sans);
-        font-weight: 300;
-        font-size: 15px;
-        line-height: 1.7;
-        color: var(--text-muted);
-        max-width: 420px;
-        padding-top: 8px;
-    }
+
+    /* ═══ Services Grid ═══ */
     .services-grid {
+        max-width: var(--page-max-width);
+        margin: 0 auto;
         display: grid;
         grid-template-columns: repeat(3, 1fr);
-        gap: 1px;
-        max-width: 1400px;
-        margin: 0 auto;
-        background: var(--border);
-        border-top: 1px solid var(--border);
-        border-bottom: 1px solid var(--border);
+        background: var(--color-paper);
+        border-top: 1px solid var(--color-letterpress-black);
+        border-bottom: 1px solid var(--color-letterpress-black);
     }
-    .service-item {
-        background: var(--bg);
-        padding: 48px 40px;
-        transition: background 0.4s;
+    .service-col {
+        padding: var(--card-padding);
+        border-right: 1px solid var(--color-letterpress-black);
     }
-    .service-item:hover {
-        background: var(--bg-elevated);
+    .service-col:last-child {
+        border-right: none;
     }
     .service-num {
-        font-family: var(--display);
-        font-size: 48px;
-        color: var(--gold);
-        margin-bottom: 20px;
-        line-height: 1;
-        opacity: 0.3;
+        font-family: var(--font-sans);
+        font-size: var(--text-caption);
+        color: var(--color-silver-wash);
+        margin-bottom: var(--spacing-16);
     }
-    .service-item h3 {
-        font-family: var(--display);
-        font-size: 24px;
-        letter-spacing: 1px;
-        text-transform: uppercase;
-        margin-bottom: 12px;
-    }
-    .service-item p {
-        font-family: var(--sans);
-        font-weight: 300;
-        font-size: 13px;
-        line-height: 1.7;
-        color: var(--text-muted);
-    }
-
-    /* ── Package ── */
-    .package-section {
-        background: var(--bg);
-        padding: 120px 48px;
-        position: relative;
-    }
-    .package-inner {
-        max-width: 1400px;
-        margin: 0 auto;
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 80px;
-        align-items: start;
-    }
-    .package-label {
-        font-family: var(--display);
-        font-size: 13px;
-        letter-spacing: 3px;
-        text-transform: uppercase;
-        color: var(--gold);
-        margin-bottom: 16px;
-    }
-    .package-heading {
-        font-family: var(--display);
-        font-size: clamp(48px, 7vw, 96px);
-        line-height: 0.9;
-        letter-spacing: -1px;
-        text-transform: uppercase;
-        margin-bottom: 24px;
-    }
-    .package-price {
-        font-family: var(--display);
-        font-size: clamp(56px, 8vw, 120px);
-        color: var(--gold);
-        line-height: 1;
-        letter-spacing: -2px;
-    }
-    .package-price small {
-        font-size: 24px;
-        color: var(--text-subtle);
-        letter-spacing: 0;
-    }
-    .package-right {
-        padding-top: 40px;
-    }
-    .package-includes {
-        list-style: none;
-        margin-bottom: 48px;
-    }
-    .package-includes li {
-        font-family: var(--sans);
+    .service-col h3 {
+        font-family: var(--font-serif);
         font-weight: 400;
-        font-size: 15px;
-        color: var(--text-muted);
-        padding: 16px 0;
-        border-bottom: 1px solid var(--border);
-        display: flex;
-        align-items: center;
-        gap: 16px;
+        font-size: var(--text-subheading);
+        color: var(--color-letterpress-black);
+        margin-bottom: var(--spacing-16);
     }
-    .package-includes li::before {
-        content: "";
-        width: 8px;
-        height: 8px;
-        border: 1px solid var(--gold);
-        transform: rotate(45deg);
-        flex-shrink: 0;
+    .service-col p {
+        font-family: var(--font-serif);
+        font-size: var(--text-body-sm);
+        line-height: var(--leading-body);
+        color: var(--color-letterpress-black);
     }
 
-    /* ── Buttons ── */
-    .btn-primary {
-        display: inline-block;
-        padding: 14px 36px;
-        background: var(--gold);
-        color: var(--bg);
-        font-family: var(--display);
-        font-size: 16px;
-        letter-spacing: 1.5px;
-        text-transform: uppercase;
-        text-decoration: none;
-        transition:
-            background 0.3s,
-            transform 0.2s;
+    /* ═══ Dark Band ═══ */
+    .dark-band {
+        background: var(--color-gallery-ink);
+        padding: var(--spacing-128) var(--spacing-64);
     }
-    .btn-primary:hover {
-        background: var(--gold-light);
-        transform: translateY(-2px);
-    }
-
-    /* ── Case Studies ── */
-    #case-studies {
-        background: var(--bg);
-    }
-    .case-studies-header {
-        max-width: 1400px;
-        margin: 0 auto 64px;
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 48px;
-        align-items: end;
-    }
-    .case-studies-header-left {
-        font-family: var(--display);
-        font-size: clamp(36px, 5vw, 72px);
-        line-height: 0.95;
-        letter-spacing: -0.5px;
-        text-transform: uppercase;
-    }
-    .case-studies-header-right {
-        font-family: var(--sans);
-        font-weight: 300;
-        font-size: 15px;
-        line-height: 1.7;
-        color: var(--text-muted);
-        max-width: 420px;
-        padding-top: 8px;
-    }
-    .case-study-card {
-        max-width: 1400px;
+    .dark-band-inner {
+        max-width: 800px;
         margin: 0 auto;
-        display: grid;
-        grid-template-columns: 1fr 1.5fr;
-        border: 1px solid var(--border);
-        transition: border-color 0.4s;
-        text-decoration: none;
-        color: var(--text);
+        text-align: center;
     }
-    .case-study-card:hover {
-        border-color: var(--border-gold);
+    .dark-band-label {
+        font-family: var(--font-sans);
+        font-size: var(--text-caption);
+        color: var(--color-silver-wash);
+        margin-bottom: var(--spacing-24);
     }
-    .case-study-visual {
-        background: var(--bg-card);
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        padding: 64px;
-        position: relative;
-        overflow: hidden;
-        min-height: 360px;
+    .dark-band-headline {
+        font-family: var(--font-serif);
+        font-weight: 400;
+        font-size: var(--text-heading);
+        line-height: var(--leading-display);
+        color: var(--color-paper);
+        margin-bottom: var(--spacing-32);
     }
-    .case-study-visual::before {
-        content: "IU";
-        font-family: var(--display);
-        font-size: 200px;
-        color: rgba(201, 168, 76, 0.05);
-        position: absolute;
-        letter-spacing: -5px;
+    .dark-band-headline em {
+        font-style: italic;
+        color: var(--color-burnished-gold);
     }
-    .iu-label {
-        font-family: var(--display);
-        font-size: 80px;
-        color: var(--gold);
-        position: relative;
-        z-index: 1;
-        letter-spacing: -2px;
+    .dark-band-body {
+        font-family: var(--font-serif);
+        font-size: var(--text-body);
+        line-height: var(--leading-body);
+        color: var(--color-silver-wash);
+        max-width: 520px;
+        margin: 0 auto;
     }
-    .iu-sublabel {
-        font-family: var(--display);
-        font-size: 14px;
-        letter-spacing: 3px;
-        text-transform: uppercase;
-        color: var(--text-subtle);
-        margin-top: 8px;
-        position: relative;
-        z-index: 1;
+
+    /* ═══ Case Study ═══ */
+    .case-study-card {
+        display: block;
+        max-width: var(--page-max-width);
+        margin: 0 auto;
+        padding: 0 var(--spacing-64);
     }
     .case-study-content {
-        padding: 56px 48px;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
+        background: var(--color-paper);
+        padding: var(--spacing-48) var(--card-padding);
+        border-top: 1px solid var(--color-letterpress-black);
+        border-bottom: 1px solid var(--color-letterpress-black);
     }
     .case-study-tag {
-        font-family: var(--display);
-        font-size: 12px;
-        letter-spacing: 3px;
-        text-transform: uppercase;
-        color: var(--gold);
-        margin-bottom: 20px;
+        font-family: var(--font-sans);
+        font-size: var(--text-caption);
+        color: var(--color-silver-wash);
+        margin-bottom: var(--spacing-16);
     }
-    .case-study-content h3 {
-        font-family: var(--display);
-        font-size: 28px;
-        letter-spacing: 0.5px;
-        text-transform: uppercase;
-        margin-bottom: 20px;
-        line-height: 1.15;
+    .case-study-title {
+        font-family: var(--font-serif);
+        font-weight: 400;
+        font-size: var(--text-subheading);
+        line-height: 1.3;
+        color: var(--color-letterpress-black);
+        margin-bottom: var(--spacing-16);
     }
-    .case-study-content p {
-        font-family: var(--sans);
-        font-weight: 300;
-        font-size: 14px;
-        line-height: 1.8;
-        color: var(--text-muted);
-        margin-bottom: 32px;
+    .case-study-desc {
+        font-family: var(--font-serif);
+        font-size: var(--text-body-sm);
+        line-height: var(--leading-body);
+        color: var(--color-letterpress-black);
+        margin-bottom: var(--spacing-32);
     }
     .case-study-stats {
         display: flex;
-        gap: 48px;
-        padding-top: 24px;
-        border-top: 1px solid var(--border);
+        gap: var(--spacing-48);
+        padding-top: var(--spacing-24);
+        border-top: 1px solid var(--color-letterpress-black);
     }
-    .case-study-stat strong {
-        font-family: var(--display);
-        font-size: 40px;
-        color: var(--gold);
-        line-height: 1;
+    .stat strong {
+        font-family: var(--font-serif);
+        font-weight: 400;
+        font-size: var(--text-subheading);
+        color: var(--color-burnished-gold);
         display: block;
+        line-height: 1;
     }
-    .case-study-stat span {
-        font-family: var(--display);
-        font-size: 11px;
-        letter-spacing: 2px;
-        text-transform: uppercase;
-        color: var(--text-subtle);
-        margin-top: 8px;
+    .stat span {
+        font-family: var(--font-sans);
+        font-size: var(--text-caption);
+        color: var(--color-silver-wash);
+        margin-top: var(--spacing-8);
         display: block;
     }
     .case-study-link {
-        font-family: "Playfair Display", Georgia, serif;
-        font-weight: 400;
-        font-size: 14px;
-        letter-spacing: 1.5px;
-        text-transform: uppercase;
-        color: var(--text);
-        margin-top: 32px;
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        transition: color 0.3s;
-    }
-    .case-study-link:hover {
-        color: var(--gold);
-    }
-    .case-study-link::after {
-        content: "→";
-        transition: transform 0.3s;
-    }
-    .case-study-link:hover::after {
-        transform: translateX(4px);
+        font-family: var(--font-serif);
+        font-style: italic;
+        font-size: var(--text-body-sm);
+        color: var(--color-letterpress-black);
+        border-bottom: 1px solid var(--color-letterpress-black);
+        padding-bottom: 4px;
+        margin-top: var(--spacing-32);
+        display: inline-block;
     }
 
-    /* ── Lead Magnet ── */
-    .lead-magnet {
-        background: var(--bg);
-        padding: 140px 48px;
-        position: relative;
+    /* ═══ Lead Magnet ═══ */
+    .lead-section {
+        padding-bottom: var(--spacing-128);
     }
-    .lead-magnet::before {
-        content: "";
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 1px;
-        background: linear-gradient(
-            90deg,
-            transparent,
-            var(--gold),
-            transparent
-        );
-    }
-    .lead-magnet-inner {
-        max-width: 1400px;
+    .lead-inner {
+        max-width: var(--page-max-width);
         margin: 0 auto;
         display: grid;
-        grid-template-columns: 1fr auto;
-        gap: 48px;
-        align-items: center;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--spacing-48);
+        padding: 0 var(--spacing-64);
     }
-    .lead-magnet-heading {
-        font-family: var(--display);
-        font-size: clamp(36px, 5vw, 72px);
-        line-height: 0.95;
-        letter-spacing: -0.5px;
-        text-transform: uppercase;
+    .lead-heading {
+        font-family: var(--font-serif);
+        font-weight: 400;
+        font-size: var(--text-heading);
+        line-height: var(--leading-display);
+        color: var(--color-letterpress-black);
     }
-    .lead-magnet-right {
-        text-align: right;
+    .lead-heading em {
+        font-style: italic;
     }
-    .lead-magnet-right p {
-        font-family: var(--sans);
-        font-weight: 300;
-        font-size: 14px;
-        line-height: 1.7;
-        color: var(--text-muted);
-        max-width: 380px;
-        margin-left: auto;
-        margin-bottom: 24px;
+    .lead-right p {
+        font-family: var(--font-serif);
+        font-size: var(--text-body);
+        line-height: var(--leading-body);
+        color: var(--color-letterpress-black);
+        margin-bottom: var(--spacing-32);
+        max-width: 400px;
     }
 
-    @keyframes fadeUp {
-        from {
-            opacity: 0;
-            transform: translateY(30px);
+    /* ═══ Responsive ═══ */
+    @media (max-width: 900px) {
+        .top-bar {
+            padding: var(--spacing-24) var(--spacing-24);
         }
-        to {
-            opacity: 1;
-            transform: translateY(0);
+        .hero {
+            padding: var(--spacing-32) var(--spacing-24) var(--spacing-80);
         }
-    }
-
-    @media (max-width: 768px) {
-        .hero-main {
-            padding: 100px 24px 0;
-        }
-        .hero-top-row {
-            flex-direction: column;
-            gap: 24px;
-        }
-        .hero-right-headline {
-            text-align: left;
-        }
-        .hero-bottom-row {
+        .hero-inner {
             grid-template-columns: 1fr;
-            gap: 24px;
+            gap: var(--spacing-32);
         }
-        section,
-        .package-section {
-            padding: 80px 24px;
+        .hero-plate {
+            height: 300px;
+            min-height: 300px;
         }
-        .services-header {
-            grid-template-columns: 1fr;
+        .section-header {
+            padding: 0 var(--spacing-24);
         }
         .services-grid {
             grid-template-columns: 1fr;
         }
-        .package-inner {
-            grid-template-columns: 1fr;
-            gap: 40px;
+        .service-col {
+            border-right: none;
+            border-bottom: 1px solid var(--color-letterpress-black);
         }
-        .case-studies-header {
-            grid-template-columns: 1fr;
+        .service-col:last-child {
+            border-bottom: none;
+        }
+        .dark-band {
+            padding: var(--spacing-80) var(--spacing-24);
         }
         .case-study-card {
-            grid-template-columns: 1fr;
-        }
-        .case-study-visual {
-            padding: 40px;
-            min-height: 240px;
-        }
-        .case-study-content {
-            padding: 32px 24px;
+            padding: 0 var(--spacing-24);
         }
         .case-study-stats {
-            gap: 24px;
+            flex-wrap: wrap;
+            gap: var(--spacing-24);
         }
-        .lead-magnet-inner {
+        .lead-inner {
             grid-template-columns: 1fr;
+            padding: 0 var(--spacing-24);
         }
-        .lead-magnet-right {
-            text-align: left;
-        }
-        .lead-magnet-right p {
-            margin-left: 0;
+        #services,
+        #case-studies,
+        .lead-section {
+            padding: var(--spacing-48) 0;
         }
     }
 </style>

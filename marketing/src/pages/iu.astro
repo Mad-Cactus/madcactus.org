@@ -1,11 +1,12 @@
 ---
+import "../styles/global.css";
 import Footer from "../components/Footer.astro";
 ---
 
 <html lang="en">
     <head>
         <meta charset="utf-8" />
-        <link rel="icon" type="image/jpg" href="/cactus-in-bloom.png" />
+        <link rel="icon" type="image/jpg" href="/cactus-in-bloom.jpg" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <meta name="generator" content={Astro.generator} />
         <title>Mad Cactus — IU Case Study</title>
@@ -15,13 +16,24 @@ import Footer from "../components/Footer.astro";
         />
     </head>
     <body>
-        <!-- ════════ HERO ════════ -->
+        {/* ════════ TOP BAR ════════ */}
+        <header class="top-bar">
+            <div class="top-bar-inner">
+                <a href="/" class="monogram">MC</a>
+                <div class="wordmark">
+                    <span class="wordmark-name">Mad Cactus</span>
+                    <span class="wordmark-sub">AI Consulting</span>
+                </div>
+            </div>
+        </header>
+
+        {/* ════════ HERO ════════ */}
         <div class="case-hero">
             <div class="case-hero-inner">
                 <div class="case-hero-left">
                     <p class="case-hero-tag">Case Study — Data Engineering</p>
                     <h1 class="case-hero-title">
-                        INDIANA<br /><span class="gold-text">UNIVERSITY</span>
+                        Indiana<br /><em>University</em>
                     </h1>
                 </div>
                 <div class="case-hero-right">
@@ -37,7 +49,7 @@ import Footer from "../components/Footer.astro";
             </div>
         </div>
 
-        <!-- ════════ STATS ════════ -->
+        {/* ════════ STATS ════════ */}
         <div class="stats-bar">
             <div class="stats-bar-inner">
                 <div class="stat-item">
@@ -49,7 +61,7 @@ import Footer from "../components/Footer.astro";
                     <span>Reduced Significantly</span>
                 </div>
                 <div class="stat-item">
-                    <strong>Q2–Q3</strong>
+                    <strong>Q2—Q3</strong>
                     <span>Measured Impact Period</span>
                 </div>
                 <div class="stat-item">
@@ -59,11 +71,11 @@ import Footer from "../components/Footer.astro";
             </div>
         </div>
 
-        <!-- ════════ THE PROBLEM ════════ -->
+        {/* ════════ THE PROBLEM ════════ */}
         <div class="case-section">
             <div class="case-section-grid">
                 <h2 class="case-section-label">
-                    THE<br /><span class="gold-text">PROBLEM</span>
+                    The<br /><em>Problem</em>
                 </h2>
                 <div class="case-section-body">
                     <p>
@@ -82,33 +94,21 @@ import Footer from "../components/Footer.astro";
                     </p>
                     <h4>Key Challenges</h4>
                     <ul>
-                        <li>
-                            High ticket volume with inconsistent categorization
-                        </li>
-                        <li>
-                            Senior engineers spending hours on triage instead of
-                            engineering
-                        </li>
-                        <li>
-                            Long mean time to resolution (MTTR) on common issues
-                        </li>
-                        <li>
-                            Knowledge silos — only senior staff could accurately
-                            route tickets
-                        </li>
-                        <li>
-                            No automated first-pass analysis or prioritization
-                        </li>
+                        <li>High ticket volume with inconsistent categorization</li>
+                        <li>Senior engineers spending hours on triage instead of engineering</li>
+                        <li>Long mean time to resolution (MTTR) on common issues</li>
+                        <li>Knowledge silos — only senior staff could accurately route tickets</li>
+                        <li>No automated first-pass analysis or prioritization</li>
                     </ul>
                 </div>
             </div>
         </div>
 
-        <!-- ════════ THE SOLUTION ════════ -->
+        {/* ════════ THE SOLUTION ════════ */}
         <div class="case-section">
             <div class="case-section-grid">
                 <h2 class="case-section-label">
-                    THE<br /><span class="gold-text">SOLUTION</span>
+                    The<br /><em>Solution</em>
                 </h2>
                 <div class="case-section-body">
                     <p>
@@ -126,29 +126,22 @@ import Footer from "../components/Footer.astro";
                     </p>
                     <h4>Agent Capabilities</h4>
                     <ul>
-                        <li>
-                            Automatic ticket categorization and priority scoring
-                        </li>
-                        <li>
-                            Root cause analysis based on historical patterns
-                        </li>
-                        <li>
-                            Context-rich routing with suggested resolution steps
-                        </li>
+                        <li>Automatic ticket categorization and priority scoring</li>
+                        <li>Root cause analysis based on historical patterns</li>
+                        <li>Context-rich routing with suggested resolution steps</li>
                         <li>Continuous learning from resolution outcomes</li>
-                        <li>
-                            Integration with existing tooling and documentation
-                        </li>
+                        <li>Integration with existing tooling and documentation</li>
                     </ul>
                 </div>
             </div>
         </div>
 
-        <!-- ════════ PROCESS ════════ -->
+        {/* ════════ PROCESS ════════ */}
         <div class="case-section">
-            <h2 class="case-section-label" style="margin-bottom: 40px;">
-                HOW WE<br /><span class="gold-text">BUILT IT</span>
-            </h2>
+            <div class="section-header" style="padding:0; margin-bottom: var(--spacing-48);">
+                <h2 class="section-title">How We Built It</h2>
+                <hr class="section-rule" />
+            </div>
             <div class="process-grid">
                 <div class="process-step">
                     <div class="process-num">01</div>
@@ -178,28 +171,26 @@ import Footer from "../components/Footer.astro";
                     <div class="process-num">04</div>
                     <h4>Deployment</h4>
                     <p>
-                        Rolled out incrementally, measured impact across Q2–Q3,
+                        Rolled out incrementally, measured impact across Q2—Q3,
                         iterated on feedback.
                     </p>
                 </div>
             </div>
         </div>
 
-        <!-- ════════ QUOTE ════════ -->
+        {/* ════════ QUOTE ════════ */}
         <div class="case-quote">
             <blockquote>
-                "The agent handles the first pass on every ticket. My team now <span
-                    class="gold-text">focuses on engineering</span
-                >, not inbox management."
+                "The agent handles the first pass on every ticket. My team now <em>focuses on engineering</em>, not inbox management."
             </blockquote>
-            <cite>— Data Engineering Lead, Indiana University</cite>
+            <cite>Data Engineering Lead, Indiana University</cite>
         </div>
 
-        <!-- ════════ RESULTS ════════ -->
+        {/* ════════ RESULTS ════════ */}
         <div class="case-section">
             <div class="case-section-grid">
                 <h2 class="case-section-label">
-                    THE<br /><span class="gold-text">RESULTS</span>
+                    The<br /><em>Results</em>
                 </h2>
                 <div class="case-section-body">
                     <p>
@@ -216,33 +207,19 @@ import Footer from "../components/Footer.astro";
                     </p>
                     <h4>Impact Summary</h4>
                     <ul>
-                        <li>45% increase in team productivity across Q2–Q3</li>
-                        <li>
-                            Significant reduction in mean time to resolution
-                            (MTTR)
-                        </li>
-                        <li>
-                            Senior engineers reclaimed architecture and systems
-                            time
-                        </li>
-                        <li>
-                            Ticket routing accuracy improved with context-rich
-                            handoffs
-                        </li>
-                        <li>
-                            Agent accuracy continued to improve through
-                            continuous learning
-                        </li>
+                        <li>45% increase in team productivity across Q2—Q3</li>
+                        <li>Significant reduction in mean time to resolution (MTTR)</li>
+                        <li>Senior engineers reclaimed architecture and systems time</li>
+                        <li>Ticket routing accuracy improved with context-rich handoffs</li>
+                        <li>Agent accuracy continued to improve through continuous learning</li>
                     </ul>
                 </div>
             </div>
         </div>
 
-        <!-- ════════ CTA ════════ -->
+        {/* ════════ CTA ════════ */}
         <div class="case-cta">
-            <h2>
-                WANT THIS FOR<br /><span class="gold-text">YOUR TEAM?</span>
-            </h2>
+            <h2>Want this for<br /><em>your team?</em></h2>
             <p>
                 Get a free audit of your business operations. We'll show you
                 exactly where an AI agent can make the biggest impact.
@@ -250,9 +227,9 @@ import Footer from "../components/Footer.astro";
             <a
                 href="https://cal.com/cpfeifer/info-meeting"
                 target="_blank"
-                class="btn-primary">GET YOUR FREE AUDIT</a
+                class="cta-bracketed">&#123; GET YOUR FREE AUDIT &#125;</a
             >
-            <a href="/" class="btn-outline">BACK TO HOME</a>
+            <a href="/" class="back-link">Back to Home</a>
         </div>
 
         <Footer />
@@ -260,298 +237,311 @@ import Footer from "../components/Footer.astro";
 </html>
 
 <style is:global>
-    :root {
-        --bg: #000000;
-        --bg-elevated: #0a0a0a;
-        --bg-card: #0d0d0d;
-        --text: #ffffff;
-        --text-muted: #999999;
-        --text-subtle: #555555;
-        --gold: #c9a84c;
-        --gold-light: #d4b85a;
-        --border: rgba(255, 255, 255, 0.1);
-        --border-gold: rgba(201, 168, 76, 0.3);
-        --display:
-            "Anton", Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif;
-        --sans: "Inter", -apple-system, "Segoe UI", sans-serif;
+    /* ═══ Top Bar (shared) ═══ */
+    .top-bar {
+        padding: var(--spacing-40) var(--spacing-64);
     }
-    .gold-text {
-        color: var(--gold);
+    .top-bar-inner {
+        max-width: var(--page-max-width);
+        margin: 0 auto;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .monogram {
+        font-family: var(--font-serif);
+        font-weight: 700;
+        font-size: 24px;
+        letter-spacing: -1px;
+        color: var(--color-letterpress-black);
+        text-decoration: none;
+    }
+    .wordmark {
+        text-align: right;
+        line-height: 1.1;
+    }
+    .wordmark-name {
+        font-family: var(--font-serif);
+        font-size: var(--text-body-sm);
+        color: var(--color-letterpress-black);
+        display: block;
+    }
+    .wordmark-sub {
+        font-family: var(--font-serif);
+        font-style: italic;
+        font-size: var(--text-caption);
+        color: var(--color-silver-wash);
+        display: block;
     }
 
+    /* ═══ Case Hero ═══ */
     .case-hero {
-        padding: 160px 48px 80px;
-        border-bottom: 1px solid var(--border);
+        padding: var(--spacing-80) var(--spacing-64);
+        border-bottom: 1px solid var(--color-letterpress-black);
     }
     .case-hero-inner {
-        max-width: 1400px;
+        max-width: var(--page-max-width);
         margin: 0 auto;
         display: grid;
         grid-template-columns: 1fr 1.5fr;
-        gap: 80px;
+        gap: var(--spacing-48);
         align-items: end;
     }
     .case-hero-tag {
-        font-family: var(--display);
-        font-size: 13px;
-        letter-spacing: 3px;
-        text-transform: uppercase;
-        color: var(--gold);
-        margin-bottom: 16px;
+        font-family: var(--font-sans);
+        font-size: var(--text-caption);
+        color: var(--color-silver-wash);
+        margin-bottom: var(--spacing-16);
     }
     .case-hero-title {
-        font-family: var(--display);
-        font-size: clamp(40px, 6vw, 80px);
-        line-height: 0.92;
-        letter-spacing: -1px;
-        text-transform: uppercase;
+        font-family: var(--font-serif);
+        font-weight: 400;
+        font-size: var(--text-heading);
+        line-height: var(--leading-display);
+        color: var(--color-letterpress-black);
+    }
+    .case-hero-title em {
+        font-style: italic;
     }
     .case-hero-right p {
-        font-family: var(--sans);
-        font-weight: 300;
-        font-size: 16px;
-        line-height: 1.8;
-        color: var(--text-muted);
+        font-family: var(--font-serif);
+        font-size: var(--text-body);
+        line-height: var(--leading-body);
+        color: var(--color-letterpress-black);
         max-width: 560px;
     }
 
+    /* ═══ Stats Bar ═══ */
     .stats-bar {
-        border-bottom: 1px solid var(--border);
-        padding: 48px;
+        border-bottom: 1px solid var(--color-letterpress-black);
+        padding: var(--spacing-48) var(--spacing-64);
     }
     .stats-bar-inner {
-        max-width: 1400px;
+        max-width: var(--page-max-width);
         margin: 0 auto;
         display: grid;
         grid-template-columns: repeat(4, 1fr);
-        gap: 48px;
+        gap: var(--spacing-48);
     }
     .stat-item strong {
-        font-family: var(--display);
-        font-size: clamp(40px, 5vw, 64px);
-        color: var(--gold);
+        font-family: var(--font-serif);
+        font-weight: 400;
+        font-size: var(--text-heading);
+        color: var(--color-burnished-gold);
         line-height: 1;
         display: block;
     }
     .stat-item span {
-        font-family: var(--display);
-        font-size: 12px;
-        letter-spacing: 2px;
-        text-transform: uppercase;
-        color: var(--text-subtle);
-        margin-top: 8px;
+        font-family: var(--font-sans);
+        font-size: var(--text-caption);
+        color: var(--color-silver-wash);
+        margin-top: var(--spacing-8);
         display: block;
     }
 
+    /* ═══ Case Sections ═══ */
     .case-section {
-        padding: 100px 48px;
-        max-width: 1400px;
+        padding: var(--spacing-80) var(--spacing-64);
+        max-width: var(--page-max-width);
         margin: 0 auto;
-    }
-    .case-section + .case-section {
-        border-top: 1px solid var(--border);
+        border-bottom: 1px solid var(--color-letterpress-black);
     }
     .case-section-grid {
         display: grid;
         grid-template-columns: 1fr 1.5fr;
-        gap: 64px;
+        gap: var(--spacing-48);
         align-items: start;
     }
     .case-section-label {
-        font-family: var(--display);
-        font-size: clamp(24px, 3vw, 40px);
-        line-height: 0.95;
-        letter-spacing: -0.5px;
-        text-transform: uppercase;
+        font-family: var(--font-serif);
+        font-weight: 400;
+        font-size: var(--text-subheading);
+        line-height: var(--leading-display);
+        color: var(--color-letterpress-black);
+    }
+    .case-section-label em {
+        font-style: italic;
     }
     .case-section-body {
-        font-family: var(--sans);
-        font-weight: 300;
-        font-size: 15px;
-        line-height: 1.8;
-        color: var(--text-muted);
+        font-family: var(--font-serif);
+        font-size: var(--text-body);
+        line-height: var(--leading-body);
+        color: var(--color-letterpress-black);
     }
     .case-section-body p + p {
-        margin-top: 20px;
+        margin-top: var(--spacing-16);
     }
     .case-section-body h4 {
-        font-family: var(--display);
-        font-size: 18px;
-        letter-spacing: 1px;
-        text-transform: uppercase;
-        color: var(--text);
-        margin-top: 32px;
-        margin-bottom: 12px;
+        font-family: var(--font-serif);
+        font-weight: 400;
+        font-size: var(--text-subheading);
+        color: var(--color-letterpress-black);
+        margin-top: var(--spacing-32);
+        margin-bottom: var(--spacing-16);
     }
     .case-section-body ul {
         list-style: none;
     }
     .case-section-body li {
-        font-weight: 300;
-        font-size: 14px;
-        line-height: 1.7;
-        color: var(--text-muted);
-        padding: 8px 0;
-        border-bottom: 1px solid var(--border);
+        font-family: var(--font-serif);
+        font-size: var(--text-body-sm);
+        line-height: 1.6;
+        color: var(--color-letterpress-black);
+        padding: var(--spacing-8) 0;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.08);
         display: flex;
-        align-items: center;
-        gap: 12px;
+        align-items: baseline;
+        gap: var(--spacing-8);
     }
     .case-section-body li::before {
-        content: "";
-        width: 6px;
-        height: 6px;
-        border: 1px solid var(--gold);
-        transform: rotate(45deg);
-        flex-shrink: 0;
+        content: "—";
+        color: var(--color-burnished-gold);
     }
 
+    /* ═══ Process Grid ═══ */
     .process-grid {
         display: grid;
         grid-template-columns: repeat(4, 1fr);
-        gap: 1px;
-        background: var(--border);
-        border: 1px solid var(--border);
+        background: var(--color-paper);
+        border-top: 1px solid var(--color-letterpress-black);
+        border-bottom: 1px solid var(--color-letterpress-black);
     }
     .process-step {
-        background: var(--bg);
-        padding: 40px 32px;
+        padding: var(--spacing-40) var(--spacing-32);
+        border-right: 1px solid var(--color-letterpress-black);
+    }
+    .process-step:last-child {
+        border-right: none;
     }
     .process-num {
-        font-family: var(--display);
-        font-size: 48px;
-        color: var(--gold);
-        opacity: 0.25;
-        line-height: 1;
-        margin-bottom: 16px;
+        font-family: var(--font-sans);
+        font-size: var(--text-caption);
+        color: var(--color-silver-wash);
+        margin-bottom: var(--spacing-16);
     }
     .process-step h4 {
-        font-family: var(--display);
-        font-size: 16px;
-        letter-spacing: 1px;
-        text-transform: uppercase;
-        margin-bottom: 8px;
+        font-family: var(--font-serif);
+        font-weight: 400;
+        font-size: var(--text-body);
+        color: var(--color-letterpress-black);
+        margin-bottom: var(--spacing-8);
     }
     .process-step p {
-        font-family: var(--sans);
-        font-weight: 300;
-        font-size: 13px;
-        line-height: 1.6;
-        color: var(--text-subtle);
+        font-family: var(--font-serif);
+        font-size: var(--text-body-sm);
+        line-height: 1.5;
+        color: rgba(0, 0, 0, 0.6);
     }
 
+    /* ═══ Quote ═══ */
     .case-quote {
-        padding: 80px 48px;
-        border-top: 1px solid var(--border);
-        border-bottom: 1px solid var(--border);
+        padding: var(--spacing-80) var(--spacing-64);
+        border-bottom: 1px solid var(--color-letterpress-black);
         text-align: center;
     }
     .case-quote blockquote {
-        font-family: var(--display);
-        font-size: clamp(24px, 3.5vw, 44px);
+        font-family: var(--font-serif);
+        font-style: italic;
+        font-weight: 400;
+        font-size: var(--text-heading);
         line-height: 1.15;
-        letter-spacing: -0.5px;
-        text-transform: uppercase;
+        color: var(--color-letterpress-black);
         max-width: 800px;
         margin: 0 auto;
     }
+    .case-quote blockquote em {
+        font-weight: 400;
+        color: var(--color-burnished-gold);
+    }
     .case-quote cite {
-        font-family: var(--sans);
+        font-family: var(--font-sans);
         font-style: normal;
-        font-size: 13px;
-        color: var(--text-subtle);
-        margin-top: 20px;
+        font-size: var(--text-caption);
+        color: var(--color-silver-wash);
+        margin-top: var(--spacing-16);
         display: block;
     }
 
+    /* ═══ CTA ═══ */
     .case-cta {
-        padding: 120px 48px;
+        padding: var(--spacing-128) var(--spacing-64);
         text-align: center;
     }
     .case-cta h2 {
-        font-family: var(--display);
-        font-size: clamp(32px, 5vw, 64px);
-        line-height: 0.95;
-        letter-spacing: -0.5px;
-        text-transform: uppercase;
-        margin-bottom: 24px;
+        font-family: var(--font-serif);
+        font-weight: 400;
+        font-size: var(--text-heading);
+        line-height: var(--leading-display);
+        color: var(--color-letterpress-black);
+        margin-bottom: var(--spacing-24);
+    }
+    .case-cta h2 em {
+        font-style: italic;
     }
     .case-cta p {
-        font-family: var(--sans);
-        font-weight: 300;
-        font-size: 15px;
-        line-height: 1.7;
-        color: var(--text-muted);
+        font-family: var(--font-serif);
+        font-size: var(--text-body);
+        line-height: var(--leading-body);
+        color: rgba(0, 0, 0, 0.6);
         max-width: 480px;
-        margin: 0 auto 40px;
+        margin: 0 auto var(--spacing-40);
     }
-    .btn-primary {
+    .back-link {
+        font-family: var(--font-serif);
+        font-style: italic;
+        font-size: var(--text-body-sm);
+        color: var(--color-silver-wash);
+        border-bottom: 1px solid var(--color-silver-wash);
+        padding-bottom: 4px;
+        margin-left: var(--spacing-24);
         display: inline-block;
-        padding: 14px 36px;
-        background: var(--gold);
-        color: var(--bg);
-        font-family: var(--display);
-        font-size: 16px;
-        letter-spacing: 1.5px;
-        text-transform: uppercase;
-        text-decoration: none;
-        transition:
-            background 0.3s,
-            transform 0.2s;
-    }
-    .btn-primary:hover {
-        background: var(--gold-light);
-        transform: translateY(-2px);
-    }
-    .btn-outline {
-        display: inline-block;
-        padding: 14px 36px;
-        background: transparent;
-        color: var(--text);
-        font-family: var(--display);
-        font-size: 16px;
-        letter-spacing: 1.5px;
-        text-transform: uppercase;
-        text-decoration: none;
-        border: 1px solid var(--border);
-        margin-left: 16px;
-        transition: border-color 0.3s;
-    }
-    .btn-outline:hover {
-        border-color: var(--gold);
     }
 
-    @media (max-width: 768px) {
+    /* ═══ Responsive ═══ */
+    @media (max-width: 900px) {
+        .top-bar {
+            padding: var(--spacing-24);
+        }
         .case-hero {
-            padding: 120px 24px 60px;
+            padding: var(--spacing-48) var(--spacing-24);
         }
         .case-hero-inner {
             grid-template-columns: 1fr;
-            gap: 32px;
+            gap: var(--spacing-24);
         }
         .stats-bar {
-            padding: 32px 24px;
+            padding: var(--spacing-32) var(--spacing-24);
         }
         .stats-bar-inner {
             grid-template-columns: repeat(2, 1fr);
-            gap: 24px;
+            gap: var(--spacing-24);
         }
         .case-section {
-            padding: 60px 24px;
+            padding: var(--spacing-48) var(--spacing-24);
         }
         .case-section-grid {
             grid-template-columns: 1fr;
-            gap: 32px;
+            gap: var(--spacing-24);
         }
         .process-grid {
-            grid-template-columns: repeat(2, 1fr);
+            grid-template-columns: 1fr;
+        }
+        .process-step {
+            border-right: none;
+            border-bottom: 1px solid var(--color-letterpress-black);
+        }
+        .process-step:last-child {
+            border-bottom: none;
+        }
+        .case-quote {
+            padding: var(--spacing-48) var(--spacing-24);
         }
         .case-cta {
-            padding: 80px 24px;
+            padding: var(--spacing-64) var(--spacing-24);
         }
-        .btn-outline {
+        .back-link {
             margin-left: 0;
-            margin-top: 16px;
+            margin-top: var(--spacing-16);
         }
     }
 </style>
