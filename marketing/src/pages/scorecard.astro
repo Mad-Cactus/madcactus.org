@@ -1,0 +1,775 @@
+---
+import "../styles/global.css";
+import Footer from "../components/Footer.astro";
+---
+
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <link rel="icon" type="image/jpg" href="/cactus-in-bloom.jpg" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta name="generator" content={Astro.generator} />
+        <title>AI Readiness Scorecard — Mad Cactus</title>
+        <meta
+            name="description"
+            content="A 5-minute assessment that reveals where your firm is bleeding time and labor to manual processes — and where AI can fix it."
+        />
+    </head>
+    <body>
+        {/* ════════ TOP BAR ════════ */}
+        <header class="top-bar">
+            <div class="top-bar-inner">
+                <a href="/" class="monogram">MC</a>
+                <div class="wordmark">
+                    <span class="wordmark-name">Mad Cactus</span>
+                    <span class="wordmark-sub">AI Consulting</span>
+                </div>
+            </div>
+        </header>
+
+        {/* ════════ INTRO ════════ */}
+        <section class="intro">
+            <div class="intro-inner">
+                <p class="label-sans" style="margin-bottom: var(--spacing-16);">Assessment — 5 minutes</p>
+                <h1 class="intro-headline">
+                    How much is manual work<br />
+                    <em>costing your firm?</em>
+                </h1>
+                <p class="intro-body">
+                    Answer ten questions about your operations. Get a personalized
+                    score showing where your team wastes the most time, the
+ estimated annual cost, and where AI can have the biggest impact.
+                </p>
+                <div class="intro-meta">
+                    <span>No email required to start</span>
+                    <span class="dot"></span>
+                    <span>Results in 5 minutes</span>
+                </div>
+            </div>
+        </section>
+
+        {/* ════════ QUIZ ════════ */}
+        <section class="quiz" id="quiz">
+            <div class="quiz-inner">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <p class="progress-text" id="progressText">Question 1 of 10</p>
+
+                <form id="scorecardForm">
+                    {/* Q1 */}
+                    <div class="question active" data-category="documents" data-q="1">
+                        <h2 class="question-text">How does your team create recurring documents — proposals, reports, contracts?</h2>
+                        <div class="answers">
+                            <label><input type="radio" name="q1" value="3" /><span>From scratch every time</span></label>
+                            <label><input type="radio" name="q1" value="2" /><span>We have templates, but still heavy manual editing</span></label>
+                            <label><input type="radio" name="q1" value="1" /><span>Mostly automated or generated from a system</span></label>
+                        </div>
+                    </div>
+
+                    {/* Q2 */}
+                    <div class="question" data-category="data" data-q="2">
+                        <h2 class="question-text">How much time does your team spend moving data between systems?</h2>
+                        <div class="answers">
+                            <label><input type="radio" name="q2" value="3" /><span>Significant time, every single day</span></label>
+                            <label><input type="radio" name="q2" value="2" /><span>A few times per week</span></label>
+                            <label><input type="radio" name="q2" value="1" /><span>Minimal — most systems are integrated</span></label>
+                        </div>
+                    </div>
+
+                    {/* Q3 */}
+                    <div class="question" data-category="knowledge" data-q="3">
+                        <h2 class="question-text">When someone needs internal information, what happens?</h2>
+                        <div class="answers">
+                            <label><input type="radio" name="q3" value="3" /><span>They dig through email, Slack, and shared folders</span></label>
+                            <label><input type="radio" name="q3" value="2" /><span>Some documentation exists, but it's scattered</span></label>
+                            <label><input type="radio" name="q3" value="1" /><span>Centralized, searchable knowledge base</span></label>
+                        </div>
+                    </div>
+
+                    {/* Q4 */}
+                    <div class="question" data-category="reporting" data-q="4">
+                        <h2 class="question-text">How are client or leadership reports compiled?</h2>
+                        <div class="answers">
+                            <label><input type="radio" name="q4" value="3" /><span>Manually pulling data from multiple sources into spreadsheets</span></label>
+                            <label><input type="radio" name="q4" value="2" /><span>Some automation, but still requires manual assembly</span></label>
+                            <label><input type="radio" name="q4" value="1" /><span>Automated dashboards that update themselves</span></label>
+                        </div>
+                    </div>
+
+                    {/* Q5 */}
+                    <div class="question" data-category="communication" data-q="5">
+                        <h2 class="question-text">How does your team handle repetitive client communications?</h2>
+                        <div class="answers">
+                            <label><input type="radio" name="q5" value="3" /><span>Each person responds individually, every time</span></label>
+                            <label><input type="radio" name="q5" value="2" /><span>Some canned responses, but manual sending</span></label>
+                            <label><input type="radio" name="q5" value="1" /><span>Automated or AI-assisted responses</span></label>
+                        </div>
+                    </div>
+
+                    {/* Q6 */}
+                    <div class="question" data-category="knowledge" data-q="6">
+                        <h2 class="question-text">When a key employee leaves, what happens to their knowledge?</h2>
+                        <div class="answers">
+                            <label><input type="radio" name="q6" value="3" /><span>It walks out the door — major disruption</span></label>
+                            <label><input type="radio" name="q6" value="2" /><span>Partial documentation, some gaps</span></label>
+                            <label><input type="radio" name="q6" value="1" /><span>Well-documented processes, smooth handoff</span></label>
+                        </div>
+                    </div>
+
+                    {/* Q7 */}
+                    <div class="question" data-category="onboarding" data-q="7">
+                        <h2 class="question-text">How long does new client or project onboarding take?</h2>
+                        <div class="answers">
+                            <label><input type="radio" name="q7" value="3" /><span>Weeks of manual setup and configuration</span></label>
+                            <label><input type="radio" name="q7" value="2" /><span>A few days with some manual steps</span></label>
+                            <label><input type="radio" name="q7" value="1" /><span>Mostly templated or automated</span></label>
+                        </div>
+                    </div>
+
+                    {/* Q8 */}
+                    <div class="question" data-category="capacity" data-q="8">
+                        <h2 class="question-text">How would you describe your team's capacity versus workload?</h2>
+                        <div class="answers">
+                            <label><input type="radio" name="q8" value="3" /><span>Overwhelmed — turning away work or missing deadlines</span></label>
+                            <label><input type="radio" name="q8" value="2" /><span>Managing, but stretched thin</span></label>
+                            <label><input type="radio" name="q8" value="1" /><span>Comfortable — room to take on more</span></label>
+                        </div>
+                    </div>
+
+                    {/* Q9 */}
+                    <div class="question" data-category="ai" data-q="9">
+                        <h2 class="question-text">How does your team currently use AI tools?</h2>
+                        <div class="answers">
+                            <label><input type="radio" name="q9" value="3" /><span>Not at all, or a few people experimenting on their own</span></label>
+                            <label><input type="radio" name="q9" value="2" /><span>Some adoption, but no coordinated strategy</span></label>
+                            <label><input type="radio" name="q9" value="1" /><span>Integrated into workflows with a clear strategy</span></label>
+                        </div>
+                    </div>
+
+                    {/* Q10 — sizing for cost estimate */}
+                    <div class="question" data-category="sizing" data-q="10">
+                        <h2 class="question-text">How many employees does your firm have?</h2>
+                        <div class="answers">
+                            <label><input type="radio" name="q10" value="5" /><span>Under 10</span></label>
+                            <label><input type="radio" name="q10" value="20" /><span>10 to 25</span></label>
+                            <label><input type="radio" name="q10" value="40" /><span>25 to 50</span></label>
+                            <label><input type="radio" name="q10" value="75" /><span>50+</span></label>
+                        </div>
+                    </div>
+                </form>
+
+                {/* Nav buttons */}
+                <div class="quiz-nav">
+                    <button type="button" class="nav-btn" id="prevBtn" style="visibility: hidden;">Previous</button>
+                    <button type="button" class="nav-btn nav-btn-primary" id="nextBtn">Next</button>
+                </div>
+            </div>
+        </section>
+
+        {/* ════════ RESULTS (hidden until complete) ════════ */}
+        <section class="results" id="results" style="display: none;">
+            <div class="results-inner">
+                <h2 class="section-title">Your Results</h2>
+                <hr class="section-rule" />
+
+                <div class="score-display" id="scoreDisplay"></div>
+
+                <div class="score-breakdown" id="scoreBreakdown"></div>
+
+                {/* Email gate for detailed report */}
+                <div class="email-gate" id="emailGate">
+                    <h3 class="gate-heading">Get your detailed action plan</h3>
+                    <p class="gate-body">
+                        Enter your email and we'll send you a personalized breakdown
+                        of where AI can have the biggest impact on your firm — plus
+                        subscribe you to <em>The Cactus Dispatch</em>, our field notes
+                        on practical AI deployment. No spam, unsubscribe anytime.
+                    </p>
+                    <form class="gate-form" id="emailForm">
+                        <input
+                            type="email"
+                            name="email"
+                            placeholder="your@email.com"
+                            required
+                        />
+                        <button type="submit" class="cta-bracketed">&#123; GET MY ACTION PLAN &#125;</button>
+                    </form>
+                </div>
+
+                {/* CTA */}
+                <div class="results-cta">
+                    <h3 class="cta-heading">Want a custom plan<br />for fixing these?</h3>
+                    <p class="cta-body">
+                        Book a free audit. We'll map your specific workflows and
+                        show you exactly where AI can save your team the most time.
+                    </p>
+                    <a
+                        href="https://cal.com/cpfeifer/info-meeting"
+                        target="_blank"
+                        class="cta-bracketed">&#123; BOOK A FREE AUDIT &#125;</a
+                    >
+                </div>
+            </div>
+        </section>
+
+        <Footer />
+    </body>
+</html>
+
+<script>
+    const questions = document.querySelectorAll('.question');
+    const totalQ = questions.length;
+    let currentQ = 0;
+
+    const progressFill = document.getElementById('progressFill');
+    const progressText = document.getElementById('progressText');
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const form = document.getElementById('scorecardForm');
+    const results = document.getElementById('results');
+    const quiz = document.getElementById('quiz');
+
+    function updateUI() {
+        questions.forEach((q, i) => {
+            q.classList.toggle('active', i === currentQ);
+        });
+        const progress = ((currentQ + 1) / totalQ) * 100;
+        progressFill.style.width = progress + '%';
+        progressText.textContent = `Question ${currentQ + 1} of ${totalQ}`;
+        prevBtn.style.visibility = currentQ === 0 ? 'hidden' : 'visible';
+        nextBtn.textContent = currentQ === totalQ - 1 ? 'Get My Score' : 'Next';
+    }
+
+    function isAnswered() {
+        const q = questions[currentQ];
+        const name = q.dataset.q;
+        return form.querySelector(`input[name="q${name}"]:checked`) !== null;
+    }
+
+    nextBtn.addEventListener('click', () => {
+        if (!isAnswered()) return;
+        if (currentQ < totalQ - 1) {
+            currentQ++;
+            updateUI();
+        } else {
+            calculateScore();
+        }
+    });
+
+    prevBtn.addEventListener('click', () => {
+        if (currentQ > 0) {
+            currentQ--;
+            updateUI();
+        }
+    });
+
+    // Auto-advance on selection
+    questions.forEach((q) => {
+        const inputs = q.querySelectorAll('input[type="radio"]');
+        inputs.forEach((input) => {
+            input.addEventListener('change', () => {
+                setTimeout(() => {
+                    if (currentQ < totalQ - 1) {
+                        currentQ++;
+                        updateUI();
+                    }
+                }, 250);
+            });
+        });
+    });
+
+    function calculateScore() {
+        let total = 0;
+        let employeeCount = 20; // default
+        const categories = {
+            documents: 0,
+            data: 0,
+            knowledge: 0,
+            reporting: 0,
+            communication: 0,
+            onboarding: 0,
+            capacity: 0,
+            ai: 0,
+        };
+
+        for (let i = 1; i <= totalQ; i++) {
+            const checked = form.querySelector(`input[name="q${i}"]:checked`);
+            if (!checked) continue;
+            const val = parseInt(checked.value);
+            const q = questions[i - 1];
+            const cat = q.dataset.category;
+
+            if (cat === 'sizing') {
+                employeeCount = val;
+            } else if (categories.hasOwnProperty(cat)) {
+                categories[cat] += val;
+                total += val;
+            }
+        }
+
+        // Determine tier
+        const maxScore = 9 * 3; // 9 scored questions, max 3 each
+        const pct = Math.round((total / maxScore) * 100);
+        let tier, tierDesc, tierColor;
+
+        if (pct >= 80) {
+            tier = 'AI Critical';
+            tierDesc = 'Your firm is losing significant time and money to manual processes every day. The good news: this means the ROI of fixing it will be massive.';
+            tierColor = '#c0392b';
+        } else if (pct >= 55) {
+            tier = 'AI Urgent';
+            tierDesc = 'You have substantial waste in your operations. Targeted AI implementation could recover significant capacity without adding headcount.';
+            tierColor = '#bc9c5c';
+        } else if (pct >= 30) {
+            tier = 'AI Ready';
+            tierDesc = 'You have a solid foundation with clear opportunities for improvement. Quick wins are available in specific areas.';
+            tierColor = '#2c3e50';
+        } else {
+            tier = 'AI Mature';
+            tierDesc = 'Your operations are well-optimized. AI can still add value through advanced automation and competitive differentiation.';
+            tierColor = '#27ae60';
+        }
+
+        // Cost estimate: avg fully-loaded salary $75k, assume waste = pct of time
+        const avgSalary = 75000;
+        const estimatedWastePct = pct / 100 * 0.4; // up to 40% of time wasted at max score
+        const annualCost = Math.round(employeeCount * avgSalary * estimatedWastePct / 1000) * 1000;
+
+        // Category labels
+        const catLabels = {
+            documents: 'Document Creation',
+            data: 'Data Movement',
+            knowledge: 'Knowledge Management',
+            reporting: 'Reporting & Analytics',
+            communication: 'Client Communication',
+            onboarding: 'Onboarding',
+            capacity: 'Team Capacity',
+            ai: 'AI Adoption',
+        };
+
+        // Find top problem areas
+        const sortedCats = Object.entries(categories)
+            .filter(([k]) => k !== 'sizing')
+            .sort((a, b) => b[1] - a[1]);
+
+        // Render score
+        const scoreDisplay = document.getElementById('scoreDisplay');
+        scoreDisplay.innerHTML = `
+            <div class="score-tier" style="color: ${tierColor}">${tier}</div>
+            <div class="score-number">${pct}<span class="score-pct">%</span></div>
+            <div class="score-desc">${tierDesc}</div>
+            <div class="score-cost">
+                <span class="cost-label">Estimated annual cost of manual work</span>
+                <span class="cost-amount">$${annualCost.toLocaleString()}</span>
+                <span class="cost-note">Based on ${employeeCount} employees at ~${Math.round(estimatedWastePct * 100)}% time wasted on manual tasks</span>
+            </div>
+        `;
+
+        // Render breakdown
+        const breakdown = document.getElementById('scoreBreakdown');
+        const maxCatScore = 3; // per category (most categories have 1 question)
+        breakdown.innerHTML = `
+            <h3 class="breakdown-title">Where your firm is bleeding time</h3>
+            <div class="breakdown-bars">
+                ${sortedCats.map(([cat, score]) => {
+                    const max = cat === 'knowledge' ? 6 : 3; // knowledge has 2 questions
+                    const catPct = Math.round((score / max) * 100);
+                    return `
+                        <div class="breakdown-row">
+                            <span class="breakdown-label">${catLabels[cat]}</span>
+                            <div class="breakdown-bar"><div class="breakdown-fill" style="width: ${catPct}%"></div></div>
+                            <span class="breakdown-score">${catPct}%</span>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+            <p class="breakdown-note">Highest scores indicate the areas where AI automation would deliver the fastest return on investment.</p>
+        `;
+
+        // Show results
+        quiz.style.display = 'none';
+        results.style.display = 'block';
+        results.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // Email form — placeholder, wire to real service later
+    document.getElementById('emailForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const gate = document.getElementById('emailGate');
+        gate.innerHTML = `
+            <h3 class="gate-heading">Check your inbox</h3>
+            <p class="gate-body">Your detailed action plan is on its way. You're also subscribed to <em>The Cactus Dispatch</em>.</p>
+        `;
+        // TODO: wire to email service (Beehiiv, ConvertKit, or Resend)
+    });
+</script>
+
+<style is:global>
+    /* ═══ Intro ═══ */
+    .intro {
+        padding: var(--spacing-80) var(--spacing-64) var(--spacing-48);
+    }
+    .intro-inner {
+        max-width: 720px;
+        margin: 0 auto;
+        text-align: center;
+    }
+    .intro-headline {
+        font-family: var(--font-serif);
+        font-weight: 400;
+        font-size: var(--text-heading);
+        line-height: var(--leading-display);
+        color: var(--color-letterpress-black);
+        margin-bottom: var(--spacing-24);
+    }
+    .intro-headline em {
+        font-style: italic;
+    }
+    .intro-body {
+        font-family: var(--font-serif);
+        font-size: var(--text-body);
+        line-height: var(--leading-body);
+        color: rgba(0, 0, 0, 0.6);
+        max-width: 480px;
+        margin: 0 auto var(--spacing-24);
+    }
+    .intro-meta {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: var(--spacing-16);
+        font-family: var(--font-sans);
+        font-size: var(--text-caption);
+        color: var(--color-silver-wash);
+    }
+    .intro-meta .dot {
+        width: 3px;
+        height: 3px;
+        background: var(--color-silver-wash);
+        border-radius: 50%;
+    }
+
+    /* ═══ Quiz ═══ */
+    .quiz {
+        padding: var(--spacing-48) var(--spacing-64) var(--spacing-80);
+    }
+    .quiz-inner {
+        max-width: 720px;
+        margin: 0 auto;
+    }
+    .progress-bar {
+        width: 100%;
+        height: 1px;
+        background: rgba(0, 0, 0, 0.08);
+        margin-bottom: var(--spacing-16);
+    }
+    .progress-fill {
+        height: 100%;
+        background: var(--color-burnished-gold);
+        transition: width 0.3s ease;
+        width: 10%;
+    }
+    .progress-text {
+        font-family: var(--font-sans);
+        font-size: var(--text-caption);
+        color: var(--color-silver-wash);
+        margin-bottom: var(--spacing-40);
+    }
+    .question {
+        display: none;
+    }
+    .question.active {
+        display: block;
+    }
+    .question-text {
+        font-family: var(--font-serif);
+        font-weight: 400;
+        font-size: var(--text-subheading);
+        line-height: 1.3;
+        color: var(--color-letterpress-black);
+        margin-bottom: var(--spacing-32);
+    }
+    .answers {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-16);
+    }
+    .answers label {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-16);
+        padding: var(--spacing-16) var(--spacing-24);
+        background: var(--color-paper);
+        border: 1px solid rgba(0, 0, 0, 0.08);
+        cursor: pointer;
+        transition: border-color 0.2s;
+    }
+    .answers label:hover {
+        border-color: var(--color-burnished-gold);
+    }
+    .answers input[type="radio"] {
+        appearance: none;
+        width: 16px;
+        height: 16px;
+        border: 1px solid rgba(0, 0, 0, 0.3);
+        border-radius: 0;
+        position: relative;
+        cursor: pointer;
+        flex-shrink: 0;
+    }
+    .answers input[type="radio"]:checked {
+        border-color: var(--color-burnished-gold);
+    }
+    .answers input[type="radio"]:checked::after {
+        content: '';
+        position: absolute;
+        inset: 3px;
+        background: var(--color-burnished-gold);
+    }
+    .answers label span {
+        font-family: var(--font-serif);
+        font-size: var(--text-body);
+        color: var(--color-letterpress-black);
+    }
+
+    /* ═══ Quiz Nav ═══ */
+    .quiz-nav {
+        display: flex;
+        justify-content: space-between;
+        margin-top: var(--spacing-40);
+    }
+    .nav-btn {
+        font-family: var(--font-serif);
+        font-size: var(--text-body-sm);
+        color: var(--color-letterpress-black);
+        background: transparent;
+        border: 1px solid var(--color-letterpress-black);
+        padding: 10px 24px;
+        cursor: pointer;
+        border-radius: 0;
+    }
+    .nav-btn:hover {
+        background: var(--color-letterpress-black);
+        color: var(--color-vellum-white);
+    }
+    .nav-btn-primary {
+        background: var(--color-letterpress-black);
+        color: var(--color-vellum-white);
+    }
+    .nav-btn-primary:hover {
+        background: var(--color-burnished-gold);
+        color: var(--color-letterpress-black);
+        border-color: var(--color-burnished-gold);
+    }
+
+    /* ═══ Results ═══ */
+    .results {
+        padding: var(--spacing-80) var(--spacing-64);
+    }
+    .results-inner {
+        max-width: 720px;
+        margin: 0 auto;
+    }
+    .score-display {
+        text-align: center;
+        margin-bottom: var(--spacing-48);
+    }
+    .score-tier {
+        font-family: var(--font-sans);
+        font-size: var(--text-caption);
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        margin-bottom: var(--spacing-16);
+    }
+    .score-number {
+        font-family: var(--font-serif);
+        font-weight: 400;
+        font-size: 96px;
+        line-height: 1;
+        color: var(--color-letterpress-black);
+    }
+    .score-pct {
+        font-size: 42px;
+    }
+    .score-desc {
+        font-family: var(--font-serif);
+        font-style: italic;
+        font-size: var(--text-body);
+        line-height: var(--leading-body);
+        color: rgba(0, 0, 0, 0.6);
+        max-width: 480px;
+        margin: var(--spacing-24) auto 0;
+    }
+    .score-cost {
+        margin-top: var(--spacing-32);
+        padding: var(--spacing-32);
+        background: var(--color-paper);
+        border-top: 1px solid var(--color-burnished-gold);
+        border-bottom: 1px solid var(--color-burnished-gold);
+    }
+    .cost-label {
+        font-family: var(--font-sans);
+        font-size: var(--text-caption);
+        color: var(--color-silver-wash);
+        display: block;
+        margin-bottom: var(--spacing-8);
+    }
+    .cost-amount {
+        font-family: var(--color-serif, var(--font-serif));
+        font-weight: 400;
+        font-size: var(--text-heading);
+        color: var(--color-burnished-gold);
+        display: block;
+    }
+    .cost-note {
+        font-family: var(--font-sans);
+        font-size: var(--text-caption);
+        color: var(--color-silver-wash);
+        display: block;
+        margin-top: var(--spacing-8);
+    }
+
+    /* ═══ Breakdown ═══ */
+    .score-breakdown {
+        margin-bottom: var(--spacing-48);
+    }
+    .breakdown-title {
+        font-family: var(--font-serif);
+        font-style: italic;
+        font-size: var(--text-subheading);
+        color: var(--color-letterpress-black);
+        margin-bottom: var(--spacing-24);
+    }
+    .breakdown-bars {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-16);
+    }
+    .breakdown-row {
+        display: grid;
+        grid-template-columns: 180px 1fr 40px;
+        align-items: center;
+        gap: var(--spacing-16);
+    }
+    .breakdown-label {
+        font-family: var(--font-serif);
+        font-size: var(--text-body-sm);
+        color: var(--color-letterpress-black);
+    }
+    .breakdown-bar {
+        height: 1px;
+        background: rgba(0, 0, 0, 0.08);
+        position: relative;
+    }
+    .breakdown-fill {
+        height: 1px;
+        background: var(--color-burnished-gold);
+    }
+    .breakdown-score {
+        font-family: var(--font-sans);
+        font-size: var(--text-caption);
+        color: var(--color-silver-wash);
+        text-align: right;
+    }
+    .breakdown-note {
+        font-family: var(--font-serif);
+        font-style: italic;
+        font-size: var(--text-body-sm);
+        color: var(--color-silver-wash);
+        margin-top: var(--spacing-24);
+    }
+
+    /* ═══ Email Gate ═══ */
+    .email-gate {
+        padding: var(--spacing-40);
+        background: var(--color-paper);
+        border-top: 1px solid var(--color-letterpress-black);
+        border-bottom: 1px solid var(--color-letterpress-black);
+        margin-bottom: var(--spacing-48);
+        text-align: center;
+    }
+    .gate-heading {
+        font-family: var(--font-serif);
+        font-weight: 400;
+        font-size: var(--text-subheading);
+        color: var(--color-letterpress-black);
+        margin-bottom: var(--spacing-16);
+    }
+    .gate-body {
+        font-family: var(--font-serif);
+        font-size: var(--text-body-sm);
+        line-height: var(--leading-body);
+        color: rgba(0, 0, 0, 0.6);
+        max-width: 400px;
+        margin: 0 auto var(--spacing-24);
+    }
+    .gate-form {
+        display: flex;
+        gap: var(--spacing-8);
+        justify-content: center;
+        flex-wrap: wrap;
+    }
+    .gate-form input[type="email"] {
+        font-family: var(--font-sans);
+        font-size: var(--text-body-sm);
+        padding: 10px 16px;
+        border: 1px solid rgba(0, 0, 0, 0.2);
+        background: var(--color-vellum-white);
+        color: var(--color-letterpress-black);
+        border-radius: 0;
+        min-width: 240px;
+    }
+    .gate-form input[type="email"]:focus {
+        outline: none;
+        border-color: var(--color-burnished-gold);
+    }
+
+    /* ═══ Results CTA ═══ */
+    .results-cta {
+        text-align: center;
+        padding: var(--spacing-48) 0;
+    }
+    .cta-heading {
+        font-family: var(--font-serif);
+        font-weight: 400;
+        font-size: var(--text-subheading);
+        line-height: var(--leading-display);
+        color: var(--color-letterpress-black);
+        margin-bottom: var(--spacing-16);
+    }
+    .cta-body {
+        font-family: var(--font-serif);
+        font-size: var(--text-body-sm);
+        line-height: var(--leading-body);
+        color: rgba(0, 0, 0, 0.6);
+        max-width: 400px;
+        margin: 0 auto var(--spacing-24);
+    }
+
+    /* ═══ Responsive ═══ */
+    @media (max-width: 900px) {
+        .intro {
+            padding: var(--spacing-48) var(--spacing-24);
+        }
+        .quiz {
+            padding: var(--spacing-32) var(--spacing-24) var(--spacing-48);
+        }
+        .results {
+            padding: var(--spacing-48) var(--spacing-24);
+        }
+        .breakdown-row {
+            grid-template-columns: 1fr;
+            gap: var(--spacing-8);
+        }
+        .breakdown-score {
+            text-align: left;
+        }
+        .gate-form {
+            flex-direction: column;
+        }
+        .gate-form input[type="email"] {
+            min-width: 100%;
+        }
+    }
+</style>
