@@ -1,17 +1,17 @@
 <svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
   <!-- Dynamic Masks for high-contrast transparent cuts (works on both black & white backgrounds) -->
   <defs>
-    <!-- Gecko Mask: cuts out diamond bones and eye -->
+    <!-- Gecko Mask: cuts out diamond bones and eye (offset x+3 to match nudged Gecko) -->
     <mask id="gecko-mask">
-      <!-- Allow everything (white is visible) -->
+      <!-- Allow everything -->
       <rect x="0" y="0" width="120" height="120" fill="white" />
-      <!-- Cutouts (black is transparent/cutout) -->
+      <!-- Cutouts (black is transparent) -->
       <!-- Backbone diamond 1 -->
-      <path d="M 81 60 L 85 57.5 L 89 60 L 85 62.5 Z" fill="black" />
+      <path d="M 84 60 L 88 57.5 L 92 60 L 88 62.5 Z" fill="black" />
       <!-- Backbone diamond 2 -->
-      <path d="M 87 60 L 91 57.5 L 95 60 L 91 62.5 Z" fill="black" />
+      <path d="M 90 60 L 94 57.5 L 98 60 L 94 62.5 Z" fill="black" />
       <!-- Eye -->
-      <circle cx="77" cy="60" r="0.8" fill="black" />
+      <circle cx="80" cy="60" r="0.8" fill="black" />
     </mask>
 
     <!-- Bird Mask: cuts out wing slits and eye -->
@@ -70,35 +70,31 @@
     <path d="M 26 62 L 18 65"/>
   </g>
 
-  <!-- ══ RIGHT-RIGHT: Tribal Horned Gecko (Horned Lizard) ══ -->
+  <!-- ══ RIGHT-RIGHT: Tribal Gecko (Nudged x+3 & Isolated) ══ -->
   <g fill="currentColor">
-    <!-- Body (masked for backbone) -->
-    <ellipse cx="88" cy="60" rx="9" ry="3.8" mask="url(#gecko-mask)"/>
+    <!-- Body (X nudged from 88 to 91, mask applied) -->
+    <ellipse cx="91" cy="60" rx="9" ry="3.8" mask="url(#gecko-mask)"/>
     
-    <!-- Geometric head (masked for eye) -->
-    <path d="M 81 60 L 76 56 L 72 60 L 76 64 Z" mask="url(#gecko-mask)"/>
-    
-    <!-- Curved Horns/Ears (Horned Toad signature detail) -->
-    <path d="M 76 56 Q 78 51 75 48" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/>
-    <path d="M 76 64 Q 78 69 75 72" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+    <!-- Geometric head (X nudged from 76 to 79, mask applied) -->
+    <path d="M 84 60 L 79 56 L 75 60 L 79 64 Z" mask="url(#gecko-mask)"/>
 
-    <!-- Splayed limbs (mirrored) -->
-    <path d="M 83.5 56.5 L 79.5 50.5 M 83.5 63.5 L 79.5 69.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
-    <path d="M 91.5 56.5 L 95.5 50.5 M 91.5 63.5 L 95.5 69.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+    <!-- Splayed limbs (X nudged by +3) -->
+    <path d="M 86.5 56.5 L 82.5 50.5 M 86.5 63.5 L 82.5 69.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+    <path d="M 94.5 56.5 L 98.5 50.5 M 94.5 63.5 L 98.5 69.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
 
-    <!-- Horizontal tribal foot T-bars (blocky & high-contrast) -->
-    <line x1="77.5" y1="50.5" x2="81.5" y2="50.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-    <line x1="77.5" y1="69.5" x2="81.5" y2="69.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-    <line x1="93.5" y1="50.5" x2="97.5" y2="50.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-    <line x1="93.5" y1="69.5" x2="97.5" y2="69.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    <!-- Horizontal tribal foot T-bars (X nudged by +3) -->
+    <line x1="80.5" y1="50.5" x2="84.5" y2="50.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    <line x1="80.5" y1="69.5" x2="84.5" y2="69.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    <line x1="96.5" y1="50.5" x2="100.5" y2="50.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    <line x1="96.5" y1="69.5" x2="100.5" y2="69.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
 
-    <!-- Symmetrical wavy tail curving away from dividers -->
-    <path d="M 97 60 C 103 59 105 52 101 48 C 97 44 93 48 95 51" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>
+    <!-- Symmetrical tail curving away — start isolated at 100,60 (X nudged by +3, lifted to prevent leg touch) -->
+    <path d="M 100 60 C 106 59 108 52 104 48 C 100 44 96 48 98 51" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>
   </g>
 
   <!-- ══ BOTTOM-CENTER: Triangle with Precision Chevron Waves ══ -->
   <polygon points="60,72 36,104 84,104" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/>
-  <g clip-path="url(#bottom-triangle)" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none">
+  <g clip-path="url(#bottom-triangle)" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none">
     <path d="M 30 76 L 36 82 L 42 76 L 48 82 L 54 76 L 60 82 L 66 76 L 72 82 L 78 76 L 84 82 L 90 76"/>
     <path d="M 30 84 L 36 90 L 42 84 L 48 90 L 54 84 L 60 90 L 66 84 L 72 90 L 78 84 L 84 90 L 90 84"/>
     <path d="M 30 92 L 36 98 L 42 92 L 48 98 L 54 92 L 60 98 L 66 92 L 72 98 L 78 92 L 84 98 L 90 92"/>
