@@ -164,7 +164,7 @@ export default function Clients() {
 											<tr>
 												<td>
 													<A
-														href={`/clients/${c.id}`}
+														href={`/admin/clients/${c.id}`}
 														class="gold"
 													>
 														{c.name}

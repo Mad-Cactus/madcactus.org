@@ -108,7 +108,7 @@ export default function Projects() {
 										{(p) => (
 											<tr>
 												<td>
-													<A href={`/projects/${p.id}`} class="gold">{p.name}</A>
+													<A href={`/admin/projects/${p.id}`} class="gold">{p.name}</A>
 												</td>
 												<td class="muted">{p.client_name}</td>
 												<td style={{ "text-transform": "capitalize" }}>{p.engagement_type}</td>

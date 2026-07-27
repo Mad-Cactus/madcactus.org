@@ -219,7 +219,7 @@ export default function Home() {
 													</td>
 													<td>
 														<A
-															href={`/projects/${e.project_id}`}
+															href={`/admin/projects/${e.project_id}`}
 															class="gold"
 														>
 															{e.project_name}
