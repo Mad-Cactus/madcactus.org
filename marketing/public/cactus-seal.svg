@@ -1,5 +1,5 @@
 <svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <!-- Desert heraldic seal — FMR saltire (X) division with Native American tribal elements -->
+  <!-- Desert heraldic seal — Precision Geometric Tribal Redesign -->
 
   <!-- Outer ring -->
   <circle cx="60" cy="60" r="58" stroke="currentColor" stroke-width="2" fill="none"/>
@@ -13,126 +13,85 @@
   <!-- Center junction ornament -->
   <circle cx="60" cy="60" r="3.5" stroke="currentColor" stroke-width="1" fill="none"/>
 
-  <!-- ══ TOP-CENTER: Tribal Saguaro (Geometric native style) ══ -->
-  <g stroke="currentColor" stroke-linecap="round" fill="none">
-    <!-- Main Saguaro outline -->
-    <path d="M 56 46 V 20 C 56 16 64 16 64 20 V 46" stroke-width="2"/>
-    <!-- Vertical rib line inside trunk -->
-    <path d="M 60 19 V 46" stroke-width="1.2"/>
-    
-    <!-- Left arm outline -->
-    <path d="M 56 34 H 48 C 44 34 44 22 48 22 V 29" stroke-width="2"/>
-    <path d="M 48 28 V 24" stroke-width="1.2"/>
-    
-    <!-- Right arm outline -->
-    <path d="M 64 30 H 72 C 76 30 76 18 72 18 V 25" stroke-width="2"/>
-    <path d="M 72 24 V 20" stroke-width="1.2"/>
-
-    <!-- Ground line -->
-    <rect x="46" y="46" width="28" height="1.5" fill="currentColor" stroke="none"/>
-
-    <!-- Needles / Spikes (tribal cross-hatch needles) -->
-    <!-- Trunk needles -->
-    <path d="M 56 40 H 53 M 56 30 H 53 M 56 24 H 53" stroke-width="1"/>
-    <path d="M 64 42 H 67 M 64 36 H 67 M 64 26 H 67" stroke-width="1"/>
-    <!-- Left arm needles -->
-    <path d="M 44 26 H 41 M 48 22 V 19" stroke-width="1"/>
-    <!-- Right arm needles -->
-    <path d="M 76 22 H 79 M 72 18 V 15" stroke-width="1"/>
-  </g>
-
-  <!-- Flanking Tribal Suns / Star Motifs inside top wedge -->
+  <!-- ══ TOP-CENTER: Tribal Saguaro (Perfect Symmetry) ══ -->
   <g fill="currentColor">
-    <!-- Left sun (42, 22) -->
-    <circle cx="41" cy="21" r="2"/>
-    <g stroke="currentColor" stroke-width="1" stroke-linecap="round">
-      <line x1="41" y1="16" x2="41" y2="18"/>
-      <line x1="41" y1="24" x2="41" y2="26"/>
-      <line x1="36" y1="21" x2="38" y2="21"/>
-      <line x1="44" y1="21" x2="46" y2="21"/>
-    </g>
-    <!-- Right sun (78, 22) -->
-    <circle cx="79" cy="21" r="2"/>
-    <g stroke="currentColor" stroke-width="1" stroke-linecap="round">
-      <line x1="79" y1="16" x2="79" y2="18"/>
-      <line x1="79" y1="24" x2="79" y2="26"/>
-      <line x1="74" y1="21" x2="76" y2="21"/>
-      <line x1="82" y1="21" x2="84" y2="21"/>
-    </g>
+    <!-- Symmetric central trunk and arms -->
+    <path d="M 57 48 V 32 H 51 C 49 32 49 22 53 22 Q 55 22 55 26 V 28 H 57 V 17 C 57 14 63 17 63 17 V 28 H 65 V 26 Q 65 22 67 22 C 71 22 71 32 67 32 H 63 V 48 Z"/>
+    
+    <!-- Minimal crisp needles (exact coordinates) -->
+    <path d="M 49 26 H 46 M 71 26 H 74 M 55 38 H 53 M 65 38 H 67" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    
+    <!-- Ground plane line -->
+    <line x1="48" y1="48" x2="72" y2="48" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
   </g>
 
-  <!-- ══ LEFT-LEFT: Tribal Scorpion (Beaded/Crescent style) ══ -->
-  <g stroke="currentColor" stroke-linecap="round" fill="none">
-    <!-- Abdomen outline (broad oval) -->
-    <path d="M 28 60 C 28 54 38 54 38 60 C 38 66 28 66 28 60 Z" stroke-width="2"/>
-    <!-- Internal cross rib/hatching -->
-    <path d="M 31 55 V 65" stroke-width="1.2"/>
-    <path d="M 35 55 V 65" stroke-width="1.2"/>
-    <circle cx="34" cy="60" r="1" fill="currentColor"/>
+  <!-- ══ LEFT-LEFT: Tribal Scorpion (Geometrically Polished) ══ -->
+  <g fill="currentColor">
+    <!-- Symmetrical abdomen body segments -->
+    <ellipse cx="32" cy="60" rx="6" ry="3.5"/>
+    <rect x="29" y="57" width="1.2" height="6" fill="#ffffff" stroke="none"/>
+    <rect x="32" y="56" width="1.2" height="8" fill="#ffffff" stroke="none"/>
+    <rect x="35" y="57" width="1.2" height="6" fill="#ffffff" stroke="none"/>
 
-    <!-- Head block -->
-    <path d="M 28 60 L 23 57 L 23 63 Z" fill="currentColor"/>
+    <!-- Head -->
+    <path d="M 38 60 L 42 57 L 42 63 Z"/>
 
-    <!-- Scorpion claws (bold geometric crescents) -->
-    <path d="M 23 58 C 17 56 12 50 12 44 Q 9 44 9 48 C 10 54 17 58 23 58" fill="currentColor" stroke="none"/>
-    <path d="M 23 62 C 17 64 12 70 12 76 Q 9 70 9 66 C 10 60 17 62 23 62" fill="currentColor" stroke="none"/>
-    <!-- Symmetrical needle/pincer inside claw -->
-    <path d="M 12 44 C 13 48 16 52 23 54" stroke-width="1"/>
-    <path d="M 12 76 C 13 72 16 68 23 66" stroke-width="1"/>
+    <!-- Beautiful, clean circular claws -->
+    <path d="M 40 58.5 C 42 56 45 56 44 50" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/>
+    <path d="M 40 61.5 C 42 64 45 64 44 70" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/>
+    <circle cx="44" cy="50" r="1.5"/>
+    <circle cx="44" cy="70" r="1.5"/>
 
-    <!-- Beaded tail joints (diminishing circles) -->
-    <circle cx="41" cy="57" r="2.8" fill="currentColor" stroke="none"/>
-    <circle cx="44" cy="52" r="2.2" fill="currentColor" stroke="none"/>
-    <circle cx="45" cy="46" r="1.8" fill="currentColor" stroke="none"/>
-    <circle cx="43" cy="41" r="1.5" fill="currentColor" stroke="none"/>
-    <circle cx="39" cy="37" r="1.2" fill="currentColor" stroke="none"/>
-    <!-- Stinger hook -->
-    <path d="M 38 37 C 34 37 31 39 32 44 C 34 41 36 39 38 37 Z" fill="currentColor" stroke="none"/>
+    <!-- Perfectly smooth circular tail arc (radius based) -->
+    <path d="M 28 60 A 10 10 0 0 1 28 40 A 5 5 0 0 1 34 44" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>
+    <!-- Stinger tip -->
+    <path d="M 34 44 L 37 41 L 34 39 Z"/>
   </g>
 
-  <!-- ══ RIGHT-RIGHT: Tribal Gecko / Kokopelli Lizard ══ -->
-  <g stroke="currentColor" stroke-linecap="round" fill="none">
-    <!-- Abdomen outline -->
-    <path d="M 82 60 C 82 54 94 54 94 60 C 94 66 82 66 82 60 Z" stroke-width="2"/>
-    <!-- Diamond backbone detail (classic Native American geometry) -->
-    <path d="M 82 60 L 88 56 L 94 60 L 88 64 Z" stroke-width="1"/>
-    <path d="M 88 56 V 64" stroke-width="1"/>
-    <path d="M 82 60 H 94" stroke-width="1"/>
-    <circle cx="88" cy="60" r="1.2" fill="currentColor" stroke="none"/>
+  <!-- ══ RIGHT-RIGHT: Tribal Gecko / Lizard (Precision Symmetrical) ══ -->
+  <g fill="currentColor">
+    <!-- Segmented diamond body -->
+    <ellipse cx="88" cy="60" rx="9" ry="3.8"/>
+    <!-- Elegant tribal backbone diamond mask cuts -->
+    <path d="M 81 60 L 85 57.5 L 89 60 L 85 62.5 Z" fill="#ffffff" stroke="none"/>
+    <path d="M 87 60 L 91 57.5 L 95 60 L 91 62.5 Z" fill="#ffffff" stroke="none"/>
 
-    <!-- Pointed geometric head -->
-    <path d="M 94 60 L 100 56 L 100 64 Z" fill="currentColor"/>
-    <!-- Eyes -->
-    <circle cx="97" cy="58" r="0.8" fill="#ffffff" stroke="none"/>
-    <circle cx="97" cy="62" r="0.8" fill="#ffffff" stroke="none"/>
+    <!-- Head facing center -->
+    <path d="M 79 60 L 73 57 L 73 63 Z"/>
 
-    <!-- Geometric splayed legs (thick outlines) -->
-    <path d="M 85 55 V 47 H 81" stroke-width="2"/>
-    <path d="M 85 65 V 73 H 81" stroke-width="2"/>
-    <path d="M 91 55 V 47 H 95" stroke-width="2"/>
-    <path d="M 91 65 V 73 H 95" stroke-width="2"/>
-    <!-- Splayed geometric toes -->
-    <g stroke-width="0.8">
-      <path d="M 81 47 L 79 45 M 81 47 L 81 44 M 81 47 L 78 47"/>
-      <path d="M 81 73 L 79 75 M 81 73 L 81 76 M 81 73 L 78 73"/>
-      <path d="M 95 47 L 97 45 M 95 47 L 95 44 M 95 47 L 98 47"/>
-      <path d="M 95 73 L 97 75 M 95 73 L 95 76 M 95 73 L 98 73"/>
-    </g>
+    <!-- Clean splayed limbs (mathematically mirrored) -->
+    <!-- Front limbs -->
+    <path d="M 83.5 56.5 L 79.5 50.5 M 83.5 63.5 L 79.5 69.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+    <!-- Back limbs -->
+    <path d="M 91.5 56.5 L 95.5 50.5 M 91.5 63.5 L 95.5 69.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
 
-    <!-- Concentric spiral tail curving left (Kokopelli style) -->
-    <path d="M 82 60 A 8 8 0 0 0 74 52 A 6 6 0 0 0 80 46 A 4 4 0 0 0 84 51 A 2 2 0 0 0 82 53" stroke-width="2"/>
+    <!-- Bold, polished horizontal foot plates -->
+    <line x1="77.5" y1="50.5" x2="81.5" y2="50.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    <line x1="77.5" y1="69.5" x2="81.5" y2="69.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    <line x1="93.5" y1="50.5" x2="97.5" y2="50.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    <line x1="93.5" y1="69.5" x2="97.5" y2="69.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+
+    <!-- Smooth waving tail curving away from dividers -->
+    <path d="M 97 60 C 103 59 105 52 101 48 C 97 44 93 48 95 51" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>
   </g>
 
-  <!-- ══ BOTTOM-CENTER: Tribal Diamond & Wave/Water pattern ══ -->
-  <!-- Diamond Frame -->
-  <path d="M 60 76 L 92 90 L 60 106 L 28 90 Z" stroke="currentColor" stroke-width="1.5" fill="none"/>
-  <!-- Elegant diagonal squiggles (Native American lightning/water) -->
-  <g stroke="currentColor" stroke-dasharray="1000" stroke-width="1.2" fill="none" stroke-linejoin="miter">
-    <!-- Diagonal Zigzag 1 (upper-middle) -->
-    <path d="M 34 102 L 38 96 L 44 100 L 48 94 L 54 98 L 60 92 L 66 96 L 70 90 L 76 94 L 80 88 L 86 92"/>
-    <!-- Diagonal Zigzag 2 (upper) -->
-    <path d="M 40 94 L 44 88 L 50 92 L 54 86 L 60 90 L 64 84 L 70 88 L 74 82 L 80 86"/>
-    <!-- Diagonal Zigzag 3 (lower) -->
-    <path d="M 28 110 L 32 104 L 38 108 L 42 102 L 48 106 L 52 100 L 58 104 L 62 98 L 68 102 L 72 96 L 78 100"/>
+  <!-- ══ BOTTOM-CENTER: Triangle with Precision Chevron Waves ══ -->
+  <!-- Clip path to keep chevrons strictly bound within the bottom wedge -->
+  <defs>
+    <clipPath id="bottom-triangle">
+      <!-- Triangle vertex points strictly within lower 45-deg diagonal limits -->
+      <polygon points="60,73.5 38.5,101 81.5,101"/>
+    </clipPath>
+  </defs>
+
+  <!-- Solid clean triangle container -->
+  <polygon points="60,72 36,104 84,104" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/>
+
+  <!-- Perfectly aligned parallel tribal chevron paths (lightning/water motif) -->
+  <g clip-path="url(#bottom-triangle)" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M 30 76 L 36 82 L 42 76 L 48 82 L 54 76 L 60 82 L 66 76 L 72 82 L 78 76 L 84 82 L 90 76"/>
+    <path d="M 30 84 L 36 90 L 42 84 L 48 90 L 54 84 L 60 90 L 66 84 L 72 90 L 78 84 L 84 90 L 90 84"/>
+    <path d="M 30 92 L 36 98 L 42 92 L 48 98 L 54 92 L 60 98 L 66 92 L 72 98 L 78 92 L 84 98 L 90 92"/>
+    <path d="M 30 100 L 36 106 L 42 100 L 48 106 L 54 100 L 60 106 L 66 100 L 72 106 L 78 100 L 84 106 L 90 100"/>
   </g>
 </svg>
