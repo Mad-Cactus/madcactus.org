@@ -27,7 +27,7 @@ const Layout: ParentComponent<{ user?: { email?: string } | null }> = (props) =>
 						{(link) => (
 							<A
 								href={link.href}
-								end={link.href === "/"}
+								end={link.href === "/admin"}
 								class="nav-link"
 								activeClass="active"
 							>
