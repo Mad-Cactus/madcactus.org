@@ -16,15 +16,7 @@ export default function ClientLogin() {
 	}
 
 	return (
-		<div
-			style={{
-				display: "flex",
-				"min-height": "100vh",
-				"align-items": "center",
-				"justify-content": "center",
-				background: "#0a0a0a",
-			}}
-		>
+		<div class="login-shell">
 			<Title>Client Login — Mad Cactus</Title>
 			<div
 				class="card"
@@ -35,10 +27,14 @@ export default function ClientLogin() {
 					"margin": "20px",
 				}}
 			>
-				<div class="sidebar-brand" style={{ "margin-bottom": "24px", "font-size": "20px" }}>
-					Mad Cactus <span>· Client Portal</span>
+				<div style={{ display: "flex", "align-items": "center", gap: "12px", "margin-bottom": "32px" }}>
+					<img src="/cactus-seal.svg" alt="Mad Cactus" style={{ width: "40px", height: "40px" }} />
+					<div>
+						<div style={{ "font-family": "var(--font-serif)", "font-size": "20px" }}>Mad Cactus</div>
+						<div style={{ "font-family": "var(--font-sans)", "font-size": "9px", "letter-spacing": "1.5px", "text-transform": "uppercase", color: "var(--text-subtle)" }}>Client Portal</div>
+					</div>
 				</div>
-				<h1 style={{ "font-size": "18px", "margin-bottom": "8px" }}>Sign in</h1>
+				<h1 style={{ "font-family": "var(--font-serif)", "font-size": "22px", "margin-bottom": "8px" }}>Sign in</h1>
 				<p class="muted" style={{ "margin-bottom": "24px", "font-size": "14px" }}>
 					Access your project documents, invoices, and status.
 				</p>

@@ -12,8 +12,12 @@ const PortalLayout: ParentComponent<{ user?: { name?: string; email?: string } |
 	return (
 		<div class="layout">
 			<aside class="sidebar">
-				<div class="sidebar-brand">
-					Mad Cactus <span>· Client Portal</span>
+				<div class="sidebar-logo">
+					<img src="/cactus-seal.svg" alt="Mad Cactus" />
+					<div class="sidebar-logo-text">
+						Mad Cactus
+						<small>Client Portal</small>
+					</div>
 				</div>
 				<nav class="sidebar-nav">
 					<For each={links}>

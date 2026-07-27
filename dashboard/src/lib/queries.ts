@@ -1,5 +1,5 @@
 import { query, action, redirect } from "@solidjs/router";
-import { getCurrentUser, getAuthedClient, signIn, signOut } from "./session";
+import { getCurrentUser, getAuthedClient, signIn } from "./session";
 import type { EntryWithProject, Project, TimeEntry } from "./supabase";
 
 // ── Auth ──────────────────────────────────────────────────────────
@@ -17,12 +17,6 @@ export const loginAction = action(async (formData: FormData) => {
 	if (result.error) return { error: result.error };
 	throw redirect("/admin");
 }, "login");
-
-export const logoutAction = action(async () => {
-	"use server";
-	await signOut();
-	throw redirect("/admin/login");
-}, "logout");
 
 // ── Projects ──────────────────────────────────────────────────────
 

@@ -59,10 +59,10 @@ export default function PortalDocuments() {
 					style={{
 						width: "100%",
 						padding: "12px 16px",
-						background: "rgba(0,0,0,0.3)",
-						border: "1px solid rgba(255,255,255,0.1)",
-						"border-radius": "8px",
-						color: "#fff",
+						background: "var(--bg-card)",
+						border: "1px solid rgba(0,0,0,0.12)",
+						"border-radius": "0px",
+						color: "var(--text)",
 						"font-size": "14px",
 						outline: "none",
 					}}
@@ -84,7 +84,7 @@ export default function PortalDocuments() {
 						</div>
 						<For each={searchResults() ?? []}>
 							{(hit) => (
-								<div class="card" style={{ display: "flex", "align-items": "flex-start", gap: "16px", padding: "20px", border: "1px solid rgba(201,168,76,0.2)" }}>
+								<div class="card" style={{ display: "flex", "align-items": "flex-start", gap: "16px", padding: "20px" }}>
 									<div style={{ flex: "1" }}>
 										<div style={{ "font-size": "15px", "font-weight": "500" }}>
 											{hit.title}

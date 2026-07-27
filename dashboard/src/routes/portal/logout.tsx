@@ -1,3 +1,9 @@
-import { clientLogoutAction } from "~/lib/client-queries";
+import { clientSignOut } from "~/lib/client-session";
 
-export const POST = clientLogoutAction;
+export async function POST() {
+	await clientSignOut();
+	return new Response(null, {
+		status: 302,
+		headers: { Location: "/portal/login" },
+	});
+}

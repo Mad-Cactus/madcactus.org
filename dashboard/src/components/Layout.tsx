@@ -19,8 +19,12 @@ const Layout: ParentComponent<{ user?: { email?: string } | null }> = (props) =>
 	return (
 		<div class="layout">
 			<aside class="sidebar">
-				<div class="sidebar-brand">
-					Mad Cactus <span>· Portal</span>
+				<div class="sidebar-logo">
+					<img src="/cactus-seal.svg" alt="Mad Cactus" />
+					<div class="sidebar-logo-text">
+						Mad Cactus
+						<small>Portal</small>
+					</div>
 				</div>
 				<nav class="sidebar-nav">
 					<For each={links}>

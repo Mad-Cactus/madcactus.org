@@ -1,3 +1,9 @@
-import { logoutAction } from "~/lib/queries";
+import { signOut } from "~/lib/session";
 
-export const POST = logoutAction;
+export async function POST() {
+	await signOut();
+	return new Response(null, {
+		status: 302,
+		headers: { Location: "/admin/login" },
+	});
+}

@@ -99,7 +99,6 @@ import Footer from "../components/Footer.astro";
         {/* ════════ DARK BAND — PHILOSOPHY ════════ */}
         <div class="dark-band">
             <div class="dark-band-inner">
-                <p class="dark-band-label">THE PROMISE</p>
                 <h2 class="dark-band-headline">
                     If you can't hand off tasks<br />
                     to agents, <em>you don't pay.</em>
@@ -156,10 +155,6 @@ import Footer from "../components/Footer.astro";
 
         {/* ════════ SCORECARD CTA ════════ */}
         <section class="lead-section">
-            <div class="section-header">
-                <h2 class="section-title">Start Here</h2>
-                <hr class="section-rule" />
-            </div>
             <div class="lead-inner">
                 <div class="lead-left">
                     <h3 class="lead-heading">
@@ -186,16 +181,34 @@ import Footer from "../components/Footer.astro";
 
 <style is:global>
     /* ═══ Hero ═══ */
+    /* ponytail: on this page the top bar overlays the hero so the painting bleeds top + right; scoped here so /iu and /scorecard keep flow layout. Upgrade path: move to a shared page wrapper if more pages want it. */
+    .top-bar {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 30;
+        background: transparent;
+    }
     .hero {
-        padding: var(--spacing-64) var(--spacing-64) var(--spacing-128);
+        padding: 0;
+        min-height: 100vh;
     }
     .hero-inner {
-        max-width: var(--page-max-width);
-        margin: 0 auto;
-        display: grid;
-        grid-template-columns: 2fr 3fr;
+        display: flex;
+        align-items: stretch;
+        min-height: 100vh;
         gap: var(--spacing-48);
-        align-items: center;
+    }
+    .hero-text {
+        align-self: center;
+        margin-left: max(
+            var(--spacing-64),
+            calc((100vw - var(--page-max-width)) / 2 + var(--spacing-64))
+        );
+        max-width: 520px;
+        flex-shrink: 0;
+        padding-right: var(--spacing-32);
     }
     .hero-headline {
         font-family: var(--font-serif);
@@ -218,14 +231,31 @@ import Footer from "../components/Footer.astro";
         margin-bottom: var(--spacing-32);
     }
     .hero-plate {
-        height: 60vh;
-        min-height: 480px;
+        flex: 1;
+        min-width: 0;
+        min-height: 0;
         overflow: hidden;
     }
     .hero-plate img {
         width: 100%;
         height: 100%;
         object-fit: cover;
+    }
+    /* ponytail: scroll-tied parallax, progressive enhancement. No JS. Overscan height covers translateY gaps; @support guard avoids broken layout in older browsers. */
+    @supports (animation-timeline: scroll()) {
+        .hero-plate img {
+            height: 130%;
+            animation: hero-parallax linear both;
+            animation-timeline: scroll(root);
+        }
+        @keyframes hero-parallax {
+            from {
+                transform: translateY(-15%);
+            }
+            to {
+                transform: translateY(0);
+            }
+        }
     }
 
     /* ═══ Section Header ═══ */
@@ -439,16 +469,33 @@ import Footer from "../components/Footer.astro";
         .top-bar {
             padding: var(--spacing-24) var(--spacing-24);
         }
+        .top-bar {
+            position: static;
+        }
         .hero {
             padding: var(--spacing-32) var(--spacing-24) var(--spacing-80);
+            min-height: auto;
         }
         .hero-inner {
-            grid-template-columns: 1fr;
+            flex-direction: column;
+            align-items: stretch;
+            min-height: auto;
             gap: var(--spacing-32);
         }
+        .hero-text {
+            margin-left: 0;
+            max-width: none;
+            padding-right: 0;
+            align-self: auto;
+        }
         .hero-plate {
-            height: 300px;
-            min-height: 300px;
+            flex: none;
+            height: 340px;
+            min-height: 340px;
+        }
+        .hero-plate img {
+            height: 100%;
+            animation: none;
         }
         .section-header {
             padding: 0 var(--spacing-24);

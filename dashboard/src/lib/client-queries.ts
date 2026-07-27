@@ -1,5 +1,5 @@
 import { query, action, redirect } from "@solidjs/router";
-import { getClientClient, clientSignIn, clientSignOut } from "./client-session";
+import { getClientClient, clientSignIn } from "./client-session";
 import { generateApiKey, hashKey, keyPrefix } from "./crypto";
 import type {
 	ApiKey,
@@ -106,12 +106,6 @@ export const clientLoginAction = action(async (formData: FormData) => {
 	if (result.error) return { error: result.error };
 	throw redirect("/portal");
 }, "client-login");
-
-export const clientLogoutAction = action(async () => {
-	"use server";
-	await clientSignOut();
-	throw redirect("/portal/login");
-}, "client-logout");
 
 export const createApiKeyAction = action(async (formData: FormData) => {
 	"use server";

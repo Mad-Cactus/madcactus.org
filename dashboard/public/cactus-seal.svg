@@ -1,0 +1,103 @@
+<svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Dynamic Masks for high-contrast transparent cuts (works on both black & white backgrounds) -->
+  <defs>
+    <!-- Gecko Mask: cuts out diamond bones and eye (offset x+3 to match nudged Gecko) -->
+    <mask id="gecko-mask">
+      <!-- Allow everything -->
+      <rect x="0" y="0" width="120" height="120" fill="white" />
+      <!-- Cutouts (black is transparent) -->
+      <!-- Backbone diamond 1 -->
+      <path d="M 84 60 L 88 57.5 L 92 60 L 88 62.5 Z" fill="black" />
+      <!-- Backbone diamond 2 -->
+      <path d="M 90 60 L 94 57.5 L 98 60 L 94 62.5 Z" fill="black" />
+      <!-- Eye -->
+      <circle cx="80" cy="60" r="0.8" fill="black" />
+    </mask>
+
+    <!-- Bird Mask: cuts out wing slits and eye -->
+    <mask id="bird-mask">
+      <rect x="0" y="0" width="120" height="120" fill="white" />
+      <!-- Stylized wing cuts -->
+      <rect x="29" y="58" width="1.2" height="4" fill="black" />
+      <rect x="32" y="57" width="1.2" height="6" fill="black" />
+      <rect x="35" y="58" width="1.2" height="4" fill="black" />
+      <!-- Eye -->
+      <circle cx="39" cy="57" r="0.8" fill="black" />
+    </mask>
+
+    <!-- Bottom triangle clip boundary -->
+    <clipPath id="bottom-triangle">
+      <polygon points="60,73.5 38.5,101 81.5,101"/>
+    </clipPath>
+  </defs>
+
+  <!-- Outer ring -->
+  <circle cx="60" cy="60" r="58" stroke="currentColor" stroke-width="2" fill="none"/>
+  <!-- Inner ring -->
+  <circle cx="60" cy="60" r="52" stroke="currentColor" stroke-width="1" fill="none"/>
+
+  <!-- Bold X dividers (saltire — corner to corner at 45°) -->
+  <line x1="21" y1="21" x2="99" y2="99" stroke="currentColor" stroke-width="2"/>
+  <line x1="99" y1="21" x2="21" y2="99" stroke="currentColor" stroke-width="2"/>
+
+  <!-- Center junction ornament -->
+  <circle cx="60" cy="60" r="3.5" stroke="currentColor" stroke-width="1" fill="none"/>
+
+  <!-- ══ TOP-CENTER: Tribal Saguaro ══ -->
+  <g fill="currentColor">
+    <path d="M 57 48 V 32 H 51 C 49 32 49 22 53 22 Q 55 22 55 26 V 28 H 57 V 17 C 57 14 63 17 63 17 V 28 H 65 V 26 Q 65 22 67 22 C 71 22 71 32 67 32 H 63 V 48 Z"/>
+    <path d="M 49 26 H 46 M 71 26 H 74 M 55 38 H 53 M 65 38 H 67" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="48" y1="48" x2="72" y2="48" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+  </g>
+
+  <!-- ══ LEFT-LEFT: Tribal Bird (Symmetrical Pueblan Hawk / Thunderbird) ══ -->
+  <g fill="currentColor" mask="url(#bird-mask)">
+    <!-- Body -->
+    <ellipse cx="32" cy="60" rx="6.5" ry="3.5"/>
+    <!-- Head -->
+    <circle cx="39" cy="57" r="2.5"/>
+    <!-- Hooked predator beak -->
+    <path d="M 40.5 55.5 Q 44.5 56 44.5 59.5 Q 42 61 40 58.5 Z"/>
+    <!-- Upper Wing -->
+    <path d="M 33 57 C 32 50 26 46 21 47 C 23 51 28 53 32 57"/>
+    <!-- Lower Wing -->
+    <path d="M 33 63 C 32 70 26 74 21 73 C 23 69 28 67 32 63"/>
+  </g>
+  <!-- Tail feathers (separate lines so they are unmasked) -->
+  <g stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+    <path d="M 26 58 L 18 55"/>
+    <path d="M 26 60 L 16 60"/>
+    <path d="M 26 62 L 18 65"/>
+  </g>
+
+  <!-- ══ RIGHT-RIGHT: Tribal Gecko (Nudged x+3 & Isolated) ══ -->
+  <g fill="currentColor">
+    <!-- Body (X nudged from 88 to 91, mask applied) -->
+    <ellipse cx="91" cy="60" rx="9" ry="3.8" mask="url(#gecko-mask)"/>
+    
+    <!-- Geometric head (X nudged from 76 to 79, mask applied) -->
+    <path d="M 84 60 L 79 56 L 75 60 L 79 64 Z" mask="url(#gecko-mask)"/>
+
+    <!-- Splayed limbs (X nudged by +3) -->
+    <path d="M 86.5 56.5 L 82.5 50.5 M 86.5 63.5 L 82.5 69.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+    <path d="M 94.5 56.5 L 98.5 50.5 M 94.5 63.5 L 98.5 69.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+
+    <!-- Horizontal tribal foot T-bars (X nudged by +3) -->
+    <line x1="80.5" y1="50.5" x2="84.5" y2="50.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    <line x1="80.5" y1="69.5" x2="84.5" y2="69.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    <line x1="96.5" y1="50.5" x2="100.5" y2="50.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    <line x1="96.5" y1="69.5" x2="100.5" y2="69.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+
+    <!-- Symmetrical tail curving away — start isolated at 100,60 (X nudged by +3, lifted to prevent leg touch) -->
+    <path d="M 100 60 C 106 59 108 52 104 48 C 100 44 96 48 98 51" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>
+  </g>
+
+  <!-- ══ BOTTOM-CENTER: Triangle with Precision Chevron Waves ══ -->
+  <polygon points="60,72 36,104 84,104" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/>
+  <g clip-path="url(#bottom-triangle)" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none">
+    <path d="M 30 76 L 36 82 L 42 76 L 48 82 L 54 76 L 60 82 L 66 76 L 72 82 L 78 76 L 84 82 L 90 76"/>
+    <path d="M 30 84 L 36 90 L 42 84 L 48 90 L 54 84 L 60 90 L 66 84 L 72 90 L 78 84 L 84 90 L 90 84"/>
+    <path d="M 30 92 L 36 98 L 42 92 L 48 98 L 54 92 L 60 98 L 66 92 L 72 98 L 78 92 L 84 98 L 90 92"/>
+    <path d="M 30 100 L 36 106 L 42 100 L 48 106 L 54 100 L 60 106 L 66 100 L 72 106 L 78 100 L 84 106 L 90 100"/>
+  </g>
+</svg>

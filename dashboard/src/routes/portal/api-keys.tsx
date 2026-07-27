@@ -77,8 +77,8 @@ export default function PortalApiKeys() {
 					style={{
 						"margin-top": "32px",
 						"margin-bottom": "24px",
-						border: "1px solid #c9a84c",
-						"background": "rgba(201, 168, 76, 0.05)",
+						border: "1px solid var(--gold)",
+						"background": "rgba(188, 156, 92, 0.06)",
 					}}
 				>
 					<h3 style={{ "margin-bottom": "8px" }}>API Key Created</h3>
@@ -96,9 +96,9 @@ export default function PortalApiKeys() {
 							style={{
 								flex: "1",
 								padding: "10px 14px",
-								background: "rgba(0,0,0,0.4)",
+								background: "var(--bg-elevated)",
 								border: "1px solid rgba(255,255,255,0.1)",
-								"border-radius": "6px",
+								"border-radius": "0px",
 								"font-size": "13px",
 								"word-break": "break-all",
 							}}
@@ -197,9 +197,9 @@ export default function PortalApiKeys() {
 					</button>
 					<pre
 						style={{
-							background: "rgba(0,0,0,0.4)",
+							background: "var(--bg-elevated)",
 							border: "1px solid rgba(255,255,255,0.1)",
-							"border-radius": "6px",
+							"border-radius": "0px",
 							padding: "16px",
 							"padding-right": "60px",
 							"font-size": "12px",

@@ -148,7 +148,7 @@ export default function ProjectDetail() {
 
 															{/* Updates */}
 															<Show when={delv.updates.length > 0}>
-																<div style={{ "margin-top": "12px", "padding-left": "12px", "border-left": "2px solid rgba(201,168,76,0.2)" }}>
+																<div style={{ "margin-top": "12px", "padding-left": "12px", "border-left": "2px solid rgba(188,156,92,0.3)" }}>
 																	<For each={delv.updates}>
 																		{(upd) => (
 																			<div style={{ "margin-bottom": "8px" }}>
