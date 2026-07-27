@@ -1,32 +1,82 @@
 <svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Heraldic crest: agave at top, two coyotes rampant, MAD CACTUS below -->
+
   <!-- Outer circle -->
-  <circle cx="60" cy="60" r="58" stroke="currentColor" stroke-width="1" fill="none"/>
-  <!-- Inner circle -->
-  <circle cx="60" cy="60" r="52" stroke="currentColor" stroke-width="0.5" fill="none"/>
+  <circle cx="60" cy="60" r="58" stroke="currentColor" stroke-width="1.5" fill="none"/>
+  <!-- Inner ring -->
+  <circle cx="60" cy="60" r="54" stroke="currentColor" stroke-width="0.5" fill="none"/>
 
-  <!-- Cactus: stylized saguaro, centered -->
-  <!-- Main trunk -->
-  <path d="M60 28 L60 82" stroke="currentColor" stroke-width="3" stroke-linecap="round" fill="none"/>
-  <!-- Left arm -->
-  <path d="M60 48 C50 48 48 42 48 36 L48 30" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-  <!-- Right arm -->
-  <path d="M60 40 C70 40 72 34 72 28 L72 22" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-  <!-- Base pot line -->
-  <line x1="48" y1="82" x2="72" y2="82" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+  <!-- Agave plant — top center -->
+  <g stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none">
+    <!-- Center spike -->
+    <line x1="60" y1="14" x2="60" y2="26"/>
+    <!-- Left leaves -->
+    <path d="M60 26 C52 22 48 18 46 14"/>
+    <path d="M60 26 C54 24 50 22 48 19"/>
+    <path d="M60 28 C55 28 52 27 50 25"/>
+    <!-- Right leaves (mirrored) -->
+    <path d="M60 26 C68 22 72 18 74 14"/>
+    <path d="M60 26 C66 24 70 22 72 19"/>
+    <path d="M60 28 C65 28 68 27 70 25"/>
+  </g>
 
-  <!-- Top text arc: MAD CACTUS -->
-  <path id="topArc" d="M 18 60 A 42 42 0 0 1 102 60" fill="none"/>
-  <text font-family="'Playfair Display', Georgia, serif" font-size="9" letter-spacing="3" fill="currentColor">
-    <textPath href="#topArc" startOffset="50%" text-anchor="middle">MAD CACTUS</textPath>
+  <!-- Decorative flourish below agave -->
+  <line x1="48" y1="32" x2="72" y2="32" stroke="currentColor" stroke-width="0.5"/>
+
+  <!-- Left coyote — rampant, facing left -->
+  <g stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <!-- Head -->
+    <path d="M42 42 L36 40 L34 44 L38 46"/>
+    <!-- Snout -->
+    <path d="M36 40 L32 42 L34 44"/>
+    <!-- Ear -->
+    <path d="M40 40 L39 36 L42 38"/>
+    <!-- Body -->
+    <path d="M42 42 L50 44 L48 52"/>
+    <!-- Front legs (raised, rampant) -->
+    <path d="M48 44 L44 50"/>
+    <path d="M49 46 L46 52"/>
+    <!-- Back legs (planted) -->
+    <path d="M48 52 L44 58 L46 60"/>
+    <path d="M48 52 L50 58 L48 60"/>
+    <!-- Tail (curved up) -->
+    <path d="M50 44 L54 38 L52 34"/>
+  </g>
+
+  <!-- Right coyote — rampant, facing right (mirrored) -->
+  <g stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <!-- Head -->
+    <path d="M78 42 L84 40 L86 44 L82 46"/>
+    <!-- Snout -->
+    <path d="M84 40 L88 42 L86 44"/>
+    <!-- Ear -->
+    <path d="M80 40 L81 36 L78 38"/>
+    <!-- Body -->
+    <path d="M78 42 L70 44 L72 52"/>
+    <!-- Front legs (raised, rampant) -->
+    <path d="M72 44 L76 50"/>
+    <path d="M71 46 L74 52"/>
+    <!-- Back legs (planted) -->
+    <path d="M72 52 L76 58 L74 60"/>
+    <path d="M72 52 L70 58 L72 60"/>
+    <!-- Tail (curved up) -->
+    <path d="M70 44 L66 38 L68 34"/>
+  </g>
+
+  <!-- Heraldic divider line -->
+  <line x1="20" y1="68" x2="100" y2="68" stroke="currentColor" stroke-width="0.5"/>
+
+  <!-- Small decorative diamonds at divider ends -->
+  <path d="M20 66 L22 68 L20 70 L18 68 Z" stroke="currentColor" stroke-width="0.5" fill="none"/>
+  <path d="M100 66 L102 68 L100 70 L98 68 Z" stroke="currentColor" stroke-width="0.5" fill="none"/>
+
+  <!-- Bottom text arc: MAD CACTUS -->
+  <path id="bottomArc" d="M 16 60 A 44 44 0 0 0 104 60" fill="none"/>
+  <text font-family="'Playfair Display', Georgia, serif" font-size="8.5" letter-spacing="3.5" fill="currentColor">
+    <textPath href="#bottomArc" startOffset="50%" text-anchor="middle">MAD CACTUS</textPath>
   </text>
 
-  <!-- Bottom text arc: EST 2024 -->
-  <path id="botArc" d="M 22 60 A 38 38 0 0 0 98 60" fill="none"/>
-  <text font-family="'Playfair Display', Georgia, serif" font-style="italic" font-size="8" letter-spacing="2" fill="currentColor">
-    <textPath href="#botArc" startOffset="50%" text-anchor="middle">est. 2024</textPath>
-  </text>
-
-  <!-- Decorative dots flanking bottom text -->
-  <circle cx="22" cy="70" r="1" fill="currentColor"/>
-  <circle cx="98" cy="70" r="1" fill="currentColor"/>
+  <!-- Center ornament between coyotes -->
+  <circle cx="60" cy="56" r="2" stroke="currentColor" stroke-width="0.5" fill="none"/>
+  <circle cx="60" cy="56" r="0.5" fill="currentColor"/>
 </svg>
