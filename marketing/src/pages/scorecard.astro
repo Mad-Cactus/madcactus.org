@@ -393,15 +393,43 @@ import Footer from "../components/Footer.astro";
         results.scrollIntoView({ behavior: 'smooth' });
     }
 
-    // Email form — placeholder, wire to real service later
-    document.getElementById('emailForm').addEventListener('submit', (e) => {
+    // Email form — subscribes via Resend API on dashboard backend
+    document.getElementById('emailForm').addEventListener('submit', async (e) => {
         e.preventDefault();
+        const form = e.target;
+        const email = form.email.value.trim();
+        const btn = form.querySelector('button[type="submit"]');
         const gate = document.getElementById('emailGate');
-        gate.innerHTML = `
-            <h3 class="gate-heading">Check your inbox</h3>
-            <p class="gate-body">Your detailed action plan is on its way. You're also subscribed to <em>The Cactus Dispatch</em>.</p>
-        `;
-        // TODO: wire to email service (Beehiiv, ConvertKit, or Resend)
+
+        btn.textContent = 'Subscribing...';
+        btn.disabled = true;
+
+        try {
+            const API_URL = window.location.hostname === 'localhost'
+                ? 'http://localhost:3000/api/newsletter'
+                : 'https://madcactus.org/api/newsletter';
+
+            const res = await fetch(API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email }),
+            });
+            const data = await res.json();
+
+            if (data.ok) {
+                gate.innerHTML = `
+                    <h3 class="gate-heading">Check your inbox</h3>
+                    <p class="gate-body">You're subscribed to <em>The Cactus Dispatch</em>. Your detailed action plan is on its way.</p>
+                `;
+            } else {
+                throw new Error(data.error || 'Subscription failed');
+            }
+        } catch (err) {
+            gate.innerHTML = `
+                <h3 class="gate-heading">Something went wrong</h3>
+                <p class="gate-body">We couldn't subscribe you. Try again or email us directly at cpfeifer@madcactus.org.</p>
+            `;
+        }
     });
 </script>
 
