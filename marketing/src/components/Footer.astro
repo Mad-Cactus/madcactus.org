@@ -46,13 +46,12 @@
     .footer-wordmark {
         font-family: var(--font-serif);
         font-weight: 400;
-        font-size: clamp(80px, 14vw, 180px);
+        font-size: clamp(48px, 14vw, 180px);
         line-height: var(--leading-display);
         color: #ffffff;
         letter-spacing: -2px;
         order: 2;
         text-align: right;
-        white-space: nowrap;
     }
     .footer-meta {
         display: flex;
@@ -88,10 +87,18 @@
         .footer-brand {
             justify-content: center;
         }
+        .footer-wordmark {
+            font-size: clamp(40px, 10vw, 80px);
+        }
         .footer-meta {
             flex-direction: column;
             gap: var(--spacing-16);
             text-align: center;
+        }
+    }
+    @media (max-width: 480px) {
+        .footer-wordmark {
+            display: none;
         }
     }
 </style>

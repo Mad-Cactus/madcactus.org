@@ -148,7 +148,7 @@ export const getDashboardQuery = query(async () => {
 	}));
 
 	return {
-		projects: projects.data as Project[],
+		projects: projects.data ?? [],
 		weekTotal,
 		monthTotal,
 		entries,
