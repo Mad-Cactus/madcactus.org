@@ -1,5 +1,5 @@
 import { A } from "@solidjs/router";
-import { For, ParentComponent, Show } from "solid-js";
+import { For, ParentComponent, Show, createEffect } from "solid-js";
 
 const links = [
 	{ href: "/portal", label: "Overview" },
@@ -8,7 +8,16 @@ const links = [
 	{ href: "/portal/api-keys", label: "API Keys" },
 ];
 
-const PortalLayout: ParentComponent<{ user?: { name?: string; email?: string } | null }> = (props) => {
+const PortalLayout: ParentComponent<{ user?: { id?: string; name?: string; email?: string } | null }> = (props) => {
+	// Identify user in PostHog once loaded
+	createEffect(() => {
+		const u = props.user;
+		if (u?.id) (window as any).posthog?.identify(u.id, { email: u.email });
+	});
+
+	function handleLogoutForm(e: Event) {
+		(window as any).posthog?.reset();
+	}
 	return (
 		<div class="layout">
 			<aside class="sidebar">
@@ -42,7 +51,7 @@ const PortalLayout: ParentComponent<{ user?: { name?: string; email?: string } |
 							{props.user!.email}
 						</div>
 					</Show>
-					<form method="post" action="/portal/logout" style={{ display: "inline" }}>
+					<form method="post" action="/portal/logout" style={{ display: "inline" }} onSubmit={handleLogoutForm}>
 						<button type="submit">Sign out</button>
 					</form>
 				</div>
