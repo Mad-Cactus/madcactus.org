@@ -98,8 +98,6 @@ img {
     padding: var(--spacing-40) var(--spacing-64);
 }
 .top-bar-inner {
-    max-width: var(--page-max-width);
-    margin: 0 auto;
     display: flex;
     justify-content: flex-start;
     align-items: center;

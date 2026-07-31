@@ -1,6 +1,5 @@
-import { A, useNavigate } from "@solidjs/router";
-import { For, ParentComponent, Show, createEffect, createMemo } from "solid-js";
-import { signOut } from "~/lib/session";
+import { A } from "@solidjs/router";
+import { For, ParentComponent, Show, createEffect } from "solid-js";
 
 const links = [
 	{ href: "/admin", label: "Dashboard" },
@@ -8,12 +7,15 @@ const links = [
 	{ href: "/admin/clients", label: "Clients" },
 ];
 
-const Layout: ParentComponent<{ user?: { email?: string } | null }> = (props) => {
-	const navigate = useNavigate();
+const Layout: ParentComponent<{ user?: { id?: string; email?: string } | null }> = (props) => {
+	// Identify user in PostHog once loaded
+	createEffect(() => {
+		const u = props.user;
+		if (u?.id) (window as any).posthog?.identify(u.id, { email: u.email });
+	});
 
-	async function handleLogout() {
-		"use server";
-		await signOut();
+	function handleLogoutForm(e: Event) {
+		(window as any).posthog?.reset();
 	}
 
 	return (
@@ -44,7 +46,7 @@ const Layout: ParentComponent<{ user?: { email?: string } | null }> = (props) =>
 					<Show when={props.user?.email}>
 						<div style={{ "margin-bottom": "8px" }}>{props.user!.email}</div>
 					</Show>
-					<form method="post" action="/admin/logout" style={{ display: "inline" }}>
+					<form method="post" action="/admin/logout" style={{ display: "inline" }} onSubmit={handleLogoutForm}>
 						<button type="submit">Sign out</button>
 					</form>
 				</div>
