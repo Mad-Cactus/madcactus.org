@@ -1,6 +1,7 @@
 ---
 import "../styles/global.css";
 import Footer from "../components/Footer.astro";
+import Header from "../components/Header.astro";
 import PostHog from "../components/PostHog.astro";
 ---
 
@@ -18,20 +19,11 @@ import PostHog from "../components/PostHog.astro";
         <PostHog />
     </head>
     <body>
-        {/* ════════ TOP BAR ════════ */}
-        <header class="top-bar">
-            <div class="top-bar-inner">
-                <a href="/" class="logo-link">
-                    <img src="/cactus-seal.svg" alt="Mad Cactus" class="logo-seal" />
-                </a>
-                <a href="https://app.madcactus.org/portal/login" class="top-bar-signin">Sign In</a>
-            </div>
-        </header>
+        <Header />
 
         {/* ════════ INTRO ════════ */}
         <section class="intro">
             <div class="intro-inner">
-                <p class="label-sans" style="margin-bottom: var(--spacing-16);">Assessment — 5 minutes</p>
                 <h1 class="intro-headline">
                     How much is manual work<br />
                     <em>costing your firm?</em>
@@ -39,13 +31,8 @@ import PostHog from "../components/PostHog.astro";
                 <p class="intro-body">
                     Answer ten questions about your operations. Get a personalized
                     score showing where your team wastes the most time, the
- estimated annual cost, and where AI can have the biggest impact.
+                    estimated annual cost, and where AI can have the biggest impact.
                 </p>
-                <div class="intro-meta">
-                    <span>No email required to start</span>
-                    <span class="dot"></span>
-                    <span>Results in 5 minutes</span>
-                </div>
             </div>
         </section>
 
@@ -60,10 +47,10 @@ import PostHog from "../components/PostHog.astro";
                 <form id="scorecardForm">
                     {/* Q1 */}
                     <div class="question active" data-category="documents" data-q="1">
-                        <h2 class="question-text">How does your team create recurring documents — proposals, reports, contracts?</h2>
+                        <h2 class="question-text">When your team writes a proposal, report, or contract, what's the starting point?</h2>
                         <div class="answers">
                             <label><input type="radio" name="q1" value="3" /><span>From scratch every time</span></label>
-                            <label><input type="radio" name="q1" value="2" /><span>We have templates, but still heavy manual editing</span></label>
+                            <label><input type="radio" name="q1" value="2" /><span>We have templates but still manually edit most of it</span></label>
                             <label><input type="radio" name="q1" value="1" /><span>Mostly automated or generated from a system</span></label>
                         </div>
                     </div>
@@ -72,25 +59,25 @@ import PostHog from "../components/PostHog.astro";
                     <div class="question" data-category="data" data-q="2">
                         <h2 class="question-text">How much time does your team spend moving data between systems?</h2>
                         <div class="answers">
-                            <label><input type="radio" name="q2" value="3" /><span>Significant time, every single day</span></label>
+                            <label><input type="radio" name="q2" value="3" /><span>A lot, every day</span></label>
                             <label><input type="radio" name="q2" value="2" /><span>A few times per week</span></label>
-                            <label><input type="radio" name="q2" value="1" /><span>Minimal — most systems are integrated</span></label>
+                            <label><input type="radio" name="q2" value="1" /><span>Minimal, most systems are integrated</span></label>
                         </div>
                     </div>
 
                     {/* Q3 */}
                     <div class="question" data-category="knowledge" data-q="3">
-                        <h2 class="question-text">When someone needs internal information, what happens?</h2>
+                        <h2 class="question-text">When someone needs to find internal information, what happens?</h2>
                         <div class="answers">
                             <label><input type="radio" name="q3" value="3" /><span>They dig through email, Slack, and shared folders</span></label>
-                            <label><input type="radio" name="q3" value="2" /><span>Some documentation exists, but it's scattered</span></label>
+                            <label><input type="radio" name="q3" value="2" /><span>Some docs exist but they're scattered</span></label>
                             <label><input type="radio" name="q3" value="1" /><span>Centralized, searchable knowledge base</span></label>
                         </div>
                     </div>
 
                     {/* Q4 */}
                     <div class="question" data-category="reporting" data-q="4">
-                        <h2 class="question-text">How are client or leadership reports compiled?</h2>
+                        <h2 class="question-text">How do you put together client or leadership reports?</h2>
                         <div class="answers">
                             <label><input type="radio" name="q4" value="3" /><span>Manually pulling data from multiple sources into spreadsheets</span></label>
                             <label><input type="radio" name="q4" value="2" /><span>Some automation, but still requires manual assembly</span></label>
@@ -112,7 +99,7 @@ import PostHog from "../components/PostHog.astro";
                     <div class="question" data-category="knowledge" data-q="6">
                         <h2 class="question-text">When a key employee leaves, what happens to their knowledge?</h2>
                         <div class="answers">
-                            <label><input type="radio" name="q6" value="3" /><span>It walks out the door — major disruption</span></label>
+                            <label><input type="radio" name="q6" value="3" /><span>It walks out the door with them</span></label>
                             <label><input type="radio" name="q6" value="2" /><span>Partial documentation, some gaps</span></label>
                             <label><input type="radio" name="q6" value="1" /><span>Well-documented processes, smooth handoff</span></label>
                         </div>
@@ -130,11 +117,11 @@ import PostHog from "../components/PostHog.astro";
 
                     {/* Q8 */}
                     <div class="question" data-category="capacity" data-q="8">
-                        <h2 class="question-text">How would you describe your team's capacity versus workload?</h2>
+                        <h2 class="question-text">How stretched is your team right now?</h2>
                         <div class="answers">
-                            <label><input type="radio" name="q8" value="3" /><span>Overwhelmed — turning away work or missing deadlines</span></label>
+                            <label><input type="radio" name="q8" value="3" /><span>Overwhelmed, turning away work or missing deadlines</span></label>
                             <label><input type="radio" name="q8" value="2" /><span>Managing, but stretched thin</span></label>
-                            <label><input type="radio" name="q8" value="1" /><span>Comfortable — room to take on more</span></label>
+                            <label><input type="radio" name="q8" value="1" /><span>Comfortable, room to take on more</span></label>
                         </div>
                     </div>
 
@@ -142,7 +129,7 @@ import PostHog from "../components/PostHog.astro";
                     <div class="question" data-category="ai" data-q="9">
                         <h2 class="question-text">How does your team currently use AI tools?</h2>
                         <div class="answers">
-                            <label><input type="radio" name="q9" value="3" /><span>Not at all, or a few people experimenting on their own</span></label>
+                            <label><input type="radio" name="q9" value="3" /><span>Barely, a few people experimenting on their own</span></label>
                             <label><input type="radio" name="q9" value="2" /><span>Some adoption, but no coordinated strategy</span></label>
                             <label><input type="radio" name="q9" value="1" /><span>Integrated into workflows with a clear strategy</span></label>
                         </div>
@@ -180,12 +167,11 @@ import PostHog from "../components/PostHog.astro";
 
                 {/* Email gate for detailed report */}
                 <div class="email-gate" id="emailGate">
-                    <h3 class="gate-heading">Get your detailed action plan</h3>
+                    <h3 class="gate-heading">Get the full breakdown as a PDF</h3>
                     <p class="gate-body">
-                        Enter your email and we'll send you a personalized breakdown
-                        of where AI can have the biggest impact on your firm — plus
-                        subscribe you to <em>The Cactus Dispatch</em>, our field notes
-                        on practical AI deployment. No spam, unsubscribe anytime.
+                        Enter your email and we'll send a detailed breakdown of
+                        each category, how each one could be streamlined in a
+                        typical firm, and where AI moves the needle most.
                     </p>
                     <form class="gate-form" id="emailForm">
                         <input
@@ -194,16 +180,17 @@ import PostHog from "../components/PostHog.astro";
                             placeholder="your@email.com"
                             required
                         />
-                        <button type="submit" class="cta-bracketed">&#123; GET MY ACTION PLAN &#125;</button>
+                        <button type="submit" class="cta-bracketed gate-submit" data-ph-event="scorecard_email_submit">&#123; SEND ME THE PDF &#125;</button>
                     </form>
                 </div>
 
                 {/* CTA */}
                 <div class="results-cta">
-                    <h3 class="cta-heading">Want a custom plan<br />for fixing these?</h3>
+                    <h3 class="cta-heading">Want this customized<br />for your company?</h3>
                     <p class="cta-body">
                         Book a free audit. We'll map your specific workflows and
-                        show you exactly where AI can save your team the most time.
+                        give you a concrete 90-day plan to go from where you are
+                        now to AI-native operations.
                     </p>
                     <a
                         href="https://cal.com/cpfeifer/info-meeting"
@@ -222,6 +209,7 @@ import PostHog from "../components/PostHog.astro";
     const questions = document.querySelectorAll('.question');
     const totalQ = questions.length;
     let currentQ = 0;
+    let lastScoreData = null;
 
     const progressFill = document.getElementById('progressFill');
     const progressText = document.getElementById('progressText');
@@ -332,8 +320,8 @@ import PostHog from "../components/PostHog.astro";
             tierColor = '#27ae60';
         }
 
-        // Cost estimate: avg fully-loaded salary $75k, assume waste = pct of time
-        const avgSalary = 75000;
+        // Cost estimate: avg fully-loaded salary $100k, assume waste = pct of time
+        const avgSalary = 100000;
         const estimatedWastePct = pct / 100 * 0.4; // up to 40% of time wasted at max score
         const annualCost = Math.round(employeeCount * avgSalary * estimatedWastePct / 1000) * 1000;
 
@@ -388,10 +376,22 @@ import PostHog from "../components/PostHog.astro";
             <p class="breakdown-note">Highest scores indicate the areas where AI automation would deliver the fastest return on investment.</p>
         `;
 
+        // Capture score data for PDF generation
+        lastScoreData = {
+            tier,
+            pct,
+            tierDesc,
+            annualCost,
+            employeeCount,
+            wastePct: Math.round(estimatedWastePct * 100),
+            categories: sortedCats.map(([cat, score]) => [cat, score, cat === 'knowledge' ? 6 : 3]),
+        };
+
         // Show results
         quiz.style.display = 'none';
         results.style.display = 'block';
         results.scrollIntoView({ behavior: 'smooth' });
+        if (window.posthog) posthog.capture('scorecard_complete', { score: pct });
     }
 
     // Email form — subscribes via Resend API on dashboard backend
@@ -402,33 +402,33 @@ import PostHog from "../components/PostHog.astro";
         const btn = form.querySelector('button[type="submit"]');
         const gate = document.getElementById('emailGate');
 
-        btn.textContent = 'Subscribing...';
+        btn.textContent = 'Generating PDF...';
         btn.disabled = true;
 
         try {
             const API_URL = window.location.hostname === 'localhost'
                 ? 'http://localhost:3000/api/newsletter'
-                : 'https://madcactus.org/api/newsletter';
+                : 'https://app.madcactus.org/api/newsletter';
 
             const res = await fetch(API_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email }),
+                body: JSON.stringify({ email, scoreData: lastScoreData }),
             });
             const data = await res.json();
 
             if (data.ok) {
                 gate.innerHTML = `
                     <h3 class="gate-heading">Check your inbox</h3>
-                    <p class="gate-body">You're subscribed to <em>The Cactus Dispatch</em>. Your detailed action plan is on its way.</p>
+                    <p class="gate-body">Your personalized AI Readiness Assessment PDF is on its way.</p>
                 `;
             } else {
-                throw new Error(data.error || 'Subscription failed');
+                throw new Error(data.error || 'Failed to send');
             }
         } catch (err) {
             gate.innerHTML = `
                 <h3 class="gate-heading">Something went wrong</h3>
-                <p class="gate-body">We couldn't subscribe you. Try again or email us directly at cpfeifer@madcactus.org.</p>
+                <p class="gate-body">We couldn't send the PDF. Try again or email us directly at cpfeifer@madcactus.org.</p>
             `;
         }
     });
@@ -752,6 +752,20 @@ import PostHog from "../components/PostHog.astro";
     .gate-form input[type="email"]:focus {
         outline: none;
         border-color: var(--color-burnished-gold);
+    }
+
+    .gate-submit {
+        appearance: none;
+        -webkit-appearance: none;
+        background: transparent;
+        border: none;
+        padding: 10px 24px;
+        font-family: var(--font-sans);
+        font-size: var(--text-body-sm);
+        font-weight: 700;
+        letter-spacing: 1px;
+        cursor: pointer;
+        color: var(--color-letterpress-black);
     }
 
     /* ═══ Results CTA ═══ */
