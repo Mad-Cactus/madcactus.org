@@ -180,6 +180,15 @@ export default function PortalDocuments() {
 														Open
 													</a>
 												</Show>
+											<Show when={doc.audio_path}>
+												<a
+													href={`/api/download?path=${encodeURIComponent(doc.audio_path!)}`}
+													class="btn btn-sm"
+													download=""
+												>
+													Audio
+												</a>
+											</Show>
 											</div>
 										</div>
 									)}

@@ -56,6 +56,8 @@ export interface Document {
 	mime_type: string | null;
 	description: string | null;
 	visibility: DocumentVisibility;
+	audio_path: string | null;
+	audio_file_name: string | null;
 	created_at: string;
 }
 

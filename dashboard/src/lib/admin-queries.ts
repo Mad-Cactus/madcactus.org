@@ -130,10 +130,11 @@ export const deleteDocumentAction = action(async (formData: FormData) => {
 	if (!supabase) throw redirect("/admin/login");
 	const id = String(formData.get("id"));
 	const storagePath = String(formData.get("storage_path") || "");
-	// Delete file from storage if it's an uploaded file
-	if (storagePath) {
+	const audioPath = String(formData.get("audio_path") || "");
+	const paths = [storagePath, audioPath].filter(Boolean);
+	if (paths.length) {
 		const svc = supabaseService();
-		await svc.storage.from("portal-docs").remove([storagePath]);
+		await svc.storage.from("portal-docs").remove(paths);
 	}
 	const { error } = await supabase.from("documents").delete().eq("id", id);
 	if (error) return { error: error.message };

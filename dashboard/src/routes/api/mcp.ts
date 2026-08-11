@@ -157,7 +157,7 @@ async function getDocuments(ctx: AuthedClient) {
 	const svc = supabaseService();
 	const { data } = await svc
 		.from("documents")
-		.select("title, type, url, file_name, description, created_at")
+		.select("title, type, url, file_name, audio_file_name, description, created_at")
 		.eq("project_id", ctx.project.id)
 		.eq("visibility", "client")
 		.order("created_at", { ascending: false });
@@ -168,6 +168,7 @@ async function getDocuments(ctx: AuthedClient) {
 		description: d.description,
 		url: d.type === "link" ? d.url : null,
 		file: d.type !== "link" ? d.file_name : null,
+		audio: d.audio_file_name || null,
 		created: d.created_at,
 	}));
 }
