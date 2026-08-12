@@ -1,15 +1,15 @@
 import { Title } from "@solidjs/meta";
 import { A, createAsync, useAction } from "@solidjs/router";
-import { For, Show, Suspense, createSignal } from "solid-js";
+import { For, Show, Suspense, createSignal, createMemo } from "solid-js";
 import Layout from "~/components/Layout";
 import {
 	createProjectAction,
 	getProjectsQuery,
 	getUserQuery,
 } from "~/lib/queries";
-import type { ProjectStatus } from "~/lib/supabase";
+import { getCompaniesForSelectQuery } from "~/lib/admin-queries";
 
-const statusBadge: Record<ProjectStatus, string> = {
+const statusBadge: Record<string, string> = {
 	active: "badge-active",
 	paused: "badge-paused",
 	completed: "badge-completed",
@@ -18,9 +18,15 @@ const statusBadge: Record<ProjectStatus, string> = {
 export default function Projects() {
 	const user = createAsync(() => getUserQuery(), { deferStream: true });
 	const projects = createAsync(() => getProjectsQuery(), { deferStream: true });
+	const companies = createAsync(() => getCompaniesForSelectQuery(), {
+		deferStream: true,
+	});
 	const createProject = useAction(createProjectAction);
 	const [showForm, setShowForm] = createSignal(false);
 	const [error, setError] = createSignal("");
+	const [engagementType, setEngagementType] = createSignal("hourly");
+
+	const isHourly = createMemo(() => engagementType() !== "project");
 
 	async function handleSubmit(e: Event) {
 		e.preventDefault();
@@ -52,28 +58,49 @@ export default function Projects() {
 								<input type="text" id="name" name="name" required placeholder="IU Data Agent" />
 							</div>
 							<div class="form-group">
-								<label for="client_name">Client</label>
-								<input type="text" id="client_name" name="client_name" required placeholder="Indiana University" />
+								<label for="company_id">Company</label>
+								<select id="company_id" name="company_id" required>
+									<option value="" disabled selected>Select a company…</option>
+									<Show when={companies()}>
+										<For each={companies()}>
+											{(c) => <option value={c.id}>{c.name}</option>}
+										</For>
+									</Show>
+								</select>
 							</div>
 						</div>
 						<div class="form-row">
 							<div class="form-group">
 								<label for="engagement_type">Engagement Type</label>
-								<select id="engagement_type" name="engagement_type">
+								<select
+									id="engagement_type"
+									name="engagement_type"
+									onChange={(e) => setEngagementType(e.currentTarget.value)}
+								>
 									<option value="hourly">Hourly</option>
 									<option value="retainer">Retainer (monthly cap)</option>
 									<option value="project">Project (fixed price)</option>
 								</select>
 							</div>
+							<Show when={isHourly()}>
+								<div class="form-group">
+									<label for="hourly_rate">Hourly Rate ($)</label>
+									<input type="number" id="hourly_rate" name="hourly_rate" step="1" min="0" value="200" />
+								</div>
+							</Show>
+							<Show when={!isHourly()}>
+								<div class="form-group">
+									<label for="fixed_price">Fixed Price ($)</label>
+									<input type="number" id="fixed_price" name="fixed_price" step="100" min="0" required placeholder="15000" />
+								</div>
+							</Show>
+						</div>
+						<Show when={engagementType() === "retainer"}>
 							<div class="form-group">
-								<label for="hourly_rate">Hourly Rate ($)</label>
-								<input type="number" id="hourly_rate" name="hourly_rate" step="1" min="0" value="200" />
+								<label for="monthly_cap_hours">Monthly Cap (hours)</label>
+								<input type="number" id="monthly_cap_hours" name="monthly_cap_hours" step="1" min="0" placeholder="Leave blank if uncapped" />
 							</div>
-						</div>
-						<div class="form-group">
-							<label for="monthly_cap_hours">Monthly Cap (hours, retainer only)</label>
-							<input type="number" id="monthly_cap_hours" name="monthly_cap_hours" step="1" min="0" placeholder="Leave blank if uncapped" />
-						</div>
+						</Show>
 						<div class="form-group">
 							<label for="notes">Scope / Notes</label>
 							<textarea id="notes" name="notes" rows={3} placeholder="What's planned, scope boundaries, deliverables…" />
@@ -96,9 +123,9 @@ export default function Projects() {
 								<thead>
 									<tr>
 										<th>Project</th>
-										<th>Client</th>
+										<th>Company</th>
 										<th>Type</th>
-										<th>Rate</th>
+										<th>Rate / Price</th>
 										<th>Cap</th>
 										<th>Status</th>
 									</tr>
@@ -110,10 +137,14 @@ export default function Projects() {
 												<td>
 													<A href={`/admin/projects/${p.id}`} class="gold">{p.name}</A>
 												</td>
-												<td class="muted">{p.client_name}</td>
-												<td style={{ "text-transform": "capitalize" }}>{p.engagement_type}</td>
-												<td class="mono">${p.hourly_rate}/hr</td>
-												<td class="muted">{p.monthly_cap_hours ? `${p.monthly_cap_hours}h` : "—"}</td>
+												<td class="muted">{p.companyName}</td>
+												<td style={{ "text-transform": "capitalize" }}>{p.engagementType}</td>
+												<td class="mono">
+													{p.engagementType === "project"
+														? `$${(p.fixedPrice ?? 0).toLocaleString()} fixed`
+														: `$${p.hourlyRate}/hr`}
+												</td>
+												<td class="muted">{p.monthlyCapHours ? `${p.monthlyCapHours}h` : "—"}</td>
 												<td><span class={`badge ${statusBadge[p.status]}`}>{p.status}</span></td>
 											</tr>
 										)}

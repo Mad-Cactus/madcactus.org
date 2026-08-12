@@ -16,7 +16,13 @@ export async function getAuthedClient() {
 	const refreshToken = getCookie("mc-refresh-token");
 	if (!accessToken || !refreshToken) return null;
 
-	const supabase = supabaseAdmin();
+	let supabase;
+	try {
+		supabase = supabaseAdmin();
+	} catch (e) {
+		console.error("auth client init failed:", e);
+		return null;
+	}
 	const { data, error } = await supabase.auth.setSession({
 		access_token: accessToken,
 		refresh_token: refreshToken,
@@ -39,17 +45,26 @@ export async function getCurrentUser(): Promise<User | null> {
 }
 
 export async function signIn(email: string, password: string) {
-	const supabase = supabaseAdmin();
-	const { data, error } = await supabase.auth.signInWithPassword({
-		email,
-		password,
-	});
-	if (error || !data.session) {
-		return { error: error?.message ?? "Login failed" };
+	try {
+		const supabase = supabaseAdmin();
+		const { data, error } = await supabase.auth.signInWithPassword({
+			email,
+			password,
+		});
+		if (error || !data.session) {
+			return { error: error?.message ?? "Login failed" };
+		}
+		setCookie("mc-access-token", data.session.access_token, COOKIE_OPTS);
+		setCookie("mc-refresh-token", data.session.refresh_token, COOKIE_OPTS);
+		return { error: null };
+	} catch (e) {
+		// Log infra detail server-side; never surface it to the client.
+		console.error("signIn failed:", e);
+		const msg = e instanceof Error ? e.message : String(e);
+		if (msg.includes("aborted") || msg.includes("timeout"))
+			return { error: "Request timed out. Please try again." };
+		return { error: "Something went wrong. Please try again." };
 	}
-	setCookie("mc-access-token", data.session.access_token, COOKIE_OPTS);
-	setCookie("mc-refresh-token", data.session.refresh_token, COOKIE_OPTS);
-	return { error: null };
 }
 
 export async function signOut() {

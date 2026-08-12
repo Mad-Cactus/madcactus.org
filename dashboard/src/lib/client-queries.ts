@@ -1,99 +1,206 @@
 import { query, action, redirect } from "@solidjs/router";
-import { getClientClient, clientSignIn } from "./client-session";
+import { eq, and, desc, inArray } from "drizzle-orm";
+import { getTableColumns } from "drizzle-orm";
+import { getClient, clientSignIn } from "./client-session";
 import { generateApiKey, hashKey, keyPrefix } from "./crypto";
-import type {
-	ApiKey,
-	Document,
-	Invoice,
-	Project,
-	Deliverable,
-	DeliverableUpdate,
-} from "./supabase";
+import { db } from "~/db";
+import {
+	projects,
+	companies,
+	clientCompanyMembers,
+	clientMembers,
+	documents,
+	invoices,
+	deliverables,
+	deliverableUpdates,
+	apiKeys,
+} from "~/db/schema";
+import { sql } from "drizzle-orm";
 
 // ── Client portal queries ──────────────────────────────────────────
 
 export const getClientUserQuery = query(async () => {
 	"use server";
-	const cc = await getClientClient();
-	if (!cc) throw redirect("/portal/login");
-	return { id: cc.client.id, name: cc.client.name, email: cc.client.email };
+	const member = await getClient();
+	if (!member) throw redirect("/portal/login");
+	return { id: member.id, name: member.name, email: member.email };
 }, "client-user");
 
 export const getClientDashboardQuery = query(async () => {
 	"use server";
-	const cc = await getClientClient();
-	if (!cc) throw redirect("/portal/login");
-	const { supabase, client } = cc;
+	const member = await getClient();
+	if (!member) throw redirect("/portal/login");
 
-	const { data: project } = await supabase
-		.from("projects")
-		.select("*")
-		.eq("id", client.project_id)
-		.single();
+	// All companies this member belongs to
+	const memberCompanies = await db
+		.select({ companyId: clientCompanyMembers.companyId })
+		.from(clientCompanyMembers)
+		.where(eq(clientCompanyMembers.memberId, member.id));
 
-	const { data: deliverables } = await supabase
-		.from("deliverables")
-		.select("*, updates:deliverable_updates(*)")
-		.eq("project_id", client.project_id)
-		.order("sort_order");
+	const companyIds = memberCompanies.map((c) => c.companyId);
+	if (companyIds.length === 0)
+		return { projects: [], deliverables: [], docCount: 0, invoiceCount: 0 };
 
-	const { count: docCount } = await supabase
-		.from("documents")
-		.select("id", { count: "exact", head: true })
-		.eq("project_id", client.project_id)
-		.eq("visibility", "client");
+	// All projects across the member's companies
+	const memberProjects = await db
+		.select({
+			...getTableColumns(projects),
+			companyName: companies.name,
+		})
+		.from(projects)
+		.innerJoin(companies, eq(companies.id, projects.companyId))
+		.where(inArray(projects.companyId, companyIds))
+		.orderBy(desc(projects.createdAt));
 
-	const { count: invoiceCount } = await supabase
-		.from("invoices")
-		.select("id", { count: "exact", head: true })
-		.eq("project_id", client.project_id)
-		.in("status", ["sent", "draft"]);
+	const projectIds = memberProjects.map((p) => p.id);
+
+	// Deliverables across all projects
+	const allDeliverables =
+		projectIds.length > 0
+			? await db
+					.select()
+					.from(deliverables)
+					.where(inArray(deliverables.projectId, projectIds))
+					.orderBy(deliverables.sortOrder)
+			: [];
+
+	const delvIds = allDeliverables.map((d) => d.id);
+	const allUpdates =
+		delvIds.length > 0
+			? await db
+					.select()
+					.from(deliverableUpdates)
+					.where(inArray(deliverableUpdates.deliverableId, delvIds))
+			: [];
+
+	const updatesByDeliverable = new Map<
+		string,
+		typeof deliverableUpdates.$inferSelect[]
+	>();
+	for (const u of allUpdates) {
+		const arr = updatesByDeliverable.get(u.deliverableId) ?? [];
+		arr.push(u);
+		updatesByDeliverable.set(u.deliverableId, arr);
+	}
+
+	const deliverablesWithUpdates = allDeliverables.map((d) => ({
+		...d,
+		updates: updatesByDeliverable.get(d.id) ?? [],
+	}));
+
+	// Doc + invoice counts
+	const docRows =
+		projectIds.length > 0
+			? await db
+					.select({ id: documents.id })
+					.from(documents)
+					.where(
+						and(
+							inArray(documents.projectId, projectIds),
+							eq(documents.visibility, "client"),
+						),
+					)
+			: [];
+
+	const invoiceRows =
+		projectIds.length > 0
+			? await db
+					.select({ id: invoices.id })
+					.from(invoices)
+					.where(
+						and(
+							inArray(invoices.projectId, projectIds),
+							inArray(invoices.status, ["sent", "draft"]),
+						),
+					)
+			: [];
 
 	return {
-		project: project as Project,
-		deliverables: (deliverables ?? []) as (Deliverable & {
-			updates: DeliverableUpdate[];
-		})[],
-		docCount: docCount ?? 0,
-		invoiceCount: invoiceCount ?? 0,
+		projects: memberProjects,
+		deliverables: deliverablesWithUpdates,
+		docCount: docRows.length,
+		invoiceCount: invoiceRows.length,
 	};
 }, "client-dashboard");
 
 export const getClientDocumentsQuery = query(async () => {
 	"use server";
-	const cc = await getClientClient();
-	if (!cc) throw redirect("/portal/login");
-	const { data } = await cc.supabase
-		.from("documents")
-		.select("*")
-		.eq("project_id", cc.client.project_id)
-		.eq("visibility", "client")
-		.order("created_at", { ascending: false });
-	return (data ?? []) as Document[];
+	const member = await getClient();
+	if (!member) throw redirect("/portal/login");
+
+	const memberCompanies = await db
+		.select({ companyId: clientCompanyMembers.companyId })
+		.from(clientCompanyMembers)
+		.where(eq(clientCompanyMembers.memberId, member.id));
+
+	const companyIds = memberCompanies.map((c) => c.companyId);
+	if (companyIds.length === 0) return [];
+
+	const memberProjects = await db
+		.select({ id: projects.id })
+		.from(projects)
+		.where(inArray(projects.companyId, companyIds));
+
+	const projectIds = memberProjects.map((p) => p.id);
+	if (projectIds.length === 0) return [];
+
+	return db
+		.select()
+		.from(documents)
+		.where(
+			and(
+				inArray(documents.projectId, projectIds),
+				eq(documents.visibility, "client"),
+			),
+		)
+		.orderBy(desc(documents.createdAt));
 }, "client-documents");
 
 export const getClientInvoicesQuery = query(async () => {
 	"use server";
-	const cc = await getClientClient();
-	if (!cc) throw redirect("/portal/login");
-	const { data } = await cc.supabase
-		.from("invoices")
-		.select("*")
-		.eq("project_id", cc.client.project_id)
-		.order("created_at", { ascending: false });
-	return (data ?? []) as Invoice[];
+	const member = await getClient();
+	if (!member) throw redirect("/portal/login");
+
+	const memberCompanies = await db
+		.select({ companyId: clientCompanyMembers.companyId })
+		.from(clientCompanyMembers)
+		.where(eq(clientCompanyMembers.memberId, member.id));
+
+	const companyIds = memberCompanies.map((c) => c.companyId);
+	if (companyIds.length === 0) return [];
+
+	const memberProjects = await db
+		.select({ id: projects.id })
+		.from(projects)
+		.where(inArray(projects.companyId, companyIds));
+
+	const projectIds = memberProjects.map((p) => p.id);
+	if (projectIds.length === 0) return [];
+
+	return db
+		.select()
+		.from(invoices)
+		.where(inArray(invoices.projectId, projectIds))
+		.orderBy(desc(invoices.createdAt));
 }, "client-invoices");
 
 export const getClientApiKeysQuery = query(async () => {
 	"use server";
-	const cc = await getClientClient();
-	if (!cc) throw redirect("/portal/login");
-	const { data } = await cc.supabase
-		.from("api_keys")
-		.select("id, client_id, label, key_prefix, last_used_at, revoked_at, created_at")
-		.eq("client_id", cc.client.id)
-		.order("created_at", { ascending: false });
-	return (data ?? []) as ApiKey[];
+	const member = await getClient();
+	if (!member) throw redirect("/portal/login");
+	return db
+		.select({
+			id: apiKeys.id,
+			memberId: apiKeys.memberId,
+			label: apiKeys.label,
+			keyPrefix: apiKeys.keyPrefix,
+			lastUsedAt: apiKeys.lastUsedAt,
+			revokedAt: apiKeys.revokedAt,
+			createdAt: apiKeys.createdAt,
+		})
+		.from(apiKeys)
+		.where(eq(apiKeys.memberId, member.id))
+		.orderBy(desc(apiKeys.createdAt));
 }, "client-api-keys");
 
 // ── Client portal actions ──────────────────────────────────────────
@@ -109,31 +216,27 @@ export const clientLoginAction = action(async (formData: FormData) => {
 
 export const createApiKeyAction = action(async (formData: FormData) => {
 	"use server";
-	const cc = await getClientClient();
-	if (!cc) throw redirect("/portal/login");
+	const member = await getClient();
+	if (!member) throw redirect("/portal/login");
 	const label = String(formData.get("label") || "Default");
 	const rawKey = generateApiKey();
-	const { error } = await cc.supabase.from("api_keys").insert({
-		client_id: cc.client.id,
+	await db.insert(apiKeys).values({
+		memberId: member.id,
 		label,
-		key_hash: hashKey(rawKey),
-		key_prefix: keyPrefix(rawKey),
+		keyHash: hashKey(rawKey),
+		keyPrefix: keyPrefix(rawKey),
 	});
-	if (error) return { error: error.message };
-	// Return the raw key once — client must copy it now
 	return { key: rawKey };
 }, "createApiKey");
 
 export const revokeApiKeyAction = action(async (formData: FormData) => {
 	"use server";
-	const cc = await getClientClient();
-	if (!cc) throw redirect("/portal/login");
+	const member = await getClient();
+	if (!member) throw redirect("/portal/login");
 	const id = String(formData.get("id"));
-	const { error } = await cc.supabase
-		.from("api_keys")
-		.update({ revoked_at: new Date().toISOString() })
-		.eq("id", id)
-		.eq("client_id", cc.client.id);
-	if (error) return { error: error.message };
+	await db
+		.update(apiKeys)
+		.set({ revokedAt: new Date() })
+		.where(and(eq(apiKeys.id, id), eq(apiKeys.memberId, member.id)));
 	throw redirect("/portal/api-keys");
 }, "revokeApiKey");

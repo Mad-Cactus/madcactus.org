@@ -6,7 +6,7 @@ import {
 	getClientDocumentsQuery,
 	getClientUserQuery,
 } from "~/lib/client-queries";
-import type { DocumentType } from "~/lib/supabase";
+import type { DocumentType } from "~/db/schema";
 
 const typeLabel: Record<DocumentType, string> = {
 	link: "Link",
@@ -22,7 +22,6 @@ interface SearchHit {
 	file_name: string | null;
 	description: string | null;
 	content_snippet: string | null;
-	similarity: number;
 }
 
 export default function PortalDocuments() {
@@ -88,9 +87,6 @@ export default function PortalDocuments() {
 									<div style={{ flex: "1" }}>
 										<div style={{ "font-size": "15px", "font-weight": "500" }}>
 											{hit.title}
-											<span class="muted" style={{ "font-size": "11px", "margin-left": "8px", "font-weight": "normal" }}>
-												{hit.similarity}% match
-											</span>
 										</div>
 										<Show when={hit.content_snippet}>
 											<div style={{ "font-size": "13px", "margin-top": "6px", opacity: "0.7", "line-height": "1.5" }}>
@@ -180,6 +176,15 @@ export default function PortalDocuments() {
 														Open
 													</a>
 												</Show>
+											<Show when={doc.audio_path}>
+												<a
+													href={`/api/download?path=${encodeURIComponent(doc.audio_path!)}`}
+													class="btn btn-sm"
+													download=""
+												>
+													Audio
+												</a>
+											</Show>
 											</div>
 										</div>
 									)}

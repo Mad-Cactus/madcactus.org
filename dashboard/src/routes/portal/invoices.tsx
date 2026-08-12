@@ -6,7 +6,7 @@ import {
 	getClientInvoicesQuery,
 	getClientUserQuery,
 } from "~/lib/client-queries";
-import type { InvoiceStatus } from "~/lib/supabase";
+import type { InvoiceStatus } from "~/db/schema";
 
 const statusBadge: Record<InvoiceStatus, string> = {
 	draft: "badge-paused",
