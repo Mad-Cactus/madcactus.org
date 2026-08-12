@@ -11,11 +11,11 @@ const Layout: ParentComponent<{ user?: { id?: string; email?: string } | null }>
 	// Identify user in PostHog once loaded
 	createEffect(() => {
 		const u = props.user;
-		if (u?.id) (window as any).posthog?.identify(u.id, { email: u.email });
+		if (u?.id) (window as any).posthog?.identify?.(u.id, { email: u.email });
 	});
 
 	function handleLogoutForm(e: Event) {
-		(window as any).posthog?.reset();
+		(window as any).posthog?.reset?.();
 	}
 
 	return (
