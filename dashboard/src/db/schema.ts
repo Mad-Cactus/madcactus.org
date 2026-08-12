@@ -77,8 +77,9 @@ export const clientMembers = pgTable("client_members", {
 	id: uuid("id").primaryKey().defaultRandom(),
 	name: text("name").notNull(),
 	email: text("email").notNull().unique(),
-	// scrypt hash: "salt:hash"
-	passwordHash: text("password_hash").notNull(),
+	// ponytail: nullable — Supabase Auth is the password store now (invite-by-email).
+	// Column retained for back-compat, unused going forward. Drop in a future cleanup.
+	passwordHash: text("password_hash"),
 	isActive: boolean("is_active").notNull().default(true),
 	createdAt: timestamp("created_at").notNull().defaultNow(),
 	updatedAt: timestamp("updated_at")

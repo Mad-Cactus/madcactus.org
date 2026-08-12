@@ -152,10 +152,7 @@ export default function CompanyDetail() {
 												<input type="email" id="m_email" name="email" required placeholder="john@company.com" />
 											</div>
 										</div>
-										<div class="form-group">
-											<label for="m_password">Initial Password</label>
-											<input type="text" id="m_password" name="password" required minlength="6" placeholder="Share with the client" />
-										</div>
+										<p class="muted" style={{ "font-size": "12px", "margin-bottom": "12px" }}>An invite email will be sent so they can set their own password.</p>
 										<Show when={error()}><p class="login-error">{error()}</p></Show>
 										<button type="submit" class="btn btn-primary">Create + Link</button>
 									</form>

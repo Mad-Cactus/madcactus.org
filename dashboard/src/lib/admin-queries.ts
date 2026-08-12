@@ -3,7 +3,6 @@ import { eq, and, desc, inArray } from "drizzle-orm";
 import { getTableColumns } from "drizzle-orm";
 import { getAuthedClient } from "./session";
 import { supabaseService } from "./supabase";
-import { hashPassword } from "./crypto";
 import { db } from "~/db";
 import {
 	companies,
@@ -68,21 +67,25 @@ export const createMemberAction = action(async (formData: FormData) => {
 	await requireAdmin();
 	const companyId = String(formData.get("company_id"));
 	const email = String(formData.get("email")).toLowerCase();
+	const name = String(formData.get("name"));
 
-	const [member] = await db
-		.insert(clientMembers)
-		.values({
-			name: String(formData.get("name")),
-			email,
-			passwordHash: hashPassword(String(formData.get("password"))),
-		})
-		.returning();
+	const [member] = await db.insert(clientMembers).values({ name, email }).returning();
 
-	// Link member to the company
-	await db.insert(clientCompanyMembers).values({
-		memberId: member.id,
-		companyId,
+	// Link member to the company first so the row is fully usable regardless of
+	// whether the invite email sends on the first try.
+	await db
+		.insert(clientCompanyMembers)
+		.values({ memberId: member.id, companyId })
+		.onConflictDoNothing();
+
+	// Supabase sends the invite email; the client sets their own password.
+	const redirectTo = inviteRedirect();
+	const { error } = await supabaseService().auth.admin.inviteUserByEmail(email, {
+		data: { name },
+		...(redirectTo ? { redirectTo } : {}),
 	});
+	if (error)
+		return { error: `Member created, but the invite email failed: ${error.message}` };
 
 	throw redirect(`/admin/companies/${companyId}`);
 }, "createMember");
@@ -115,19 +118,31 @@ export const unlinkMemberAction = action(async (formData: FormData) => {
 	throw redirect(`/admin/companies/${companyId}`);
 }, "unlinkMember");
 
-export const updateMemberPasswordAction = action(async (formData: FormData) => {
+/** Redirect URL for Supabase invite/reset links (must be allowlisted in Supabase Auth settings). */
+function inviteRedirect(): string | null {
+	const site = process.env.PUBLIC_SITE_URL;
+	return site ? `${site.replace(/\/$/, "")}/portal/login` : null;
+}
+
+export const resendInviteAction = action(async (formData: FormData) => {
 	"use server";
 	await requireAdmin();
 	const id = String(formData.get("id"));
-	const password = String(formData.get("password"));
-	if (!password || password.length < 6)
-		return { error: "Password must be at least 6 characters" };
-	await db
-		.update(clientMembers)
-		.set({ passwordHash: hashPassword(password) })
-		.where(eq(clientMembers.id, id));
+	const [member] = await db
+		.select({ email: clientMembers.email })
+		.from(clientMembers)
+		.where(eq(clientMembers.id, id))
+		.limit(1);
+	if (!member) return { error: "Member not found" };
+
+	const redirectTo = inviteRedirect();
+	const { error } = await supabaseService().auth.admin.inviteUserByEmail(
+		member.email,
+		{ ...(redirectTo ? { redirectTo } : {}) },
+	);
+	if (error) return { error: error.message };
 	throw redirect("/admin/companies");
-}, "updateMemberPassword");
+}, "resendInvite");
 
 export const toggleMemberActiveAction = action(async (formData: FormData) => {
 	"use server";

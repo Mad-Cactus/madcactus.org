@@ -84,7 +84,9 @@ async function posthogStats(): Promise<
 					query:
 						"select count() as pv30, count(DISTINCT distinct_id) as uniques, " +
 						"countIf(timestamp > now() - interval 7 day) as pv7 " +
-						"from events where event = '$pageview' and timestamp > now() - interval 30 day",
+						"from events where event = '$pageview' and timestamp > now() - interval 30 day " +
+						"and (properties.$pathname is null or properties.$pathname not like '/admin%') " +
+						"and (properties.$host is null or (properties.$host not like 'localhost%' and properties.$host not like '127.0.0.1%'))",
 				},
 			}),
 		});
