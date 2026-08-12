@@ -15,6 +15,7 @@ import {
 	deliverableUpdates,
 	apiKeys,
 } from "~/db/schema";
+import type { DocumentType } from "~/db/schema";
 import { sql } from "drizzle-orm";
 
 // ── Client portal queries ──────────────────────────────────────────
@@ -122,6 +123,76 @@ export const getClientDashboardQuery = query(async () => {
 		invoiceCount: invoiceRows.length,
 	};
 }, "client-dashboard");
+
+export interface SearchHit {
+	id: string;
+	title: string;
+	type: DocumentType;
+	url: string | null;
+	file_name: string | null;
+	description: string | null;
+	content_snippet: string | null;
+}
+
+/** Client-side full-text search across documents the member can see.
+ *  Replaces the old untyped `/api/search` fetch. */
+export const searchDocumentsQuery = query(async (q: string): Promise<SearchHit[]> => {
+	"use server";
+	if (!q || q.trim().length < 2) return [];
+
+	const member = await getClient();
+	if (!member) throw redirect("/portal/login");
+
+	const memberCompanies = await db
+		.select({ companyId: clientCompanyMembers.companyId })
+		.from(clientCompanyMembers)
+		.where(eq(clientCompanyMembers.memberId, member.id));
+	const companyIds = memberCompanies.map((c) => c.companyId);
+	if (companyIds.length === 0) return [];
+
+	const memberProjects = await db
+		.select({ id: projects.id })
+		.from(projects)
+		.where(inArray(projects.companyId, companyIds));
+	const projectIds = memberProjects.map((p) => p.id);
+	if (projectIds.length === 0) return [];
+
+	const results = await db.execute<{
+		id: string;
+		title: string;
+		type: string;
+		url: string | null;
+		file_name: string | null;
+		description: string | null;
+		snippet: string | null;
+	}>(sql`
+		SELECT d.id, d.title, d.type, d.url, d.file_name, d.description,
+			CASE WHEN d.content IS NOT NULL THEN
+				ts_headline('english', d.content, websearch_to_tsquery('english', ${q}),
+					'MaxFragments=1, MinWords=5, MaxWords=30')
+			ELSE NULL END as snippet
+		FROM documents d
+		WHERE d.project_id = ANY(${projectIds}::uuid[])
+			AND d.visibility = 'client'
+			AND to_tsvector('english', coalesce(d.title,'') || ' ' || coalesce(d.description,'') || ' ' || coalesce(d.content,''))
+				@@ websearch_to_tsquery('english', ${q})
+		ORDER BY ts_rank(
+				to_tsvector('english', coalesce(d.title,'') || ' ' || coalesce(d.description,'') || ' ' || coalesce(d.content,'')),
+				websearch_to_tsquery('english', ${q})
+			) DESC
+		LIMIT 10
+	`);
+
+	return results.rows.map((d) => ({
+		id: d.id,
+		title: d.title,
+		type: d.type as DocumentType,
+		url: d.url,
+		file_name: d.file_name,
+		description: d.description,
+		content_snippet: d.snippet ? d.snippet.replace(/<\/?b>/g, "") : null,
+	}));
+}, "client-search");
 
 export const getClientDocumentsQuery = query(async () => {
 	"use server";

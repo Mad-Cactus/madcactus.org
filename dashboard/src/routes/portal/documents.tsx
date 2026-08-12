@@ -5,6 +5,7 @@ import PortalLayout from "~/components/PortalLayout";
 import {
 	getClientDocumentsQuery,
 	getClientUserQuery,
+	searchDocumentsQuery,
 } from "~/lib/client-queries";
 import type { DocumentType } from "~/db/schema";
 
@@ -13,16 +14,6 @@ const typeLabel: Record<DocumentType, string> = {
 	file: "File",
 	transcript: "Transcript",
 };
-
-interface SearchHit {
-	id: string;
-	title: string;
-	type: DocumentType;
-	url: string | null;
-	file_name: string | null;
-	description: string | null;
-	content_snippet: string | null;
-}
 
 export default function PortalDocuments() {
 	const user = createAsync(() => getClientUserQuery(), { deferStream: true });
@@ -33,10 +24,8 @@ export default function PortalDocuments() {
 	const [searchQuery, setSearchQuery] = createSignal("");
 	const [searchResults] = createResource(searchQuery, async (q) => {
 		if (q.trim().length < 2) return null;
-		const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
-		if (!res.ok) return null;
-		const data = await res.json();
-		return (data.results ?? []) as SearchHit[];
+		const hits = await searchDocumentsQuery(q);
+		return hits.length > 0 ? hits : null;
 	});
 
 	const showSearch = () =>
