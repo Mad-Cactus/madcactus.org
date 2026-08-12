@@ -6,7 +6,7 @@ import {
 	getClientDocumentsQuery,
 	getClientUserQuery,
 } from "~/lib/client-queries";
-import type { DocumentType } from "~/lib/supabase";
+import type { DocumentType } from "~/db/schema";
 
 const typeLabel: Record<DocumentType, string> = {
 	link: "Link",

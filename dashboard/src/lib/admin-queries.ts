@@ -1,125 +1,200 @@
 import { query, action, redirect } from "@solidjs/router";
+import { eq, and, desc, inArray } from "drizzle-orm";
+import { getTableColumns } from "drizzle-orm";
 import { getAuthedClient } from "./session";
 import { supabaseService } from "./supabase";
 import { hashPassword } from "./crypto";
-import type {
-	Client,
-	Document,
-	Invoice,
-	Deliverable,
-	DeliverableUpdate,
-} from "./supabase";
+import { db } from "~/db";
+import {
+	companies,
+	clientMembers,
+	clientCompanyMembers,
+	projects,
+	documents,
+	invoices,
+	deliverables,
+	deliverableUpdates,
+} from "~/db/schema";
 
-// ── Clients ────────────────────────────────────────────────────────
+// ── Auth guard ────────────────────────────────────────────────────
 
-export const getClientsQuery = query(async () => {
-	"use server";
+async function requireAdmin() {
 	const supabase = await getAuthedClient();
 	if (!supabase) throw redirect("/admin/login");
-	const { data } = await supabase
-		.from("clients")
-		.select("*, project:projects(name)")
-		.order("created_at", { ascending: false });
-	return (data ?? []) as (Client & { project: { name: string } | null })[];
-}, "admin-clients");
+}
 
-export const getProjectsForSelectQuery = query(async () => {
-	"use server";
-	const supabase = await getAuthedClient();
-	if (!supabase) throw redirect("/admin/login");
-	const { data } = await supabase
-		.from("projects")
-		.select("id, name, client_name")
-		.order("name");
-	return data ?? [];
-}, "admin-projects-select");
+// ── Companies ─────────────────────────────────────────────────────
 
-export const createClientAction = action(async (formData: FormData) => {
+export const getCompaniesQuery = query(async () => {
 	"use server";
-	const supabase = await getAuthedClient();
-	if (!supabase) throw redirect("/admin/login");
-	const { error } = await supabase.from("clients").insert({
-		project_id: String(formData.get("project_id")),
+	await requireAdmin();
+	return db.select().from(companies).orderBy(desc(companies.createdAt));
+}, "admin-companies");
+
+export const createCompanyAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	await db.insert(companies).values({
 		name: String(formData.get("name")),
-		email: String(formData.get("email")).toLowerCase(),
-		password_hash: hashPassword(String(formData.get("password"))),
 	});
-	if (error) return { error: error.message };
-	throw redirect("/admin/clients");
-}, "createClient");
+	throw redirect("/admin/companies");
+}, "createCompany");
 
-export const updateClientPasswordAction = action(async (formData: FormData) => {
+// ── Members ───────────────────────────────────────────────────────
+
+export const getMembersQuery = query(async () => {
 	"use server";
-	const supabase = await getAuthedClient();
-	if (!supabase) throw redirect("/admin/login");
+	await requireAdmin();
+	return db.select().from(clientMembers).orderBy(desc(clientMembers.createdAt));
+}, "admin-members");
+
+export const getCompanyMembersQuery = query(async (companyId: string) => {
+	"use server";
+	await requireAdmin();
+	return db
+		.select({
+			...getTableColumns(clientMembers),
+		})
+		.from(clientCompanyMembers)
+		.innerJoin(
+			clientMembers,
+			eq(clientMembers.id, clientCompanyMembers.memberId),
+		)
+		.where(eq(clientCompanyMembers.companyId, companyId));
+}, "admin-company-members");
+
+export const createMemberAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const companyId = String(formData.get("company_id"));
+	const email = String(formData.get("email")).toLowerCase();
+
+	const [member] = await db
+		.insert(clientMembers)
+		.values({
+			name: String(formData.get("name")),
+			email,
+			passwordHash: hashPassword(String(formData.get("password"))),
+		})
+		.returning();
+
+	// Link member to the company
+	await db.insert(clientCompanyMembers).values({
+		memberId: member.id,
+		companyId,
+	});
+
+	throw redirect(`/admin/companies/${companyId}`);
+}, "createMember");
+
+export const linkMemberAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const memberId = String(formData.get("member_id"));
+	const companyId = String(formData.get("company_id"));
+	await db
+		.insert(clientCompanyMembers)
+		.values({ memberId, companyId })
+		.onConflictDoNothing();
+	throw redirect(`/admin/companies/${companyId}`);
+}, "linkMember");
+
+export const unlinkMemberAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const memberId = String(formData.get("member_id"));
+	const companyId = String(formData.get("company_id"));
+	await db
+		.delete(clientCompanyMembers)
+		.where(
+			and(
+				eq(clientCompanyMembers.memberId, memberId),
+				eq(clientCompanyMembers.companyId, companyId),
+			),
+		);
+	throw redirect(`/admin/companies/${companyId}`);
+}, "unlinkMember");
+
+export const updateMemberPasswordAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
 	const id = String(formData.get("id"));
 	const password = String(formData.get("password"));
 	if (!password || password.length < 6)
 		return { error: "Password must be at least 6 characters" };
-	const { error } = await supabase
-		.from("clients")
-		.update({ password_hash: hashPassword(password) })
-		.eq("id", id);
-	if (error) return { error: error.message };
-	throw redirect("/admin/clients");
-}, "updateClientPassword");
+	await db
+		.update(clientMembers)
+		.set({ passwordHash: hashPassword(password) })
+		.where(eq(clientMembers.id, id));
+	throw redirect("/admin/companies");
+}, "updateMemberPassword");
 
-export const toggleClientActiveAction = action(async (formData: FormData) => {
+export const toggleMemberActiveAction = action(async (formData: FormData) => {
 	"use server";
-	const supabase = await getAuthedClient();
-	if (!supabase) throw redirect("/admin/login");
+	await requireAdmin();
 	const id = String(formData.get("id"));
 	const isActive = formData.get("is_active") === "true";
-	const { error } = await supabase
-		.from("clients")
-		.update({ is_active: !isActive })
-		.eq("id", id);
-	if (error) return { error: error.message };
-	throw redirect("/admin/clients");
-}, "toggleClientActive");
+	await db
+		.update(clientMembers)
+		.set({ isActive: !isActive })
+		.where(eq(clientMembers.id, id));
+	throw redirect("/admin/companies");
+}, "toggleMemberActive");
 
-// ── Documents ──────────────────────────────────────────────────────
+// ── Projects (for select dropdowns) ───────────────────────────────
+
+export const getProjectsForSelectQuery = query(async () => {
+	"use server";
+	await requireAdmin();
+	return db
+		.select({
+			id: projects.id,
+			name: projects.name,
+			companyId: projects.companyId,
+			companyName: companies.name,
+		})
+		.from(projects)
+		.innerJoin(companies, eq(companies.id, projects.companyId))
+		.orderBy(projects.name);
+}, "admin-projects-select");
+
+export const getCompaniesForSelectQuery = query(async () => {
+	"use server";
+	await requireAdmin();
+	return db.select().from(companies).orderBy(companies.name);
+}, "admin-companies-select");
+
+// ── Documents ─────────────────────────────────────────────────────
 
 export const getDocumentsQuery = query(async (projectId: string) => {
 	"use server";
-	const supabase = await getAuthedClient();
-	if (!supabase) throw redirect("/admin/login");
-	const { data } = await supabase
-		.from("documents")
-		.select("*")
-		.eq("project_id", projectId)
-		.order("created_at", { ascending: false });
-	return (data ?? []) as Document[];
+	await requireAdmin();
+	return db
+		.select()
+		.from(documents)
+		.where(eq(documents.projectId, projectId))
+		.orderBy(desc(documents.createdAt));
 }, "admin-documents");
 
 export const createDocumentLinkAction = action(async (formData: FormData) => {
 	"use server";
-	const supabase = await getAuthedClient();
-	if (!supabase) throw redirect("/admin/login");
-	const title = String(formData.get("title"));
-	const description = String(formData.get("description") || "");
-	const content = String(formData.get("content") || "");
-
-	// content is indexed by the generated search_vector column automatically
-
-	const { error } = await supabase.from("documents").insert({
-		project_id: String(formData.get("project_id")),
+	await requireAdmin();
+	await db.insert(documents).values({
+		projectId: String(formData.get("project_id")),
 		type: String(formData.get("type") || "link"),
-		title,
+		title: String(formData.get("title")),
 		url: String(formData.get("url")),
-		description,
-		content: content || null,
+		description: String(formData.get("description") || ""),
+		content: String(formData.get("content") || "") || null,
 		visibility: "client",
 	});
-	if (error) return { error: error.message };
 	const ref = formData.get("_referer");
-	throw redirect(ref ? String(ref) : "/admin/clients");
+	throw redirect(ref ? String(ref) : "/admin/companies");
 }, "createDocumentLink");
 
 export const deleteDocumentAction = action(async (formData: FormData) => {
 	"use server";
-	const supabase = await getAuthedClient();
-	if (!supabase) throw redirect("/admin/login");
+	await requireAdmin();
 	const id = String(formData.get("id"));
 	const storagePath = String(formData.get("storage_path") || "");
 	const audioPath = String(formData.get("audio_path") || "");
@@ -128,87 +203,114 @@ export const deleteDocumentAction = action(async (formData: FormData) => {
 		const svc = supabaseService();
 		await svc.storage.from("portal-docs").remove(paths);
 	}
-	const { error } = await supabase.from("documents").delete().eq("id", id);
-	if (error) return { error: error.message };
+	await db.delete(documents).where(eq(documents.id, id));
 	const ref = formData.get("_referer");
-	throw redirect(ref ? String(ref) : "/clients");
+	throw redirect(ref ? String(ref) : "/admin/companies");
 }, "deleteDocument");
 
-// ── Invoices ───────────────────────────────────────────────────────
+// ── Invoices ──────────────────────────────────────────────────────
 
 export const getInvoicesQuery = query(async (projectId: string) => {
 	"use server";
-	const supabase = await getAuthedClient();
-	if (!supabase) throw redirect("/admin/login");
-	const { data } = await supabase
-		.from("invoices")
-		.select("*")
-		.eq("project_id", projectId)
-		.order("created_at", { ascending: false });
-	return (data ?? []) as Invoice[];
+	await requireAdmin();
+	return db
+		.select()
+		.from(invoices)
+		.where(eq(invoices.projectId, projectId))
+		.orderBy(desc(invoices.createdAt));
 }, "admin-invoices");
 
 export const createInvoiceAction = action(async (formData: FormData) => {
 	"use server";
-	const supabase = await getAuthedClient();
-	if (!supabase) throw redirect("/admin/login");
-	const { error } = await supabase.from("invoices").insert({
-		project_id: String(formData.get("project_id")),
+	await requireAdmin();
+	await db.insert(invoices).values({
+		projectId: String(formData.get("project_id")),
 		number: String(formData.get("number")),
 		amount: Number(formData.get("amount")),
 		status: String(formData.get("status") || "draft"),
-		issue_date: String(formData.get("issue_date")),
-		due_date: formData.get("due_date")
-			? String(formData.get("due_date"))
+		issueDate: new Date(String(formData.get("issue_date"))),
+		dueDate: formData.get("due_date")
+			? new Date(String(formData.get("due_date")))
 			: null,
-		payment_url: formData.get("payment_url")
+		paymentUrl: formData.get("payment_url")
 			? String(formData.get("payment_url"))
 			: null,
 		notes: String(formData.get("notes") || ""),
 	});
-	if (error) return { error: error.message };
 	const ref = formData.get("_referer");
-	throw redirect(ref ? String(ref) : "/clients");
+	throw redirect(ref ? String(ref) : "/admin/companies");
 }, "createInvoice");
 
-// ── Deliverables ─────────────────────────────────────────────────
+export const deleteInvoiceAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const id = String(formData.get("id"));
+	const storagePath = String(formData.get("storage_path") || "");
+	if (storagePath) {
+		const svc = supabaseService();
+		await svc.storage.from("portal-docs").remove([storagePath]);
+	}
+	await db.delete(invoices).where(eq(invoices.id, id));
+	const ref = formData.get("_referer");
+	throw redirect(ref ? String(ref) : "/admin/companies");
+}, "deleteInvoice");
+
+// ── Deliverables ──────────────────────────────────────────────────
 
 export const getDeliverablesQuery = query(async (projectId: string) => {
 	"use server";
-	const supabase = await getAuthedClient();
-	if (!supabase) throw redirect("/admin/login");
-	const { data } = await supabase
-		.from("deliverables")
-		.select("*, updates:deliverable_updates(*)")
-		.eq("project_id", projectId)
-		.order("sort_order");
-	return (data ?? []) as (Deliverable & {
-		updates: DeliverableUpdate[];
-	})[];
+	await requireAdmin();
+	const delvs = await db
+		.select()
+		.from(deliverables)
+		.where(eq(deliverables.projectId, projectId))
+		.orderBy(deliverables.sortOrder);
+
+	if (delvs.length === 0) return [];
+
+	const allUpdates = await db
+		.select()
+		.from(deliverableUpdates)
+		.where(
+			inArray(
+				deliverableUpdates.deliverableId,
+				delvs.map((d) => d.id),
+			),
+		);
+
+	const updatesByDeliverable = new Map<
+		string,
+		typeof deliverableUpdates.$inferSelect[]
+	>();
+	for (const u of allUpdates) {
+		const arr = updatesByDeliverable.get(u.deliverableId) ?? [];
+		arr.push(u);
+		updatesByDeliverable.set(u.deliverableId, arr);
+	}
+
+	return delvs.map((d) => ({
+		...d,
+		updates: updatesByDeliverable.get(d.id) ?? [],
+	}));
 }, "admin-deliverables");
 
 export const createDeliverableAction = action(async (formData: FormData) => {
 	"use server";
-	const supabase = await getAuthedClient();
-	if (!supabase) throw redirect("/admin/login");
-
-	// Get next sort_order
+	await requireAdmin();
 	const projectId = String(formData.get("project_id"));
-	const { data: existing } = await supabase
-		.from("deliverables")
-		.select("sort_order")
-		.eq("project_id", projectId)
-		.order("sort_order", { ascending: false })
+	const [last] = await db
+		.select({ sortOrder: deliverables.sortOrder })
+		.from(deliverables)
+		.where(eq(deliverables.projectId, projectId))
+		.orderBy(desc(deliverables.sortOrder))
 		.limit(1);
-	const nextOrder = (existing?.[0]?.sort_order ?? -1) + 1;
-
-	const { error } = await supabase.from("deliverables").insert({
-		project_id: projectId,
+	const nextOrder = (last?.sortOrder ?? -1) + 1;
+	await db.insert(deliverables).values({
+		projectId,
 		title: String(formData.get("title")),
 		description: String(formData.get("description") || ""),
-		sort_order: nextOrder,
+		sortOrder: nextOrder,
 	});
-	if (error) return { error: error.message };
 	const ref = formData.get("_referer");
 	throw redirect(ref ? String(ref) : "/admin/projects");
 }, "createDeliverable");
@@ -216,67 +318,39 @@ export const createDeliverableAction = action(async (formData: FormData) => {
 export const updateDeliverableStatusAction = action(
 	async (formData: FormData) => {
 		"use server";
-		const supabase = await getAuthedClient();
-		if (!supabase) throw redirect("/admin/login");
+		await requireAdmin();
 		const id = String(formData.get("id"));
 		const status = String(formData.get("status"));
-		const { error } = await supabase
-			.from("deliverables")
-			.update({ status, updated_at: new Date().toISOString() })
-			.eq("id", id);
-		if (error) return { error: error.message };
+		await db
+			.update(deliverables)
+			.set({ status, updatedAt: new Date() })
+			.where(eq(deliverables.id, id));
 		const ref = formData.get("_referer");
 		throw redirect(ref ? String(ref) : "/admin/projects");
-},
+	},
 	"updateDeliverableStatus",
 );
 
 export const addDeliverableUpdateAction = action(async (formData: FormData) => {
 	"use server";
-	const supabase = await getAuthedClient();
-	if (!supabase) throw redirect("/admin/login");
+	await requireAdmin();
 	const deliverableId = String(formData.get("deliverable_id"));
 	const body = String(formData.get("body"));
 	if (!body.trim()) return { error: "Update cannot be empty" };
-	const { error } = await supabase.from("deliverable_updates").insert({
-		deliverable_id: deliverableId,
-		body,
-	});
-	// Touch parent updated_at
-	if (!error) {
-		await supabase
-			.from("deliverables")
-			.update({ updated_at: new Date().toISOString() })
-			.eq("id", deliverableId);
-	}
-	if (error) return { error: error.message };
+	await db.insert(deliverableUpdates).values({ deliverableId, body });
+	await db
+		.update(deliverables)
+		.set({ updatedAt: new Date() })
+		.where(eq(deliverables.id, deliverableId));
 	const ref = formData.get("_referer");
 	throw redirect(ref ? String(ref) : "/admin/projects");
 }, "addDeliverableUpdate");
 
 export const deleteDeliverableAction = action(async (formData: FormData) => {
 	"use server";
-	const supabase = await getAuthedClient();
-	if (!supabase) throw redirect("/admin/login");
+	await requireAdmin();
 	const id = String(formData.get("id"));
-	const { error } = await supabase.from("deliverables").delete().eq("id", id);
-	if (error) return { error: error.message };
+	await db.delete(deliverables).where(eq(deliverables.id, id));
 	const ref = formData.get("_referer");
 	throw redirect(ref ? String(ref) : "/admin/projects");
 }, "deleteDeliverable");
-
-export const deleteInvoiceAction = action(async (formData: FormData) => {
-	"use server";
-	const supabase = await getAuthedClient();
-	if (!supabase) throw redirect("/admin/login");
-	const id = String(formData.get("id"));
-	const storagePath = String(formData.get("storage_path") || "");
-	if (storagePath) {
-		const svc = supabaseService();
-		await svc.storage.from("portal-docs").remove([storagePath]);
-	}
-	const { error } = await supabase.from("invoices").delete().eq("id", id);
-	if (error) return { error: error.message };
-	const ref = formData.get("_referer");
-	throw redirect(ref ? String(ref) : "/clients");
-}, "deleteInvoice");

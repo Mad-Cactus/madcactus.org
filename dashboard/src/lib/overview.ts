@@ -1,12 +1,24 @@
 import { query, redirect } from "@solidjs/router";
+import { eq, and, inArray, desc, sql } from "drizzle-orm";
 import { Resend } from "resend";
 import { getAuthedClient } from "./session";
-import type { Deliverable, DeliverableStatus, Invoice } from "./supabase";
+import { db } from "~/db";
+import {
+	deliverables,
+	projects,
+	companies,
+	invoices,
+} from "~/db/schema";
+import type {
+	Deliverable,
+	DeliverableStatus,
+	Invoice,
+} from "~/db/schema";
 
 /**
  * Single-pane-of-glass overview.
  *
- * Aggregates data the business already owns (Supabase) with three external
+ * Aggregates data the business already owns (Drizzle) with three external
  * sources surfaced when their API keys are present: Resend (newsletter leads),
  * PostHog (page views), and Linear (open issues). Each external source is
  * isolated in try/catch with a 5s timeout so one slow/unconfigured service can
@@ -25,7 +37,6 @@ function notConfigured<T>(): ExternalResult<T> {
 	return { ok: false, reason: "not_configured" };
 }
 
-/** Resend — newsletter subscriber (lead) count. */
 async function resendLeads(): Promise<ExternalResult<{ subscribers: number; overflow?: boolean }>> {
 	const key = process.env.RESEND_API_KEY;
 	if (!key) return notConfigured();
@@ -34,15 +45,12 @@ async function resendLeads(): Promise<ExternalResult<{ subscribers: number; over
 		const { data, error } = await resend.contacts.list({ limit: 100 });
 		if (error) return { ok: false, reason: "error", message: error.message };
 		const count = data?.data?.length ?? 0;
-		// ponytail: contacts.list caps at 100/page; newsletter volume is low so we
-		// surface the page count and flag overflow. Upgrade: paginate with `after`.
 		return { ok: true, data: { subscribers: count, overflow: data?.has_more } };
 	} catch (e) {
 		return { ok: false, reason: "error", message: errMsg(e) };
 	}
 }
 
-/** PostHog — page views + unique visitors over the last 30 days. */
 async function posthogStats(): Promise<
 	ExternalResult<{ pageviews30d: number; uniqueUsers30d: number; pageviews7d: number }>
 > {
@@ -54,7 +62,6 @@ async function posthogStats(): Promise<
 			"Content-Type": "application/json",
 			Authorization: `Bearer ${key}`,
 		};
-		// 1. resolve the numeric project id
 		const projRes = await fetch(`${host}/api/projects/?limit=1`, {
 			headers,
 			signal: AbortSignal.timeout(FETCH_TIMEOUT),
@@ -64,7 +71,6 @@ async function posthogStats(): Promise<
 		const projectId = projJson.results?.[0]?.id;
 		if (projectId == null) throw new Error("no posthog project found");
 
-		// 2. HogQL: 30d + 7d pageviews and unique visitors in one shot
 		const qRes = await fetch(`${host}/api/projects/${projectId}/query/`, {
 			method: "POST",
 			headers,
@@ -96,7 +102,6 @@ async function posthogStats(): Promise<
 	}
 }
 
-/** Linear — open issues assigned to me. */
 async function linearIssues(): Promise<
 	ExternalResult<{
 		openIssues: number;
@@ -110,7 +115,6 @@ async function linearIssues(): Promise<
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
-				// Linear personal API key: raw value, no "Bearer" prefix.
 				Authorization: key,
 			},
 			signal: AbortSignal.timeout(FETCH_TIMEOUT),
@@ -147,12 +151,12 @@ function errMsg(e: unknown): string {
 	return e instanceof Error ? e.message : String(e);
 }
 
-// ── DB aggregates (cross-project, not in queries.ts) ───────────────
+// ── DB aggregates ──────────────────────────────────────────────────
 
 export interface DeliverableWithProject extends Deliverable {
-	project_name: string;
-	client_name: string;
-	project_status: string;
+	projectName: string;
+	companyName: string;
+	projectStatus: string;
 }
 
 export interface OverviewData {
@@ -161,16 +165,13 @@ export interface OverviewData {
 		inProgress: number;
 		blocked: number;
 		review: number;
-		attention: DeliverableWithProject[]; // blocked / review / in_progress across active projects
+		attention: DeliverableWithProject[];
 	};
 	invoices: {
-		outstanding: (Invoice & { project_name: string })[];
+		outstanding: (Invoice & { projectName: string })[];
 		outstandingTotal: number;
 	};
-	clients: {
-		total: number;
-		active: number;
-	};
+	companies: { total: number };
 	external: {
 		posthog: ExternalResult<{
 			pageviews30d: number;
@@ -201,64 +202,52 @@ export const getOverviewQuery = query(async (): Promise<OverviewData> => {
 	const supabase = await getAuthedClient();
 	if (!supabase) throw redirect("/admin/login");
 
-	// DB aggregates + external calls run concurrently; external failures are isolated.
-	const [delivRes, invRes, clientRes, posthog, resend, linear] = await Promise.all([
-		supabase
-			.from("deliverables")
-			.select("*, project:projects(name, client_name, status)")
-			.order("updated_at", { ascending: false }),
-		supabase
-			.from("invoices")
-			.select("*, project:projects(name)")
-			.in("status", ["sent", "draft"])
-			.order("due_date", { ascending: true }),
-		supabase.from("clients").select("id, is_active"),
+	const [delivRows, invRows, companyRows, posthog, resend, linear] = await Promise.all([
+		db
+			.select({
+				...deliverables,
+				projectName: projects.name,
+				companyName: companies.name,
+				projectStatus: projects.status,
+			})
+			.from(deliverables)
+			.innerJoin(projects, eq(projects.id, deliverables.projectId))
+			.innerJoin(companies, eq(companies.id, projects.companyId))
+			.orderBy(desc(deliverables.updatedAt)),
+		db
+			.select({ ...invoices, projectName: projects.name })
+			.from(invoices)
+			.innerJoin(projects, eq(projects.id, invoices.projectId))
+			.where(inArray(invoices.status, ["sent", "draft"])),
+		db.select({ id: companies.id }).from(companies),
 		posthogStats(),
 		resendLeads(),
 		linearIssues(),
 	]);
 
-	const deliverables: DeliverableWithProject[] = ((delivRes.data ?? []) as any[])
-		.filter((d) => (d.project as any)?.status === "active")
-		.map((d) => ({
-			...d,
-			project_name: (d.project as any)?.name ?? "—",
-			client_name: (d.project as any)?.client_name ?? "—",
-			project_status: (d.project as any)?.status ?? "active",
-		}));
+	const activeDeliverables = delivRows.filter((d) => d.projectStatus === "active");
 
 	const statusCount = (s: DeliverableStatus) =>
-		deliverables.filter((d) => d.status === s).length;
+		activeDeliverables.filter((d) => d.status === s).length;
 
-	const attention = deliverables
+	const attention = activeDeliverables
 		.filter((d) => ["blocked", "review", "in_progress"].includes(d.status))
 		.slice(0, 8);
 
-	const outstanding = (invRes.data ?? []).map((i) => ({
-		...i,
-		project_name: (i as any).project?.name ?? "—",
-	}));
-	const outstandingTotal = outstanding
+	const outstandingTotal = invRows
 		.filter((i) => i.status === "sent")
-		.reduce((s, i) => s + Number(i.amount), 0);
-
-	const clientRows = clientRes.data ?? [];
+		.reduce((s, i) => s + i.amount, 0);
 
 	return {
 		deliverables: {
-			total: deliverables.length,
+			total: activeDeliverables.length,
 			inProgress: statusCount("in_progress"),
 			blocked: statusCount("blocked"),
 			review: statusCount("review"),
 			attention,
 		},
-		invoices: { outstanding, outstandingTotal },
-		clients: {
-			total: clientRows.length,
-			active: clientRows.filter((c) => c.is_active).length,
-		},
+		invoices: { outstanding: invRows, outstandingTotal },
+		companies: { total: companyRows.length },
 		external: { posthog, resend, linear },
 	};
 }, "overview");
-
-// re-export removed: ExternalResult is already exported at its declaration above

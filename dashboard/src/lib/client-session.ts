@@ -1,7 +1,8 @@
 import { getCookie, setCookie } from "@solidjs/start/http";
-import { supabaseService } from "./supabase";
+import { eq } from "drizzle-orm";
+import { db } from "~/db";
+import { clientMembers } from "~/db/schema";
 import { verifyPassword } from "./crypto";
-import type { Client } from "./supabase";
 
 const COOKIE_NAME = "mc-client-session";
 const COOKIE_OPTS = {
@@ -12,43 +13,42 @@ const COOKIE_OPTS = {
 	maxAge: 60 * 60 * 24 * 7,
 };
 
-/** Returns the authenticated client record, or null. */
-export async function getClient(): Promise<Client | null> {
-	const clientId = getCookie(COOKIE_NAME);
-	if (!clientId) return null;
+export type ClientMemberSession = {
+	id: string;
+	name: string;
+	email: string;
+};
 
-	const supabase = supabaseService();
-	const { data } = await supabase
-		.from("clients")
-		.select("*")
-		.eq("id", clientId)
-		.eq("is_active", true)
-		.single();
-	return (data as Client) ?? null;
-}
+/** Returns the authenticated member record, or null. */
+export async function getClient(): Promise<ClientMemberSession | null> {
+	const memberId = getCookie(COOKIE_NAME);
+	if (!memberId) return null;
 
-/** Service-role client scoped to the logged-in client's project. */
-export async function getClientClient() {
-	const client = await getClient();
-	if (!client) return null;
-	const supabase = supabaseService();
-	return { supabase, client };
+	const [member] = await db
+		.select({
+			id: clientMembers.id,
+			name: clientMembers.name,
+			email: clientMembers.email,
+		})
+		.from(clientMembers)
+		.where(eq(clientMembers.id, memberId))
+		.limit(1);
+
+	return member ?? null;
 }
 
 export async function clientSignIn(email: string, password: string) {
-	const supabase = supabaseService();
-	const { data } = await supabase
-		.from("clients")
-		.select("*")
-		.eq("email", email.toLowerCase())
-		.eq("is_active", true)
-		.single();
-	if (!data) return { error: "Invalid credentials" };
-	const client = data as Client;
-	if (!verifyPassword(password, client.password_hash)) {
+	const [row] = await db
+		.select()
+		.from(clientMembers)
+		.where(eq(clientMembers.email, email.toLowerCase()))
+		.limit(1);
+
+	if (!row || !row.isActive) return { error: "Invalid credentials" };
+	if (!verifyPassword(password, row.passwordHash))
 		return { error: "Invalid credentials" };
-	}
-	setCookie(COOKIE_NAME, client.id, COOKIE_OPTS);
+
+	setCookie(COOKIE_NAME, row.id, COOKIE_OPTS);
 	return { error: null };
 }
 
