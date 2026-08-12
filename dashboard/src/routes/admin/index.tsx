@@ -116,10 +116,10 @@ export default function Home() {
 								<div class="stat-card">
 									<div class="label">Active Contracts</div>
 									<div class="value">
-										{ov().clients.active}
+										{ov().companies.total}
 									</div>
 									<div class="sub">
-										{ov().clients.total} client{ov().clients.total === 1 ? "" : "s"} · {ov().deliverables.total} deliverable{ov().deliverables.total === 1 ? "" : "s"}
+										{ov().companies.total} compan{ov().companies.total === 1 ? "y" : "ies"} · {ov().deliverables.total} deliverable{ov().deliverables.total === 1 ? "" : "s"}
 									</div>
 								</div>
 							</div>
@@ -169,7 +169,7 @@ export default function Home() {
 															{d.title}
 														</A>
 													</td>
-													<td class="muted">{d.project_name}</td>
+													<td class="muted">{d.projectName}</td>
 													<td>
 														<span class={`badge ${DELIVERABLE_STATUS_META[d.status].cls}`}>
 															{DELIVERABLE_STATUS_META[d.status].label}
@@ -205,7 +205,7 @@ export default function Home() {
 											{(inv) => (
 												<tr>
 													<td>{inv.number}</td>
-													<td class="muted">{inv.project_name}</td>
+													<td class="muted">{inv.projectName}</td>
 													<td class="hours" style={{ "text-align": "right" }}>
 														${Number(inv.amount).toFixed(2)}
 													</td>
@@ -316,7 +316,7 @@ export default function Home() {
 												<For each={d().projects}>
 													{(p) => (
 														<option value={p.id}>
-															{p.name} — {p.client_name}
+															{p.name} — {p.companyName}
 														</option>
 													)}
 												</For>
@@ -371,7 +371,7 @@ export default function Home() {
 														{new Date(e.entry_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
 													</td>
 													<td>
-														<A href={`/admin/projects/${e.project_id}`} class="gold">{e.project_name}</A>
+														<A href={`/admin/projects/${e.projectId}`} class="gold">{e.projectName}</A>
 													</td>
 													<td>{e.description}</td>
 													<td class="hours" style={{ "text-align": "right" }}>{e.hours}</td>

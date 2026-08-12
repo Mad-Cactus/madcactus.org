@@ -4,7 +4,7 @@ import { For, ParentComponent, Show, createEffect } from "solid-js";
 const links = [
 	{ href: "/admin", label: "Dashboard" },
 { href: "/admin/projects", label: "Projects" },
-	{ href: "/admin/clients", label: "Clients" },
+	{ href: "/admin/companies", label: "Companies" },
 ];
 
 const Layout: ParentComponent<{ user?: { id?: string; email?: string } | null }> = (props) => {

@@ -10,7 +10,7 @@ import {
 	getUserQuery,
 } from "~/lib/queries";
 import { getDeliverablesQuery } from "~/lib/admin-queries";
-import type { DeliverableStatus } from "~/lib/supabase";
+import type { DeliverableStatus } from "~/db/schema";
 
 const STATUS_OPTIONS: DeliverableStatus[] = [
 	"planned",
@@ -75,8 +75,8 @@ export default function ProjectDetail() {
 							</A>
 							<h1 class="page-title">{p().name}</h1>
 							<p class="page-subtitle">
-								{p().client_name} · <span style={{ "text-transform": "capitalize" }}>{p().engagement_type}</span> · ${p().hourly_rate}/hr
-								{p().monthly_cap_hours ? ` · ${p().monthly_cap_hours}h cap` : ""}
+								{p().companyName} · <span style={{ "text-transform": "capitalize" }}>{p().engagementType}</span>{p().engagementType === "project" ? ` · $${(p().fixedPrice ?? 0).toLocaleString()} fixed` : ` · $${p().hourlyRate}/hr`}
+								{p().monthlyCapHours ? ` · ${p().monthlyCapHours}h cap` : ""}
 							</p>
 
 							<Show when={p().notes}>

@@ -1,13 +1,25 @@
 import type { APIEvent } from "@solidjs/start/server";
-import { supabaseService } from "~/lib/supabase";
+import { eq, and, inArray, desc } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { hashKey } from "~/lib/crypto";
-import type { Client, Project } from "~/lib/supabase";
+import { db } from "~/db";
+import {
+	apiKeys,
+	clientMembers,
+	clientCompanyMembers,
+	projects,
+	companies,
+	documents,
+	invoices,
+	deliverables,
+	deliverableUpdates,
+} from "~/db/schema";
 
 /**
  * MCP Server — Mad Cactus Client Portal
  *
  * Stateless JSON-RPC over HTTP. Authenticates via Bearer API key.
- * Exposes tools for clients to query their project data from any AI agent.
+ * A member's key grants access to all projects across their companies.
  *
  * Endpoint: POST /api/mcp
  * Auth: Authorization: Bearer mc_<key>
@@ -37,50 +49,56 @@ function rpcError(
 	return json({ jsonrpc: "2.0", id, error: { code, message } });
 }
 
-interface AuthedClient {
-	client: Client;
-	project: Project;
+interface AuthedMember {
+	member: { id: string; name: string; email: string };
+	projectIds: string[];
 }
 
-async function authenticate(
-	request: Request,
-): Promise<AuthedClient | null> {
+async function authenticate(request: Request): Promise<AuthedMember | null> {
 	const auth = request.headers.get("authorization");
 	if (!auth?.startsWith("Bearer ")) return null;
 	const rawKey = auth.slice(7);
 	if (!rawKey.startsWith("mc_")) return null;
 
-	const svc = supabaseService();
-	const { data: keyRecord } = await svc
-		.from("api_keys")
-		.select("id, client_id")
-		.eq("key_hash", hashKey(rawKey))
-		.is("revoked_at", null)
-		.single();
-	if (!keyRecord) return null;
+	const [keyRow] = await db
+		.select({ id: apiKeys.id, memberId: apiKeys.memberId })
+		.from(apiKeys)
+		.where(and(eq(apiKeys.keyHash, hashKey(rawKey)), sql`${apiKeys.revokedAt} IS NULL`))
+		.limit(1);
+	if (!keyRow) return null;
 
 	// Update last_used_at (fire and forget)
-	await svc
-		.from("api_keys")
-		.update({ last_used_at: new Date().toISOString() })
-		.eq("id", keyRecord.id);
+	db.update(apiKeys)
+		.set({ lastUsedAt: new Date() })
+		.where(eq(apiKeys.id, keyRow.id))
+		.then(() => {})
+		.catch(() => {});
 
-	const { data: client } = await svc
-		.from("clients")
-		.select("*")
-		.eq("id", keyRecord.client_id)
-		.eq("is_active", true)
-		.single();
-	if (!client) return null;
+	const [member] = await db
+		.select({ id: clientMembers.id, name: clientMembers.name, email: clientMembers.email })
+		.from(clientMembers)
+		.where(and(eq(clientMembers.id, keyRow.memberId), eq(clientMembers.isActive, true)))
+		.limit(1);
+	if (!member) return null;
 
-	const { data: project } = await svc
-		.from("projects")
-		.select("*")
-		.eq("id", (client as Client).project_id)
-		.single();
-	if (!project) return null;
+	// Resolve all project IDs across the member's companies
+	const memberCompanies = await db
+		.select({ companyId: clientCompanyMembers.companyId })
+		.from(clientCompanyMembers)
+		.where(eq(clientCompanyMembers.memberId, member.id));
 
-	return { client: client as Client, project: project as Project };
+	const companyIds = memberCompanies.map((c) => c.companyId);
+	if (companyIds.length === 0) return { member, projectIds: [] };
+
+	const memberProjects = await db
+		.select({ id: projects.id })
+		.from(projects)
+		.where(inArray(projects.companyId, companyIds));
+
+	return {
+		member,
+		projectIds: memberProjects.map((p) => p.id),
+	};
 }
 
 // ── Tool definitions ───────────────────────────────────────────────
@@ -89,7 +107,7 @@ const TOOLS = [
 	{
 		name: "get_project_status",
 		description:
-			"Get the current status of the client's project — engagement type, rate, deliverables progress, and overall status.",
+			"Get the current status of all the client's projects — engagement type, rate, deliverables progress, and overall status.",
 		inputSchema: { type: "object", properties: {} },
 	},
 	{
@@ -107,7 +125,7 @@ const TOOLS = [
 	{
 		name: "get_deliverables",
 		description:
-			"List all project deliverables with their current status (planned, in progress, review, completed, blocked) and progress updates. This is the primary way to see what work has been done and what's coming next.",
+			"List all project deliverables with their current status and progress updates.",
 		inputSchema: { type: "object", properties: {} },
 	},
 	{
@@ -129,103 +147,140 @@ const TOOLS = [
 
 // ── Tool implementations ───────────────────────────────────────────
 
-async function getProjectStatus(ctx: AuthedClient) {
-	const svc = supabaseService();
-	const { data: deliverables } = await svc
-		.from("deliverables")
-		.select("id, status")
-		.eq("project_id", ctx.project.id);
+async function getProjectStatus(ctx: AuthedMember) {
+	if (ctx.projectIds.length === 0) return { projects: [] };
 
-	const all = deliverables ?? [];
-	const completed = all.filter((d) => d.status === "completed").length;
+	const rows = await db
+		.select({
+			name: projects.name,
+			companyName: companies.name,
+			engagementType: projects.engagementType,
+			hourlyRate: projects.hourlyRate,
+			fixedPrice: projects.fixedPrice,
+			status: projects.status,
+			notes: projects.notes,
+		})
+		.from(projects)
+		.innerJoin(companies, eq(companies.id, projects.companyId))
+		.where(inArray(projects.id, ctx.projectIds));
 
-	return {
-		project: {
-			name: ctx.project.name,
-			client: ctx.project.client_name,
-			type: ctx.project.engagement_type,
-			hourly_rate: ctx.project.hourly_rate,
-			status: ctx.project.status,
-			notes: ctx.project.notes,
-		},
-		deliverables_progress: `${completed} / ${all.length} completed`,
-		deliverable_statuses: all.map((d) => d.status),
-	};
+	return { projects: rows };
 }
 
-async function getDocuments(ctx: AuthedClient) {
-	const svc = supabaseService();
-	const { data } = await svc
-		.from("documents")
-		.select("title, type, url, file_name, audio_file_name, description, created_at")
-		.eq("project_id", ctx.project.id)
-		.eq("visibility", "client")
-		.order("created_at", { ascending: false });
+async function getDocuments(ctx: AuthedMember) {
+	if (ctx.projectIds.length === 0) return [];
+	const rows = await db
+		.select({
+			title: documents.title,
+			type: documents.type,
+			url: documents.url,
+			fileName: documents.fileName,
+			audioFileName: documents.audioFileName,
+			description: documents.description,
+			createdAt: documents.createdAt,
+		})
+		.from(documents)
+		.where(and(inArray(documents.projectId, ctx.projectIds), eq(documents.visibility, "client")))
+		.orderBy(desc(documents.createdAt));
 
-	return (data ?? []).map((d) => ({
+	return rows.map((d) => ({
 		title: d.title,
 		type: d.type,
 		description: d.description,
 		url: d.type === "link" ? d.url : null,
-		file: d.type !== "link" ? d.file_name : null,
-		audio: d.audio_file_name || null,
-		created: d.created_at,
+		file: d.type !== "link" ? d.fileName : null,
+		audio: d.audioFileName || null,
+		created: d.createdAt,
 	}));
 }
 
-async function getInvoices(ctx: AuthedClient) {
-	const svc = supabaseService();
-	const { data } = await svc
-		.from("invoices")
-		.select("number, amount, status, issue_date, due_date, payment_url, notes")
-		.eq("project_id", ctx.project.id)
-		.order("created_at", { ascending: false });
+async function getInvoices(ctx: AuthedMember) {
+	if (ctx.projectIds.length === 0) return [];
+	const rows = await db
+		.select()
+		.from(invoices)
+		.where(inArray(invoices.projectId, ctx.projectIds))
+		.orderBy(desc(invoices.createdAt));
 
-	return (data ?? []).map((i) => ({
+	return rows.map((i) => ({
 		number: i.number,
 		amount: `$${Number(i.amount).toLocaleString("en-US", { minimumFractionDigits: 2 })}`,
 		status: i.status,
-		issued: i.issue_date,
-		due: i.due_date,
-		payment_url: i.payment_url,
+		issued: i.issueDate,
+		due: i.dueDate,
+		payment_url: i.paymentUrl,
 		notes: i.notes,
 	}));
 }
 
-async function getDeliverables(ctx: AuthedClient) {
-	const svc = supabaseService();
-	const { data } = await svc
-		.from("deliverables")
-		.select("title, description, status, updates:deliverable_updates(body, created_at)")
-		.eq("project_id", ctx.project.id)
-		.order("sort_order");
+async function getDeliverables(ctx: AuthedMember) {
+	if (ctx.projectIds.length === 0) return [];
+	const delvs = await db
+		.select()
+		.from(deliverables)
+		.where(inArray(deliverables.projectId, ctx.projectIds))
+		.orderBy(deliverables.sortOrder);
 
-	return (data ?? []).map((d: any) => ({
+	if (delvs.length === 0) return [];
+
+	const updates = await db
+		.select()
+		.from(deliverableUpdates)
+		.where(inArray(deliverableUpdates.deliverableId, delvs.map((d) => d.id)));
+
+	const byId = new Map<string, typeof updates>();
+	for (const u of updates) {
+		const arr = byId.get(u.deliverableId) ?? [];
+		arr.push(u);
+		byId.set(u.deliverableId, arr);
+	}
+
+	return delvs.map((d) => ({
 		title: d.title,
 		description: d.description,
 		status: d.status,
-		updates: (d.updates ?? []).map((u: any) => ({
-			date: u.created_at,
+		updates: (byId.get(d.id) ?? []).map((u) => ({
+			date: u.createdAt,
 			body: u.body,
 		})),
 	}));
 }
 
-async function searchDocuments(ctx: AuthedClient, params: { query: string }) {
-	const svc = supabaseService();
-	const { data } = await svc.rpc("search_documents_fts", {
-		filter_project_id: ctx.project.id,
-		search_text: params.query,
-		match_count: 10,
-	});
-	return (data ?? []).map((d: any) => ({
+async function searchDocuments(ctx: AuthedMember, params: { query: string }) {
+	if (ctx.projectIds.length === 0 || !params.query?.trim()) return [];
+
+	const results = await db.execute<{
+		title: string;
+		type: string;
+		url: string | null;
+		file_name: string | null;
+		description: string | null;
+		snippet: string | null;
+	}>(sql`
+		SELECT d.title, d.type, d.url, d.file_name, d.description,
+			CASE WHEN d.content IS NOT NULL THEN
+				ts_headline('english', d.content, websearch_to_tsquery('english', ${params.query}),
+					'MaxFragments=1, MinWords=5, MaxWords=30')
+			ELSE NULL END as snippet,
+			ts_rank(
+				to_tsvector('english', coalesce(d.title,'') || ' ' || coalesce(d.description,'') || ' ' || coalesce(d.content,'')),
+				websearch_to_tsquery('english', ${params.query})
+			)::real as rank
+		FROM documents d
+		WHERE d.project_id = ANY(${ctx.projectIds}::uuid[])
+			AND d.visibility = 'client'
+			AND to_tsvector('english', coalesce(d.title,'') || ' ' || coalesce(d.description,'') || ' ' || coalesce(d.content,''))
+				@@ websearch_to_tsquery('english', ${params.query})
+		ORDER BY rank DESC
+		LIMIT 10
+	`);
+
+	return results.rows.map((d) => ({
 		title: d.title,
 		type: d.type,
 		description: d.description,
 		url: d.type === "link" ? d.url : null,
-		content_snippet: d.snippet
-			? d.snippet.replace(/<\/?b>/g, "")
-			: null,
+		content_snippet: d.snippet ? d.snippet.replace(/<\/?b>/g, "") : null,
 	}));
 }
 
@@ -252,16 +307,12 @@ export async function POST(event: APIEvent) {
 
 	const id = body.id ?? null;
 
-	// Handle JSON-RPC methods
 	switch (body.method) {
 		case "initialize":
 			return rpcResponse(id, {
 				protocolVersion: PROTOCOL_VERSION,
 				capabilities: { tools: { listChanged: false } },
-				serverInfo: {
-					name: "madcactus-portal",
-					version: "1.0.0",
-				},
+				serverInfo: { name: "madcactus-portal", version: "1.0.0" },
 			});
 
 		case "notifications/initialized":
@@ -310,7 +361,6 @@ export async function POST(event: APIEvent) {
 	}
 }
 
-/** OPTIONS handler for CORS preflight */
 export function OPTIONS() {
 	return new Response(null, {
 		status: 204,
@@ -322,7 +372,6 @@ export function OPTIONS() {
 	});
 }
 
-/** GET — return server info for health checks / browser access */
 export function GET() {
 	return json({
 		server: "madcactus-portal",
