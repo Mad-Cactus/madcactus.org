@@ -121,7 +121,7 @@ async function linearIssues(): Promise<
 			body: JSON.stringify({
 				query:
 					`{ issues(filter: { assignee: { isMe: { eq: true } }, ` +
-					`state: { type: { neq: completed } } }, orderBy: updatedAt) ` +
+					`state: { type: { neq: "completed" } } }, orderBy: updatedAt) ` +
 					`{ nodes { id identifier title priority state { name } } } }`,
 			}),
 		});
