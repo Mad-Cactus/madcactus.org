@@ -6,7 +6,7 @@ import {
 	createCompanyAction,
 	getCompaniesQuery,
 	getMembersQuery,
-	updateMemberPasswordAction,
+	resendInviteAction,
 	toggleMemberActiveAction,
 	linkMemberAction,
 } from "~/lib/admin-queries";
@@ -19,14 +19,12 @@ export default function Companies() {
 	});
 	const members = createAsync(() => getMembersQuery(), { deferStream: true });
 	const createCompany = useAction(createCompanyAction);
-	const updatePassword = useAction(updateMemberPasswordAction);
+	const resendInvite = useAction(resendInviteAction);
 	const toggleActive = useAction(toggleMemberActiveAction);
 	const linkMember = useAction(linkMemberAction);
 
 	const [showForm, setShowForm] = createSignal(false);
 	const [showLinkForm, setShowLinkForm] = createSignal<string | null>(null);
-	const [pwModal, setPwModal] = createSignal<string | null>(null);
-	const [newPw, setNewPw] = createSignal("");
 	const [error, setError] = createSignal("");
 
 	async function handleCreate(e: Event) {
@@ -37,13 +35,11 @@ export default function Companies() {
 		if (result?.error) setError(result.error);
 	}
 
-	async function handlePwUpdate(e: Event) {
-		e.preventDefault();
+	async function handleResend(id: string) {
 		setError("");
 		const fd = new FormData();
-		fd.set("id", pwModal()!);
-		fd.set("password", newPw());
-		const result = await updatePassword(fd);
+		fd.set("id", id);
+		const result = await resendInvite(fd);
 		if (result?.error) setError(result.error);
 	}
 
@@ -151,7 +147,7 @@ export default function Companies() {
 													</td>
 													<td>
 														<div style={{ display: "flex", gap: "8px" }}>
-															<button class="btn btn-sm" onClick={() => setPwModal(m.id)}>Set Password</button>
+															<button class="btn btn-sm" onClick={() => handleResend(m.id)}>Resend Invite</button>
 															<form method="post" action="/admin/companies/toggle-member">
 																<input type="hidden" name="id" value={m.id} />
 																<input type="hidden" name="is_active" value={String(m.isActive)} />
@@ -170,28 +166,6 @@ export default function Companies() {
 				</Suspense>
 			</div>
 
-			{/* Password modal */}
-			<Show when={pwModal()}>
-				<div
-					style={{ position: "fixed", inset: "0", background: "rgba(0,0,0,0.7)", display: "flex", "align-items": "center", "justify-content": "center", "z-index": "100" }}
-					onClick={() => setPwModal(null)}
-				>
-					<div class="card" style={{ width: "400px", padding: "32px" }} onClick={(e) => e.stopPropagation()}>
-						<h3 style={{ "margin-bottom": "16px" }}>Set New Password</h3>
-						<form onSubmit={handlePwUpdate}>
-							<div class="form-group">
-								<label for="newpw">New Password</label>
-								<input type="text" id="newpw" required minlength="6" value={newPw()} onInput={(e) => setNewPw(e.currentTarget.value)} />
-							</div>
-							<Show when={error()}><p class="login-error">{error()}</p></Show>
-							<div style={{ display: "flex", gap: "8px", "margin-top": "16px" }}>
-								<button type="submit" class="btn btn-primary">Update</button>
-								<button type="button" class="btn" onClick={() => { setPwModal(null); setNewPw(""); setError(""); }}>Cancel</button>
-							</div>
-						</form>
-					</div>
-				</div>
-			</Show>
 		</Layout>
 	);
 }

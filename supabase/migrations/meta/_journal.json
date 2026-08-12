@@ -8,6 +8,20 @@
       "when": 1786531239342,
       "tag": "0000_clean_toad_men",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1786560767170,
+      "tag": "0001_last_old_lace",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786560800000,
+      "tag": "0002_supplemental",
+      "breakpoints": true
     }
   ]
 }
