@@ -54,9 +54,11 @@ async function resendLeads(): Promise<ExternalResult<{ subscribers: number; over
 async function posthogStats(): Promise<
 	ExternalResult<{ pageviews30d: number; uniqueUsers30d: number; pageviews7d: number }>
 > {
-	const host = process.env.POSTHOG_HOST;
+	// ponytail: PostHog Cloud is single-region (us/eu); host is a stable default
+	// rather than a required secret. Override via POSTHOG_HOST only if on EU cloud.
+	const host = process.env.POSTHOG_HOST ?? "https://us.i.posthog.com";
 	const key = process.env.POSTHOG_PERSONAL_KEY;
-	if (!host || !key) return notConfigured();
+	if (!key) return notConfigured();
 	try {
 		const headers: Record<string, string> = {
 			"Content-Type": "application/json",
