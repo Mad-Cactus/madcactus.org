@@ -1,9 +1,8 @@
 import type { APIEvent } from "@solidjs/start/server";
 import { getCookie } from "@solidjs/start/http";
 import { supabaseAdmin, supabaseService } from "~/lib/supabase";
-import { embed } from "~/lib/embeddings";
 
-/** Extract text from file content for embedding. */
+/** Extract text from file content for full-text search indexing. */
 function extractText(fileName: string, mime: string, bytes: ArrayBuffer): string {
 	const ext = fileName.split(".").pop()?.toLowerCase();
 	// Plain text formats
@@ -14,7 +13,7 @@ function extractText(fileName: string, mime: string, bytes: ArrayBuffer): string
 		return new TextDecoder().decode(bytes);
 	}
 	// ponytail: PDF/DOCX text extraction would need a lib (pdf-parse, mammoth).
-	// For now those store file only — title/description still get embedded.
+	// For now those store file only — title/description still get indexed.
 	return "";
 }
 
@@ -64,16 +63,9 @@ export async function POST(event: APIEvent) {
 		return new Response(`Upload failed: ${uploadErr.message}`, { status: 500 });
 	}
 
-	// Extract text + generate embedding
+	// Extract text for full-text search indexing (search_vector is generated automatically)
 	const extractedText = extractText(file.name, file.type, fileBytes);
-	const embedText = [title, description, extractedText].filter(Boolean).join("\n\n");
-	let embedding: number[] | undefined;
 	let content: string | null = extractedText || null;
-	try {
-		if (embedText.trim()) embedding = await embed(embedText);
-	} catch (e) {
-		console.error("Embedding failed:", e);
-	}
 
 	// Create document record
 	const { error: dbErr } = await admin.from("documents").insert({
@@ -86,7 +78,6 @@ export async function POST(event: APIEvent) {
 		mime_type: file.type,
 		description,
 		content,
-		embedding,
 		visibility: "client",
 	});
 
