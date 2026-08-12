@@ -323,6 +323,51 @@
   color: var(--text-subtle);
 }
 
+.badge-over {
+  color: var(--red);
+}
+
+/* ── Overview tiles — external / placeholder states ── */
+.stat-card .value-muted {
+  color: var(--text-subtle);
+  font-style: italic;
+  font-size: 24px;
+}
+
+.stat-card .value-error {
+  color: var(--red);
+  font-style: italic;
+  font-size: 24px;
+}
+
+.stat-card .sub-error {
+  color: var(--red);
+}
+
+.stat-grid-muted {
+  margin-top: 12px;
+  border-top-color: rgba(0, 0, 0, 0.12);
+}
+
+.stat-card-placeholder {
+  opacity: 0.6;
+}
+
+.stat-card-placeholder .label {
+  color: var(--text-subtle);
+}
+
+/* ── Section heading aside (e.g. total unpaid) ── */
+.section-aside {
+  float: right;
+  font-family: var(--font-sans);
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--gold);
+}
+
 /* ── Forms ── */
 .form-group {
   margin-bottom: 16px;

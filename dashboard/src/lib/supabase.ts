@@ -116,11 +116,26 @@ export interface ApiKey {
  * Supabase client using anon/publishable key.
  * RLS-enforced. Used by admin server functions after setSession().
  */
+// ponytail: 10s fetch timeout prevents infinite hangs when SUPABASE_URL is
+// unreachable or misconfigured. Without this, signInWithPassword hangs forever
+// and the login button stays stuck on "Signing in…".
+const fetchWithTimeout = (url: any, init: any) =>
+	fetch(url, { ...init, signal: AbortSignal.timeout(10_000) });
+
+function requireEnv(name: string): string {
+	const v = process.env[name];
+	if (!v) throw new Error(`${name} is not set — check dashboard/.env`);
+	return v;
+}
+
 export function supabaseAdmin() {
 	return createClient(
-		process.env.SUPABASE_URL!,
-		process.env.SUPABASE_ANON_KEY!,
-		{ auth: { persistSession: false, autoRefreshToken: false } },
+		requireEnv("SUPABASE_URL"),
+		requireEnv("SUPABASE_ANON_KEY"),
+		{
+			auth: { persistSession: false, autoRefreshToken: false },
+			global: { fetch: fetchWithTimeout },
+		},
 	);
 }
 
@@ -131,8 +146,11 @@ export function supabaseAdmin() {
  */
 export function supabaseService() {
 	return createClient(
-		process.env.SUPABASE_URL!,
-		process.env.SUPABASE_SERVICE_KEY!,
-		{ auth: { persistSession: false, autoRefreshToken: false } },
+		requireEnv("SUPABASE_URL"),
+		requireEnv("SUPABASE_SERVICE_KEY"),
+		{
+			auth: { persistSession: false, autoRefreshToken: false },
+			global: { fetch: fetchWithTimeout },
+		},
 	);
 }
