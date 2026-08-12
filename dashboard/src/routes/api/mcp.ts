@@ -113,7 +113,7 @@ const TOOLS = [
 	{
 		name: "search_documents",
 		description:
-			"Semantic search across all project documents, transcripts, and shared links. Use this to find specific information — e.g. 'scope requirements', 'meeting notes about timeline', 'architecture decisions'.",
+			"Search across all project documents and transcripts by keyword. Returns matching documents with relevant text snippets.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -212,17 +212,10 @@ async function getDeliverables(ctx: AuthedClient) {
 }
 
 async function searchDocuments(ctx: AuthedClient, params: { query: string }) {
-	const { embed: embedFn } = await import("~/lib/embeddings");
-	let queryEmbedding: number[];
-	try {
-		queryEmbedding = await embedFn(params.query);
-	} catch {
-		return { error: "Search is temporarily unavailable. Embeddings service not configured." };
-	}
 	const svc = supabaseService();
-	const { data } = await svc.rpc("match_documents", {
-		query_embedding: queryEmbedding,
+	const { data } = await svc.rpc("search_documents_fts", {
 		filter_project_id: ctx.project.id,
+		search_text: params.query,
 		match_count: 10,
 	});
 	return (data ?? []).map((d: any) => ({
@@ -230,10 +223,9 @@ async function searchDocuments(ctx: AuthedClient, params: { query: string }) {
 		type: d.type,
 		description: d.description,
 		url: d.type === "link" ? d.url : null,
-		content_snippet: d.content
-			? d.content.slice(0, 500) + (d.content.length > 500 ? "…" : "")
+		content_snippet: d.snippet
+			? d.snippet.replace(/<\/?b>/g, "")
 			: null,
-		similarity: Number((d.similarity * 100).toFixed(0)) + "%",
 	}));
 }
 

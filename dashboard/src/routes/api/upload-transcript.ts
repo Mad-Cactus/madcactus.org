@@ -1,7 +1,6 @@
 import type { APIEvent } from "@solidjs/start/server";
 import { getCookie } from "@solidjs/start/http";
 import { supabaseAdmin, supabaseService } from "~/lib/supabase";
-import { embed } from "~/lib/embeddings";
 
 /** Upload a meeting transcript with searchable text + optional audio.
  *  Creates one document row of type='transcript'.
@@ -50,14 +49,7 @@ export async function POST(event: APIEvent) {
 		}
 	}
 
-	// Embed transcript text for RAG search
-	const embedText = [title, description, content].filter(Boolean).join("\n\n");
-	let embedding: number[] | undefined;
-	try {
-		if (embedText.trim()) embedding = await embed(embedText);
-	} catch (e) {
-		console.error("Embedding failed:", e);
-	}
+	// content is indexed by the generated search_vector column automatically
 
 	const { error: dbErr } = await admin.from("documents").insert({
 		project_id: projectId,
@@ -65,7 +57,6 @@ export async function POST(event: APIEvent) {
 		title,
 		description,
 		content: content || null,
-		embedding,
 		visibility: "client",
 		audio_path: audioPath,
 		audio_file_name: audioFileName,

@@ -1,9 +1,8 @@
 import type { APIEvent } from "@solidjs/start/server";
 import { getCookie } from "@solidjs/start/http";
 import { supabaseService } from "~/lib/supabase";
-import { embed } from "~/lib/embeddings";
 
-/** Client-side search endpoint. Returns JSON search results.
+/** Client-side full-text search endpoint.
  *  Auth: client session cookie. */
 export async function GET(event: APIEvent) {
 	const clientId = getCookie("mc-client-session");
@@ -21,16 +20,9 @@ export async function GET(event: APIEvent) {
 	const q = new URL(event.request.url).searchParams.get("q");
 	if (!q || q.trim().length < 2) return json({ results: [] });
 
-	let queryEmbedding: number[];
-	try {
-		queryEmbedding = await embed(q);
-	} catch (e) {
-		return json({ error: "Search temporarily unavailable" }, 503);
-	}
-
-	const { data, error } = await svc.rpc("match_documents", {
-		query_embedding: queryEmbedding,
+	const { data, error } = await svc.rpc("search_documents_fts", {
 		filter_project_id: client.project_id,
+		search_text: q,
 		match_count: 10,
 	});
 
@@ -43,10 +35,9 @@ export async function GET(event: APIEvent) {
 		url: d.url,
 		file_name: d.file_name,
 		description: d.description,
-		content_snippet: d.content
-			? d.content.slice(0, 300) + (d.content.length > 300 ? "…" : "")
+		content_snippet: d.snippet
+			? d.snippet.replace(/<\/?b>/g, "")
 			: null,
-		similarity: Math.round(d.similarity * 100),
 	}));
 
 	return json({ results });

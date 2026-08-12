@@ -22,7 +22,6 @@ interface SearchHit {
 	file_name: string | null;
 	description: string | null;
 	content_snippet: string | null;
-	similarity: number;
 }
 
 export default function PortalDocuments() {
@@ -88,9 +87,6 @@ export default function PortalDocuments() {
 									<div style={{ flex: "1" }}>
 										<div style={{ "font-size": "15px", "font-weight": "500" }}>
 											{hit.title}
-											<span class="muted" style={{ "font-size": "11px", "margin-left": "8px", "font-weight": "normal" }}>
-												{hit.similarity}% match
-											</span>
 										</div>
 										<Show when={hit.content_snippet}>
 											<div style={{ "font-size": "13px", "margin-top": "6px", opacity: "0.7", "line-height": "1.5" }}>

@@ -2,7 +2,6 @@ import { query, action, redirect } from "@solidjs/router";
 import { getAuthedClient } from "./session";
 import { supabaseService } from "./supabase";
 import { hashPassword } from "./crypto";
-import { embed } from "./embeddings";
 import type {
 	Client,
 	Document,
@@ -101,13 +100,7 @@ export const createDocumentLinkAction = action(async (formData: FormData) => {
 	const description = String(formData.get("description") || "");
 	const content = String(formData.get("content") || "");
 
-	const embedText = [title, description, content].filter(Boolean).join("\n\n");
-	let embedding: number[] | undefined;
-	try {
-		if (embedText.trim()) embedding = await embed(embedText);
-	} catch (e) {
-		console.error("Embedding failed:", e);
-	}
+	// content is indexed by the generated search_vector column automatically
 
 	const { error } = await supabase.from("documents").insert({
 		project_id: String(formData.get("project_id")),
@@ -116,7 +109,6 @@ export const createDocumentLinkAction = action(async (formData: FormData) => {
 		url: String(formData.get("url")),
 		description,
 		content: content || null,
-		embedding,
 		visibility: "client",
 	});
 	if (error) return { error: error.message };
