@@ -42,6 +42,7 @@ export default function ClientDetail() {
 	const deleteInvoice = useAction(deleteInvoiceAction);
 
 	const [showDocForm, setShowDocForm] = createSignal(false);
+	const [showTranscriptForm, setShowTranscriptForm] = createSignal(false);
 	const [showInvForm, setShowInvForm] = createSignal(false);
 	const [docError, setDocError] = createSignal("");
 	const [invError, setInvError] = createSignal("");
@@ -91,6 +92,9 @@ export default function ClientDetail() {
 									<button class="btn btn-sm" onClick={() => setShowDocForm(!showDocForm())}>
 										Add Link
 									</button>
+									<button class="btn btn-sm" onClick={() => setShowTranscriptForm(!showTranscriptForm())}>
+										Add Transcript
+									</button>
 									<form method="post" action="/api/upload" enctype="multipart/form-data">
 										<input type="hidden" name="project_id" value={projectId()} />
 										<input type="hidden" name="_referer" value={referer()} />
@@ -119,6 +123,32 @@ export default function ClientDetail() {
 									</form>
 								</div>
 							</div>
+
+							<Show when={showTranscriptForm()}>
+								<div class="card" style={{ "margin-bottom": "16px" }}>
+									<form method="post" action="/api/upload-transcript" enctype="multipart/form-data">
+										<div class="form-group">
+										<label for="tr_title">Title</label>
+										<input type="text" id="tr_title" name="title" required placeholder="CDL Sync W34" />
+										</div>
+										<div class="form-group">
+										<label for="tr_desc">Description (optional)</label>
+										<input type="text" id="tr_desc" name="description" placeholder="Weekly team sync" />
+										</div>
+										<div class="form-group">
+										<label for="tr_content">Transcript text</label>
+										<textarea id="tr_content" name="content" rows={8} required placeholder="Paste the trimmed transcript here. This text becomes searchable via RAG…" />
+										</div>
+										<div class="form-group">
+										<label for="tr_audio">Audio file (optional)</label>
+										<input type="file" id="tr_audio" name="audio" accept="audio/*" />
+										</div>
+										<input type="hidden" name="project_id" value={projectId()} />
+										<input type="hidden" name="_referer" value={referer()} />
+										<button type="submit" class="btn btn-primary">Add Transcript</button>
+									</form>
+								</div>
+							</Show>
 
 							<Show when={showDocForm()}>
 								<div class="card" style={{ "margin-bottom": "16px" }}>
@@ -182,6 +212,9 @@ export default function ClientDetail() {
 															<Show when={doc.url && doc.type !== "link"}>
 																<input type="hidden" name="storage_path" value={doc.url!} />
 															</Show>
+																<Show when={doc.audio_path}>
+																	<input type="hidden" name="audio_path" value={doc.audio_path!} />
+																</Show>
 															<input type="hidden" name="_referer" value={referer()} />
 															<button type="submit" class="btn btn-sm" style={{ color: "#ef4444" }}>Delete</button>
 														</form>
