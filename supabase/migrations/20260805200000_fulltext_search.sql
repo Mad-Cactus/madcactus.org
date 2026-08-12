@@ -9,7 +9,7 @@ alter table documents
             coalesce(title, '') || ' ' ||
             coalesce(description, '') || ' ' ||
             coalesce(content, '')
-        )
+        ) stored
     );
 
 create index if not exists idx_documents_fts
