@@ -3,6 +3,7 @@ import { A, createAsync, useAction, useParams, revalidate } from "@solidjs/route
 import { For, Show, Suspense, createSignal } from "solid-js";
 import Layout from "~/components/Layout";
 import ProjectDocuments from "~/components/ProjectDocuments";
+import ConfirmButton from "~/components/ConfirmButton";
 import {
 	createMemberAction,
 	linkMemberAction,
@@ -303,14 +304,18 @@ function CompanyProjectSection(props: {
 											<Show when={inv.paymentUrl}>
 												<a href={inv.paymentUrl!} target="_blank" rel="noopener noreferrer" class="muted" style={{ "font-size": "12px" }}>Pay</a>
 											</Show>
-											<form method="post" action="/admin/companies/delete-inv" style={{ display: "inline", "margin-left": "auto" }}>
-												<input type="hidden" name="id" value={inv.id} />
-												<Show when={inv.storagePath}>
-													<input type="hidden" name="storage_path" value={inv.storagePath!} />
-												</Show>
-												<input type="hidden" name="_referer" value={props.referer} />
-												<button type="submit" class="btn btn-sm" style={{ color: "#ef4444" }}>Delete</button>
-											</form>
+											<ConfirmButton
+																label="Delete"
+																danger
+																style={{ "margin-left": "auto" }}
+																onConfirm={async () => {
+																	const fd = new FormData();
+																	fd.set("id", inv.id);
+																	if (inv.storagePath)
+																		fd.set("storage_path", inv.storagePath!);
+																	return deleteInvoice(fd);
+																}}
+															/>
 										</div>
 									)}
 								</For>

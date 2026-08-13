@@ -219,13 +219,16 @@ export const deleteDocumentAction = action(async (formData: FormData) => {
 	const storagePath = String(formData.get("storage_path") || "");
 	const audioPath = String(formData.get("audio_path") || "");
 	const paths = [storagePath, audioPath].filter(Boolean);
-	if (paths.length) {
-		const svc = supabaseService();
-		await svc.storage.from("portal-docs").remove(paths);
+	try {
+		if (paths.length) {
+			const svc = supabaseService();
+			await svc.storage.from("portal-docs").remove(paths);
+		}
+		await db.delete(documents).where(eq(documents.id, id));
+		return { success: "Document deleted." };
+	} catch (e) {
+		return { error: e instanceof Error ? e.message : "Failed to delete document." };
 	}
-	await db.delete(documents).where(eq(documents.id, id));
-	const ref = formData.get("_referer");
-	throw redirect(ref ? String(ref) : "/admin/companies");
 }, "deleteDocument");
 
 // ── Invoices ──────────────────────────────────────────────────────
@@ -266,13 +269,16 @@ export const deleteInvoiceAction = action(async (formData: FormData) => {
 	await requireAdmin();
 	const id = String(formData.get("id"));
 	const storagePath = String(formData.get("storage_path") || "");
-	if (storagePath) {
-		const svc = supabaseService();
-		await svc.storage.from("portal-docs").remove([storagePath]);
+	try {
+		if (storagePath) {
+			const svc = supabaseService();
+			await svc.storage.from("portal-docs").remove([storagePath]);
+		}
+		await db.delete(invoices).where(eq(invoices.id, id));
+		return { success: "Invoice deleted." };
+	} catch (e) {
+		return { error: e instanceof Error ? e.message : "Failed to delete invoice." };
 	}
-	await db.delete(invoices).where(eq(invoices.id, id));
-	const ref = formData.get("_referer");
-	throw redirect(ref ? String(ref) : "/admin/companies");
 }, "deleteInvoice");
 
 // ── Deliverables ──────────────────────────────────────────────────
@@ -370,7 +376,10 @@ export const deleteDeliverableAction = action(async (formData: FormData) => {
 	"use server";
 	await requireAdmin();
 	const id = String(formData.get("id"));
-	await db.delete(deliverables).where(eq(deliverables.id, id));
-	const ref = formData.get("_referer");
-	throw redirect(ref ? String(ref) : "/admin/projects");
+	try {
+		await db.delete(deliverables).where(eq(deliverables.id, id));
+		return { success: "Deliverable deleted." };
+	} catch (e) {
+		return { error: e instanceof Error ? e.message : "Failed to delete deliverable." };
+	}
 }, "deleteDeliverable");

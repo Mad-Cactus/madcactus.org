@@ -3,6 +3,7 @@ import { A, useNavigate, useParams, createAsync, useAction } from "@solidjs/rout
 import { For, Show, Suspense, createSignal } from "solid-js";
 import Layout from "~/components/Layout";
 import ProjectDocuments from "~/components/ProjectDocuments";
+import ConfirmButton from "~/components/ConfirmButton";
 import {
 	createTimeEntryAction,
 	deleteTimeEntryAction,
@@ -10,7 +11,7 @@ import {
 	getProjectQuery,
 	getUserQuery,
 } from "~/lib/queries";
-import { getDeliverablesQuery } from "~/lib/admin-queries";
+import { getDeliverablesQuery, deleteDeliverableAction } from "~/lib/admin-queries";
 import type { DeliverableStatus } from "~/db/schema";
 
 const STATUS_OPTIONS: DeliverableStatus[] = [
@@ -38,6 +39,7 @@ export default function ProjectDetail() {
 	const deliverables = createAsync(() => getDeliverablesQuery(params.id!), { deferStream: true });
 	const createEntry = useAction(createTimeEntryAction);
 	const deleteEntry = useAction(deleteTimeEntryAction);
+	const deleteDeliverable = useAction(deleteDeliverableAction);
 	const [error, setError] = createSignal("");
 	const [showDeliverableForm, setShowDeliverableForm] = createSignal(false);
 	const [updateDeliverableId, setUpdateDeliverableId] = createSignal<string | null>(null);
@@ -55,13 +57,6 @@ export default function ProjectDetail() {
 		const result = (await createEntry(fd)) as { error?: string } | undefined;
 		if (result?.error) setError(result.error);
 		else form.reset();
-	}
-
-	async function handleDelete(id: string) {
-		const fd = new FormData();
-		fd.set("id", id);
-		fd.set("_referer", `/admin/projects/${params.id}`);
-		await deleteEntry(fd);
 	}
 
 	return (
@@ -181,11 +176,16 @@ export default function ProjectDetail() {
 																		<button type="button" class="btn btn-sm" onClick={() => setUpdateDeliverableId(null)}>Cancel</button>
 																	</form>
 																</Show>
-																<form method="post" action="/admin/projects/delete-deliverable" style={{ display: "inline", "margin-left": "auto" }}>
-																	<input type="hidden" name="id" value={delv.id} />
-																	<input type="hidden" name="_referer" value={`/admin/projects/${params.id}`} />
-																	<button type="submit" class="btn btn-sm" style={{ color: "#ef4444" }}>Delete</button>
-																</form>
+																<ConfirmButton
+																label="Delete"
+																danger
+																style={{ "margin-left": "auto" }}
+																onConfirm={async () => {
+																	const fd = new FormData();
+																	fd.set("id", delv.id);
+																	return deleteDeliverable(fd);
+																}}
+															/>
 															</div>
 														</div>
 													)}
@@ -270,7 +270,15 @@ export default function ProjectDetail() {
 													<td>{e.description}</td>
 													<td class="hours" style={{ "text-align": "right" }}>{e.hours}</td>
 													<td style={{ width: "40px" }}>
-														<button class="delete-btn" onClick={() => handleDelete(e.id)}>Delete</button>
+														<ConfirmButton
+													label="Delete"
+													class="delete-btn"
+													onConfirm={async () => {
+														const fd = new FormData();
+														fd.set("id", e.id);
+														return deleteEntry(fd);
+													}}
+												/>
 													</td>
 												</tr>
 											)}

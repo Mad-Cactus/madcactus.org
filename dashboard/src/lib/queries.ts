@@ -210,6 +210,10 @@ export const deleteTimeEntryAction = action(async (formData: FormData) => {
 	"use server";
 	await requireAdmin();
 	const id = String(formData.get("id"));
-	await db.delete(timeEntries).where(eq(timeEntries.id, id));
-	throw redirect(refererFromFormData(formData));
+	try {
+		await db.delete(timeEntries).where(eq(timeEntries.id, id));
+		return { success: "Entry deleted." };
+	} catch (e) {
+		return { error: e instanceof Error ? e.message : "Failed to delete entry." };
+	}
 }, "deleteTimeEntry");
