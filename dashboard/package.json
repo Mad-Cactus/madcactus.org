@@ -3,7 +3,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
-    "build": "vite build",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "prepare": "git config core.hooksPath .githooks",
     "start": "node .output/server/index.mjs",
     "preview": "vite preview",
     "db:generate": "drizzle-kit generate",

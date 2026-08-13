@@ -33,9 +33,7 @@ export default function PortalApiKeys() {
 		const fd = new FormData();
 		fd.set("label", label() || "Default");
 		const result = await createKey(fd);
-		if (result?.error) {
-			setError(result.error);
-		} else if (result?.key) {
+		if (result?.key) {
 			setNewKey(result.key);
 			setLabel("");
 			// Refresh the list

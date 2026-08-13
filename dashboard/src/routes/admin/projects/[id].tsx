@@ -52,7 +52,7 @@ export default function ProjectDetail() {
 		const form = e.target as HTMLFormElement;
 		const fd = new FormData(form);
 		fd.set("_referer", `/admin/projects/${params.id}`);
-		const result = await createEntry(fd);
+		const result = (await createEntry(fd)) as { error?: string } | undefined;
 		if (result?.error) setError(result.error);
 		else form.reset();
 	}
@@ -198,7 +198,7 @@ export default function ProjectDetail() {
 
 							{/* Documents */}
 							<ProjectDocuments
-								projectId={params.id}
+								projectId={params.id!}
 								referer={`/admin/projects/${params.id}`}
 							/>
 
