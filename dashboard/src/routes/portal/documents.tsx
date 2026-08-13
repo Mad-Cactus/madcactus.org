@@ -134,11 +134,11 @@ export default function PortalDocuments() {
 												</Show>
 												<div class="muted" style={{ "font-size": "12px", "margin-top": "4px" }}>
 													{typeLabel[doc.type]}
-													<Show when={doc.file_name}> · {doc.file_name}</Show>
-													<Show when={doc.file_size}>
-														{" "}= {(doc.file_size! / 1024).toFixed(0)}KB
+													<Show when={doc.fileName}> · {doc.fileName}</Show>
+													<Show when={doc.fileSize}>
+														{" "}= {(doc.fileSize! / 1024).toFixed(0)}KB
 													</Show>
-													{" · "}{new Date(doc.created_at).toLocaleDateString()}
+													{" · "}{new Date(doc.createdAt).toLocaleDateString()}
 												</div>
 											</div>
 											<div>
@@ -165,9 +165,9 @@ export default function PortalDocuments() {
 														Open
 													</a>
 												</Show>
-											<Show when={doc.audio_path}>
+											<Show when={doc.audioPath}>
 												<a
-													href={`/api/download?path=${encodeURIComponent(doc.audio_path!)}`}
+													href={`/api/download?path=${encodeURIComponent(doc.audioPath!)}`}
 													class="btn btn-sm"
 													download=""
 												>

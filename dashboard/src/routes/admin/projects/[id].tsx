@@ -153,7 +153,7 @@ export default function ProjectDetail() {
 																		{(upd) => (
 																			<div style={{ "margin-bottom": "8px" }}>
 																				<div class="muted" style={{ "font-size": "11px" }}>
-																					{new Date(upd.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+																					{new Date(upd.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
 																				</div>
 																				<div style={{ "font-size": "13px", "line-height": "1.5" }}>{upd.body}</div>
 																			</div>
@@ -254,7 +254,7 @@ export default function ProjectDetail() {
 											{(e) => (
 												<tr>
 													<td class="muted" style={{ "white-space": "nowrap" }}>
-														{new Date(e.entry_date).toLocaleDateString("en-US", {
+														{new Date(e.entryDate).toLocaleDateString("en-US", {
 															month: "short",
 															day: "numeric",
 															year: "numeric",

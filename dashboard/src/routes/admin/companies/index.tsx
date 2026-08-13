@@ -26,6 +26,8 @@ export default function Companies() {
 	const [showForm, setShowForm] = createSignal(false);
 	const [showLinkForm, setShowLinkForm] = createSignal<string | null>(null);
 	const [error, setError] = createSignal("");
+	const [success, setSuccess] = createSignal("");
+	const [resendingId, setResendingId] = createSignal<string | null>(null);
 
 	async function handleCreate(e: Event) {
 		e.preventDefault();
@@ -37,10 +39,22 @@ export default function Companies() {
 
 	async function handleResend(id: string) {
 		setError("");
-		const fd = new FormData();
-		fd.set("id", id);
-		const result = await resendInvite(fd);
-		if (result?.error) setError(result.error);
+		setSuccess("");
+		setResendingId(id);
+		try {
+			const fd = new FormData();
+			fd.set("id", id);
+			const result = await resendInvite(fd);
+			if (result?.error) {
+				setError(result.error);
+			} else if (result?.success) {
+				setSuccess(result.success);
+			}
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Failed to resend invite.");
+		} finally {
+			setResendingId(null);
+		}
 	}
 
 	return (
@@ -119,6 +133,12 @@ export default function Companies() {
 			{/* ── Members section ─────────────────────────────────── */}
 			<div style={{ "margin-top": "48px" }}>
 				<div class="section-heading">Portal Members</div>
+				<Show when={error()}>
+					<p class="login-error" style={{ "margin-top": "8px" }}>{error()}</p>
+				</Show>
+				<Show when={success()}>
+					<p style={{ color: "#16a34a", "font-size": "13px", "margin-top": "8px" }}>{success()}</p>
+				</Show>
 				<Suspense fallback={<p class="muted">Loading…</p>}>
 					<Show when={members()} fallback={<p class="muted">Loading…</p>}>
 						{(list) => (
@@ -147,7 +167,7 @@ export default function Companies() {
 													</td>
 													<td>
 														<div style={{ display: "flex", gap: "8px" }}>
-															<button class="btn btn-sm" onClick={() => handleResend(m.id)}>Resend Invite</button>
+															<button class="btn btn-sm" onClick={() => handleResend(m.id)} disabled={resendingId() === m.id}>{resendingId() === m.id ? "Sending…" : "Resend Invite"}</button>
 															<form method="post" action="/admin/companies/toggle-member">
 																<input type="hidden" name="id" value={m.id} />
 																<input type="hidden" name="is_active" value={String(m.isActive)} />

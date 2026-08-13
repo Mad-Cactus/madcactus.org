@@ -1,5 +1,5 @@
 import { Title } from "@solidjs/meta";
-import { A, createAsync, useAction, useParams } from "@solidjs/router";
+import { A, createAsync, useAction, useParams, revalidate } from "@solidjs/router";
 import { For, Show, Suspense, createSignal } from "solid-js";
 import Layout from "~/components/Layout";
 import {
@@ -23,7 +23,7 @@ import type { InvoiceStatus } from "~/db/schema";
 export default function CompanyDetail() {
 	const user = createAsync(() => getUserQuery(), { deferStream: true });
 	const params = useParams();
-	const companyId = () => params.id;
+	const companyId = () => params.id!;
 
 	const companies = createAsync(() => getCompaniesQuery(), { deferStream: true });
 	const company = () => (companies() ?? []).find((c) => c.id === companyId());
@@ -52,6 +52,8 @@ export default function CompanyDetail() {
 	const [showDocForm, setShowDocForm] = createSignal<string | null>(null);
 	const [showInvForm, setShowInvForm] = createSignal<string | null>(null);
 	const [error, setError] = createSignal("");
+	const [success, setSuccess] = createSignal("");
+	const [submitting, setSubmitting] = createSignal(false);
 
 	const referer = () => `/admin/companies/${companyId()}`;
 	const today = new Date().toISOString().slice(0, 10);
@@ -65,10 +67,27 @@ export default function CompanyDetail() {
 	async function handleCreateMember(e: Event) {
 		e.preventDefault();
 		setError("");
-		const fd = new FormData(e.target as HTMLFormElement);
-		fd.set("company_id", companyId());
-		const result = await createMember(fd);
-		if (result?.error) setError(result.error);
+		setSuccess("");
+		setSubmitting(true);
+		try {
+			const fd = new FormData(e.target as HTMLFormElement);
+			fd.set("company_id", companyId());
+			const result = await createMember(fd);
+			if (result?.error) {
+				setError(result.error);
+				return;
+			}
+			if (result?.success) {
+				setSuccess(result.success);
+				setShowMemberForm(false);
+				(e.target as HTMLFormElement).reset();
+				await revalidate(getCompanyMembersQuery.key);
+			}
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Something went wrong.");
+		} finally {
+			setSubmitting(false);
+		}
 	}
 
 	async function handleLink(e: Event) {
@@ -154,10 +173,14 @@ export default function CompanyDetail() {
 										</div>
 										<p class="muted" style={{ "font-size": "12px", "margin-bottom": "12px" }}>An invite email will be sent so they can set their own password.</p>
 										<Show when={error()}><p class="login-error">{error()}</p></Show>
-										<button type="submit" class="btn btn-primary">Create + Link</button>
+										<button type="submit" class="btn btn-primary" disabled={submitting()}>{submitting() ? "Sending…" : "Create + Link"}</button>
 									</form>
 								</div>
 							</Show>
+
+						<Show when={success()}>
+							<p style={{ color: "#16a34a", "font-size": "13px", "margin-bottom": "12px" }}>{success()}</p>
+						</Show>
 
 							<Suspense fallback={<p class="muted">Loading…</p>}>
 								<Show when={companyMembers()}>

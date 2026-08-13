@@ -14,6 +14,7 @@ import {
 	deliverables,
 	deliverableUpdates,
 } from "~/db/schema";
+import type { DeliverableStatus, DocumentType, InvoiceStatus } from "~/db/schema";
 
 // ── Auth guard ────────────────────────────────────────────────────
 
@@ -33,9 +34,13 @@ export const getCompaniesQuery = query(async () => {
 export const createCompanyAction = action(async (formData: FormData) => {
 	"use server";
 	await requireAdmin();
-	await db.insert(companies).values({
-		name: String(formData.get("name")),
-	});
+	try {
+		await db.insert(companies).values({
+			name: String(formData.get("name")),
+		});
+	} catch (err) {
+		return { error: err instanceof Error ? err.message : "Failed to create company." };
+	}
 	throw redirect("/admin/companies");
 }, "createCompany");
 
@@ -69,25 +74,36 @@ export const createMemberAction = action(async (formData: FormData) => {
 	const email = String(formData.get("email")).toLowerCase();
 	const name = String(formData.get("name"));
 
-	const [member] = await db.insert(clientMembers).values({ name, email }).returning();
+	try {
+		const [member] = await db
+			.insert(clientMembers)
+		.values({ name, email })
+			.returning();
 
-	// Link member to the company first so the row is fully usable regardless of
-	// whether the invite email sends on the first try.
-	await db
-		.insert(clientCompanyMembers)
-		.values({ memberId: member.id, companyId })
-		.onConflictDoNothing();
+		// Link member to the company first so the row is fully usable regardless of
+		// whether the invite email sends on the first try.
+		await db
+			.insert(clientCompanyMembers)
+			.values({ memberId: member.id, companyId })
+			.onConflictDoNothing();
 
-	// Supabase sends the invite email; the client sets their own password.
-	const redirectTo = inviteRedirect();
-	const { error } = await supabaseService().auth.admin.inviteUserByEmail(email, {
-		data: { name },
-		...(redirectTo ? { redirectTo } : {}),
-	});
-	if (error)
-		return { error: `Member created, but the invite email failed: ${error.message}` };
+		// Supabase sends the invite email; the client sets their own password.
+		const redirectTo = inviteRedirect();
+		const { error } = await supabaseService().auth.admin.inviteUserByEmail(email, {
+			data: { name },
+			...(redirectTo ? { redirectTo } : {}),
+		});
+		if (error)
+			return {
+				error: `Member created, but the invite email failed: ${error.message}`,
+			};
 
-	throw redirect(`/admin/companies/${companyId}`);
+		return { success: `Invite sent to ${email}. They can set their password from the email link.` };
+	} catch (err) {
+		return {
+			error: err instanceof Error ? err.message : "Failed to create member.",
+		};
+	}
 }, "createMember");
 
 export const linkMemberAction = action(async (formData: FormData) => {
@@ -128,20 +144,26 @@ export const resendInviteAction = action(async (formData: FormData) => {
 	"use server";
 	await requireAdmin();
 	const id = String(formData.get("id"));
-	const [member] = await db
-		.select({ email: clientMembers.email })
-		.from(clientMembers)
-		.where(eq(clientMembers.id, id))
-		.limit(1);
-	if (!member) return { error: "Member not found" };
+	try {
+		const [member] = await db
+			.select({ email: clientMembers.email })
+			.from(clientMembers)
+			.where(eq(clientMembers.id, id))
+			.limit(1);
+		if (!member) return { error: "Member not found" };
 
-	const redirectTo = inviteRedirect();
-	const { error } = await supabaseService().auth.admin.inviteUserByEmail(
-		member.email,
-		{ ...(redirectTo ? { redirectTo } : {}) },
-	);
-	if (error) return { error: error.message };
-	throw redirect("/admin/companies");
+		const redirectTo = inviteRedirect();
+		const { error } = await supabaseService().auth.admin.inviteUserByEmail(
+			member.email,
+			{ ...(redirectTo ? { redirectTo } : {}) },
+		);
+		if (error) return { error: error.message };
+		return { success: `Invite re-sent to ${member.email}.` };
+	} catch (err) {
+		return {
+			error: err instanceof Error ? err.message : "Failed to resend invite.",
+		};
+	}
 }, "resendInvite");
 
 export const toggleMemberActiveAction = action(async (formData: FormData) => {
@@ -194,15 +216,16 @@ export const getDocumentsQuery = query(async (projectId: string) => {
 export const createDocumentLinkAction = action(async (formData: FormData) => {
 	"use server";
 	await requireAdmin();
-	await db.insert(documents).values({
+	const doc: typeof documents.$inferInsert = {
 		projectId: String(formData.get("project_id")),
-		type: String(formData.get("type") || "link"),
+		type: String(formData.get("type") || "link") as DocumentType,
 		title: String(formData.get("title")),
 		url: String(formData.get("url")),
 		description: String(formData.get("description") || ""),
 		content: String(formData.get("content") || "") || null,
 		visibility: "client",
-	});
+	};
+	await db.insert(documents).values(doc);
 	const ref = formData.get("_referer");
 	throw redirect(ref ? String(ref) : "/admin/companies");
 }, "createDocumentLink");
@@ -238,11 +261,11 @@ export const getInvoicesQuery = query(async (projectId: string) => {
 export const createInvoiceAction = action(async (formData: FormData) => {
 	"use server";
 	await requireAdmin();
-	await db.insert(invoices).values({
+	const inv: typeof invoices.$inferInsert = {
 		projectId: String(formData.get("project_id")),
 		number: String(formData.get("number")),
 		amount: Number(formData.get("amount")),
-		status: String(formData.get("status") || "draft"),
+		status: String(formData.get("status") || "draft") as InvoiceStatus,
 		issueDate: new Date(String(formData.get("issue_date"))),
 		dueDate: formData.get("due_date")
 			? new Date(String(formData.get("due_date")))
@@ -251,7 +274,8 @@ export const createInvoiceAction = action(async (formData: FormData) => {
 			? String(formData.get("payment_url"))
 			: null,
 		notes: String(formData.get("notes") || ""),
-	});
+	};
+	await db.insert(invoices).values(inv);
 	const ref = formData.get("_referer");
 	throw redirect(ref ? String(ref) : "/admin/companies");
 }, "createInvoice");
@@ -338,7 +362,7 @@ export const updateDeliverableStatusAction = action(
 		const status = String(formData.get("status"));
 		await db
 			.update(deliverables)
-			.set({ status, updatedAt: new Date() })
+			.set({ status: status as DeliverableStatus, updatedAt: new Date() })
 			.where(eq(deliverables.id, id));
 		const ref = formData.get("_referer");
 		throw redirect(ref ? String(ref) : "/admin/projects");

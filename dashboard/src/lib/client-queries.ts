@@ -183,7 +183,7 @@ export const searchDocumentsQuery = query(async (q: string): Promise<SearchHit[]
 		LIMIT 10
 	`);
 
-	return results.rows.map((d) => ({
+	return results.map((d) => ({
 		id: d.id,
 		title: d.title,
 		type: d.type as DocumentType,
@@ -291,12 +291,16 @@ export const createApiKeyAction = action(async (formData: FormData) => {
 	if (!member) throw redirect("/portal/login");
 	const label = String(formData.get("label") || "Default");
 	const rawKey = generateApiKey();
-	await db.insert(apiKeys).values({
-		memberId: member.id,
-		label,
-		keyHash: hashKey(rawKey),
-		keyPrefix: keyPrefix(rawKey),
-	});
+	try {
+		await db.insert(apiKeys).values({
+			memberId: member.id,
+			label,
+			keyHash: hashKey(rawKey),
+			keyPrefix: keyPrefix(rawKey),
+		});
+	} catch (err) {
+		return { error: err instanceof Error ? err.message : "Failed to create API key." };
+	}
 	return { key: rawKey };
 }, "createApiKey");
 
