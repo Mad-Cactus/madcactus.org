@@ -92,7 +92,7 @@ export const createMemberAction = action(async (formData: FormData) => {
 	if (error)
 		return { error: `Member created, but the invite email failed: ${error.message}` };
 
-	throw redirect(`/admin/companies/${companyId}`);
+	return { success: `Member created. Invite sent to ${email}.` };
 }, "createMember");
 
 export const linkMemberAction = action(async (formData: FormData) => {
@@ -146,7 +146,7 @@ export const resendInviteAction = action(async (formData: FormData) => {
 		{ ...(redirectTo ? { redirectTo } : {}) },
 	);
 	if (error) return { error: error.message };
-	throw redirect("/admin/companies");
+	return { success: "Invite re-sent." };
 }, "resendInvite");
 
 export const toggleMemberActiveAction = action(async (formData: FormData) => {
