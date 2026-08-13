@@ -309,9 +309,13 @@ export const revokeApiKeyAction = action(async (formData: FormData) => {
 	const member = await getClient();
 	if (!member) throw redirect("/portal/login");
 	const id = String(formData.get("id"));
-	await db
-		.update(apiKeys)
-		.set({ revokedAt: new Date() })
-		.where(and(eq(apiKeys.id, id), eq(apiKeys.memberId, member.id)));
-	throw redirect("/portal/api-keys");
+	try {
+		await db
+			.update(apiKeys)
+			.set({ revokedAt: new Date() })
+			.where(and(eq(apiKeys.id, id), eq(apiKeys.memberId, member.id)));
+		return { success: "Key revoked." };
+	} catch (e) {
+		return { error: e instanceof Error ? e.message : "Failed to revoke key." };
+	}
 }, "revokeApiKey");

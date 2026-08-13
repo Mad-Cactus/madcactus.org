@@ -1,8 +1,10 @@
 import { createAsync, useAction } from "@solidjs/router";
 import { For, Show, Suspense, createSignal } from "solid-js";
+import ConfirmButton from "~/components/ConfirmButton";
 import {
 	getDocumentsQuery,
 	createDocumentLinkAction,
+	deleteDocumentAction,
 } from "~/lib/admin-queries";
 
 type FormMode = "link" | "file" | "transcript";
@@ -17,6 +19,7 @@ export default function ProjectDocuments(props: {
 		deferStream: true,
 	});
 	const addDocLink = useAction(createDocumentLinkAction);
+	const deleteDoc = useAction(deleteDocumentAction);
 
 	const [activeForm, setActiveForm] = createSignal<FormMode | null>(null);
 	const toggle = (mode: FormMode) =>
@@ -286,35 +289,20 @@ export default function ProjectDocuments(props: {
 											>
 												{doc.type}
 											</span>
-											<form
-												method="post"
-												action="/admin/companies/delete-doc"
-												style={{ display: "inline", "margin-left": "auto" }}
-											>
-												<input type="hidden" name="id" value={doc.id} />
-												<Show when={doc.url && doc.type !== "link"}>
-													<input
-														type="hidden"
-														name="storage_path"
-														value={doc.url!}
-													/>
-												</Show>
-												<Show when={doc.audioPath}>
-													<input
-														type="hidden"
-														name="audio_path"
-														value={doc.audioPath!}
-													/>
-												</Show>
-												<input type="hidden" name="_referer" value={props.referer} />
-												<button
-													type="submit"
-													class="btn btn-sm"
-													style={{ color: "#ef4444" }}
-												>
-													Delete
-												</button>
-											</form>
+											<ConfirmButton
+																label="Delete"
+																danger
+																style={{ "margin-left": "auto" }}
+																onConfirm={async () => {
+																	const fd = new FormData();
+																	fd.set("id", doc.id);
+																	if (doc.url && doc.type !== "link")
+																		fd.set("storage_path", doc.url!);
+																	if (doc.audioPath)
+																		fd.set("audio_path", doc.audioPath!);
+																	return deleteDoc(fd);
+																}}
+															/>
 										</div>
 									)}
 								</For>

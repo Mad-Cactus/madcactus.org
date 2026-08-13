@@ -2,6 +2,7 @@ import { Title } from "@solidjs/meta";
 import { createAsync, useAction } from "@solidjs/router";
 import { For, Show, createSignal } from "solid-js";
 import PortalLayout from "~/components/PortalLayout";
+import ConfirmButton from "~/components/ConfirmButton";
 import {
 	createApiKeyAction,
 	getClientApiKeysQuery,
@@ -158,10 +159,14 @@ export default function PortalApiKeys() {
 											<Show
 												when={key.revokedAt}
 												fallback={
-													<form method="post" action="/portal/api-keys/revoke">
-														<input type="hidden" name="id" value={key.id} />
-														<button type="submit" class="btn btn-sm">Revoke</button>
-													</form>
+													<ConfirmButton
+																			label="Revoke"
+																			onConfirm={async () => {
+																				const fd = new FormData();
+																				fd.set("id", key.id);
+																				return revokeKey(fd);
+																			}}
+																		/>
 												}
 											>
 												<span class="badge badge-paused">Revoked</span>
