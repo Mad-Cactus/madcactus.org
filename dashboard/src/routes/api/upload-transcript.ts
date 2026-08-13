@@ -1,23 +1,20 @@
 import type { APIEvent } from "@solidjs/start/server";
-import { getCookie } from "@solidjs/start/http";
-import { supabaseAdmin, supabaseService } from "~/lib/supabase";
+import { supabaseService } from "~/lib/supabase";
+import { getAuthedClient } from "~/lib/session";
+import { db } from "~/db";
+import { documents } from "~/db/schema";
 
 /** Upload a meeting transcript with searchable text + optional audio.
  *  Creates one document row of type='transcript'.
  *  Admin-only — requires mc-access-token cookie. */
 export async function POST(event: APIEvent) {
-	const accessToken = getCookie("mc-access-token");
-	const refreshToken = getCookie("mc-refresh-token");
-	if (!accessToken || !refreshToken) {
+	// Auth via session helper (matches createDocumentLinkAction). DB writes go
+	// through Drizzle, not the Supabase JS client — migrations grant no
+	// privileges to the `authenticated` role, so PostgREST inserts fail with
+	// "permission denied for schema public".
+	if (!(await getAuthedClient())) {
 		return new Response("Unauthorized", { status: 401 });
 	}
-
-	const admin = supabaseAdmin();
-	const { data: session } = await admin.auth.setSession({
-		access_token: accessToken,
-		refresh_token: refreshToken,
-	});
-	if (!session.session) return new Response("Unauthorized", { status: 401 });
 
 	const formData = await event.request.formData();
 	const projectId = String(formData.get("project_id") || "");
@@ -49,26 +46,29 @@ export async function POST(event: APIEvent) {
 		}
 	}
 
-	// content is indexed by the generated search_vector column automatically
-
-	const { error: dbErr } = await admin.from("documents").insert({
-		project_id: projectId,
-		type: "transcript",
-		title,
-		description,
-		content: content || null,
-		visibility: "client",
-		audio_path: audioPath,
-		audio_file_name: audioFileName,
-	});
-
-	if (dbErr) {
+	// ponytail: no generated search_vector column exists yet; content is stored
+	// as plain text. Add a tsvector + trigger when full-text search is wired up.
+	try {
+		await db.insert(documents).values({
+			projectId,
+			type: "transcript",
+			title,
+			description,
+			content: content || null,
+			visibility: "client",
+			audioPath,
+			audioFileName,
+		});
+	} catch (dbErr) {
 		// Clean up uploaded audio if DB insert failed
 		if (audioPath) {
 			const svc = supabaseService();
 			await svc.storage.from("portal-docs").remove([audioPath]);
 		}
-		return new Response(`DB error: ${dbErr.message}`, { status: 500 });
+		return new Response(
+			`DB error: ${dbErr instanceof Error ? dbErr.message : String(dbErr)}`,
+			{ status: 500 },
+		);
 	}
 
 	return new Response(null, {
