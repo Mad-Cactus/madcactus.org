@@ -2,6 +2,7 @@ import { Title } from "@solidjs/meta";
 import { A, createAsync, useAction, useParams, revalidate } from "@solidjs/router";
 import { For, Show, Suspense, createSignal } from "solid-js";
 import Layout from "~/components/Layout";
+import ProjectDocuments from "~/components/ProjectDocuments";
 import {
 	createMemberAction,
 	linkMemberAction,
@@ -10,10 +11,7 @@ import {
 	getCompanyMembersQuery,
 	getMembersQuery,
 	getProjectsForSelectQuery,
-	getDocumentsQuery,
 	getInvoicesQuery,
-	createDocumentLinkAction,
-	deleteDocumentAction,
 	createInvoiceAction,
 	deleteInvoiceAction,
 } from "~/lib/admin-queries";
@@ -42,14 +40,10 @@ export default function CompanyDetail() {
 	const createMember = useAction(createMemberAction);
 	const linkMember = useAction(linkMemberAction);
 	const unlinkMember = useAction(unlinkMemberAction);
-	const addDocLink = useAction(createDocumentLinkAction);
-	const deleteDoc = useAction(deleteDocumentAction);
 	const addInvoice = useAction(createInvoiceAction);
-	const deleteInvoice = useAction(deleteInvoiceAction);
 
 	const [showMemberForm, setShowMemberForm] = createSignal(false);
 	const [showLinkForm, setShowLinkForm] = createSignal(false);
-	const [showDocForm, setShowDocForm] = createSignal<string | null>(null);
 	const [showInvForm, setShowInvForm] = createSignal<string | null>(null);
 	const [error, setError] = createSignal("");
 	const [success, setSuccess] = createSignal("");
@@ -95,14 +89,6 @@ export default function CompanyDetail() {
 		const fd = new FormData(e.target as HTMLFormElement);
 		fd.set("company_id", companyId());
 		await linkMember(fd);
-	}
-
-	async function handleDocLink(e: Event, projectId: string) {
-		e.preventDefault();
-		const fd = new FormData(e.target as HTMLFormElement);
-		fd.set("project_id", projectId);
-		fd.set("_referer", referer());
-		await addDocLink(fd);
 	}
 
 	async function handleInvoice(e: Event, projectId: string) {
@@ -223,11 +209,8 @@ export default function CompanyDetail() {
 												proj={proj}
 												referer={referer()}
 												today={today}
-												showDocForm={showDocForm() === proj.id}
 												showInvForm={showInvForm() === proj.id}
-												toggleDocForm={() => setShowDocForm(showDocForm() === proj.id ? null : proj.id)}
 												toggleInvForm={() => setShowInvForm(showInvForm() === proj.id ? null : proj.id)}
-												onDocLink={(e) => handleDocLink(e, proj.id)}
 												onInvoice={(e) => handleInvoice(e, proj.id)}
 											/>
 										)}
@@ -248,16 +231,11 @@ function CompanyProjectSection(props: {
 	proj: { id: string; name: string; companyName: string };
 	referer: string;
 	today: string;
-	showDocForm: boolean;
 	showInvForm: boolean;
-	toggleDocForm: () => void;
 	toggleInvForm: () => void;
-	onDocLink: (e: Event) => void;
 	onInvoice: (e: Event) => void;
 }) {
-	const docs = createAsync(() => getDocumentsQuery(props.proj.id), { deferStream: true });
 	const invoices = createAsync(() => getInvoicesQuery(props.proj.id), { deferStream: true });
-	const deleteDoc = useAction(deleteDocumentAction);
 	const deleteInvoice = useAction(deleteInvoiceAction);
 
 	return (
@@ -268,79 +246,7 @@ function CompanyProjectSection(props: {
 				</A>
 			</div>
 
-			{/* Documents */}
-			<div style={{ "margin-bottom": "24px" }}>
-				<div style={{ display: "flex", "justify-content": "space-between", "align-items": "center", "margin-bottom": "8px" }}>
-					<span class="muted" style={{ "font-size": "13px" }}>Documents</span>
-					<button class="btn btn-sm" onClick={props.toggleDocForm}>Add Link</button>
-				</div>
-				<Show when={props.showDocForm}>
-					<div class="card" style={{ "margin-bottom": "8px", padding: "16px" }}>
-						<form onSubmit={props.onDocLink}>
-							<div class="form-row">
-								<div class="form-group">
-									<label for={`doc_title_${props.proj.id}`}>Title</label>
-									<input type="text" id={`doc_title_${props.proj.id}`} name="title" required placeholder="Project Brief" />
-								</div>
-								<div class="form-group">
-									<label for={`doc_type_${props.proj.id}`}>Type</label>
-									<select id={`doc_type_${props.proj.id}`} name="type">
-										<option value="link">Link</option>
-										<option value="transcript">Transcript Link</option>
-									</select>
-								</div>
-							</div>
-							<div class="form-group">
-								<label for={`doc_url_${props.proj.id}`}>URL</label>
-								<input type="url" id={`doc_url_${props.proj.id}`} name="url" required placeholder="https://docs.google.com/…" />
-							</div>
-							<div class="form-group">
-								<label for={`doc_desc_${props.proj.id}`}>Description</label>
-								<input type="text" id={`doc_desc_${props.proj.id}`} name="description" placeholder="Brief description" />
-							</div>
-							<div class="form-group">
-								<label for={`doc_content_${props.proj.id}`}>Content for search (optional)</label>
-								<textarea id={`doc_content_${props.proj.id}`} name="content" rows={3} placeholder="Paste key text to make searchable…" />
-							</div>
-							<button type="submit" class="btn btn-primary">Add</button>
-						</form>
-					</div>
-				</Show>
-				<Suspense fallback={<p class="muted" style={{ "font-size": "12px" }}>Loading…</p>}>
-					<Show when={docs()}>
-						{(list) => (
-							<Show when={list().length > 0} fallback={<p class="muted" style={{ "font-size": "12px" }}>No documents.</p>}>
-								<div style={{ display: "flex", "flex-direction": "column", gap: "4px" }}>
-									<For each={list()}>
-										{(doc) => (
-											<div style={{ display: "flex", "align-items": "center", gap: "8px", "font-size": "13px" }}>
-												<Show when={doc.type === "link" && doc.url}>
-													<a href={doc.url!} target="_blank" rel="noopener noreferrer" class="gold">{doc.title}</a>
-												</Show>
-												<Show when={doc.type !== "link"}>
-													<span>{doc.title}</span>
-												</Show>
-												<span class="badge badge-paused" style={{ "text-transform": "capitalize" }}>{doc.type}</span>
-												<form method="post" action="/admin/companies/delete-doc" style={{ display: "inline", "margin-left": "auto" }}>
-													<input type="hidden" name="id" value={doc.id} />
-													<Show when={doc.url && doc.type !== "link"}>
-														<input type="hidden" name="storage_path" value={doc.url!} />
-													</Show>
-													<Show when={doc.audioPath}>
-														<input type="hidden" name="audio_path" value={doc.audioPath!} />
-													</Show>
-													<input type="hidden" name="_referer" value={props.referer} />
-													<button type="submit" class="btn btn-sm" style={{ color: "#ef4444" }}>Delete</button>
-												</form>
-											</div>
-										)}
-									</For>
-								</div>
-							</Show>
-						)}
-					</Show>
-				</Suspense>
-			</div>
+			<ProjectDocuments projectId={props.proj.id} referer={props.referer} />
 
 			{/* Invoices */}
 			<div>

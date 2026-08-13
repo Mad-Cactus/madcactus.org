@@ -2,6 +2,7 @@ import { Title } from "@solidjs/meta";
 import { A, useNavigate, useParams, createAsync, useAction } from "@solidjs/router";
 import { For, Show, Suspense, createSignal } from "solid-js";
 import Layout from "~/components/Layout";
+import ProjectDocuments from "~/components/ProjectDocuments";
 import {
 	createTimeEntryAction,
 	deleteTimeEntryAction,
@@ -194,6 +195,12 @@ export default function ProjectDetail() {
 									)}
 								</Show>
 							</Suspense>
+
+							{/* Documents */}
+							<ProjectDocuments
+								projectId={params.id}
+								referer={`/admin/projects/${params.id}`}
+							/>
 
 							{/* Log form — admin only */}
 							<div class="section-heading">Log Time</div>
