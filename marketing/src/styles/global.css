@@ -6,6 +6,9 @@
 @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600&display=swap');
 
 :root {
+    /* Force light scheme — opts out of Chrome/Edge Auto Dark Theme (belt-and-suspenders with the meta tag, which wins on FOUC) */
+    color-scheme: only light;
+
     /* Colors */
     --color-vellum-white: #f6f6f6;
     --color-paper: #ffffff;
