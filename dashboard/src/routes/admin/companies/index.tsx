@@ -33,7 +33,7 @@ export default function Companies() {
 		e.preventDefault();
 		setError("");
 		const fd = new FormData(e.target as HTMLFormElement);
-		const result = await createCompany(fd);
+		const result = (await createCompany(fd)) as { error?: string } | undefined;
 		if (result?.error) setError(result.error);
 	}
 

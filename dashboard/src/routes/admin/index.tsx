@@ -72,7 +72,7 @@ export default function Home() {
 		const form = e.target as HTMLFormElement;
 		const fd = new FormData(form);
 		fd.set("_referer", "/admin");
-		const result = await createEntry(fd);
+		const result = (await createEntry(fd)) as { error?: string } | undefined;
 		if (result?.error) setEntryError(result.error);
 		else form.reset();
 	}

@@ -2,6 +2,7 @@ import { Title } from "@solidjs/meta";
 import { A, useNavigate, useParams, createAsync, useAction } from "@solidjs/router";
 import { For, Show, Suspense, createSignal } from "solid-js";
 import Layout from "~/components/Layout";
+import ProjectDocuments from "~/components/ProjectDocuments";
 import {
 	createTimeEntryAction,
 	deleteTimeEntryAction,
@@ -51,7 +52,7 @@ export default function ProjectDetail() {
 		const form = e.target as HTMLFormElement;
 		const fd = new FormData(form);
 		fd.set("_referer", `/admin/projects/${params.id}`);
-		const result = await createEntry(fd);
+		const result = (await createEntry(fd)) as { error?: string } | undefined;
 		if (result?.error) setError(result.error);
 		else form.reset();
 	}
@@ -194,6 +195,12 @@ export default function ProjectDetail() {
 									)}
 								</Show>
 							</Suspense>
+
+							{/* Documents */}
+							<ProjectDocuments
+								projectId={params.id!}
+								referer={`/admin/projects/${params.id}`}
+							/>
 
 							{/* Log form — admin only */}
 							<div class="section-heading">Log Time</div>

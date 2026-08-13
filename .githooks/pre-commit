@@ -1,0 +1,4 @@
+#!/bin/sh
+# Pre-commit gate: TypeScript type-check
+# Fails the commit if tsc finds any type errors
+cd "$(git rev-parse --show-toplevel)/dashboard" && bunx tsc --noEmit

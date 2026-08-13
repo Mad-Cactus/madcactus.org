@@ -32,7 +32,7 @@ export default function Projects() {
 		e.preventDefault();
 		setError("");
 		const fd = new FormData(e.target as HTMLFormElement);
-		const result = await createProject(fd);
+		const result = (await createProject(fd)) as { error?: string } | undefined;
 		if (result?.error) setError(result.error);
 	}
 

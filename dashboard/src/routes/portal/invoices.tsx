@@ -53,8 +53,8 @@ export default function PortalInvoices() {
 												<td class="mono" style={{ "font-weight": "500" }}>
 													${inv.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}
 												</td>
-												<td class="muted">{inv.issueDate instanceof Date ? inv.issueDate.toLocaleDateString() : inv.issueDate}</td>
-												<td class="muted">{inv.dueDate ? (inv.dueDate instanceof Date ? inv.dueDate.toLocaleDateString() : inv.dueDate) : "—"}</td>
+												<td class="muted">{inv.issueDate.toLocaleDateString()}</td>
+												<td class="muted">{inv.dueDate ? inv.dueDate.toLocaleDateString() : "—"}</td>
 												<td>
 													<span class={`badge ${statusBadge[inv.status]}`}>
 														{inv.status}

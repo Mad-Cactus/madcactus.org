@@ -1,6 +1,5 @@
 import { query, redirect } from "@solidjs/router";
-import { eq, and, inArray, desc, sql } from "drizzle-orm";
-import { getTableColumns } from "drizzle-orm";
+import { eq, and, inArray, desc, sql, getTableColumns } from "drizzle-orm";
 import { Resend } from "resend";
 import { getAuthedClient } from "./session";
 import { db } from "~/db";
