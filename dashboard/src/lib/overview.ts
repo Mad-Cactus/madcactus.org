@@ -1,5 +1,6 @@
 import { query, redirect } from "@solidjs/router";
 import { eq, and, inArray, desc, sql } from "drizzle-orm";
+import { getTableColumns } from "drizzle-orm";
 import { Resend } from "resend";
 import { getAuthedClient } from "./session";
 import { db } from "~/db";
@@ -209,7 +210,7 @@ export const getOverviewQuery = query(async (): Promise<OverviewData> => {
 	const [delivRows, invRows, companyRows, posthog, resend, linear] = await Promise.all([
 		db
 			.select({
-				...deliverables,
+				...getTableColumns(deliverables),
 				projectName: projects.name,
 				companyName: companies.name,
 				projectStatus: projects.status,
@@ -219,7 +220,7 @@ export const getOverviewQuery = query(async (): Promise<OverviewData> => {
 			.innerJoin(companies, eq(companies.id, projects.companyId))
 			.orderBy(desc(deliverables.updatedAt)),
 		db
-			.select({ ...invoices, projectName: projects.name })
+			.select({ ...getTableColumns(invoices), projectName: projects.name })
 			.from(invoices)
 			.innerJoin(projects, eq(projects.id, invoices.projectId))
 			.where(inArray(invoices.status, ["sent", "draft"])),

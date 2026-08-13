@@ -10,7 +10,7 @@ import {
 	deliverables,
 	deliverableUpdates,
 } from "~/db/schema";
-import type { Project } from "~/db/schema";
+import type { Project, EngagementType } from "~/db/schema";
 
 // ── Auth ──────────────────────────────────────────────────────────
 
@@ -70,10 +70,10 @@ export const createProjectAction = action(async (formData: FormData) => {
 	"use server";
 	await requireAdmin();
 	const type = String(formData.get("engagement_type"));
-	await db.insert(projects).values({
+	const proj: typeof projects.$inferInsert = {
 		name: String(formData.get("name")),
 		companyId: String(formData.get("company_id")),
-		engagementType: type,
+		engagementType: type as EngagementType,
 		hourlyRate: Number(formData.get("hourly_rate") || 0),
 		fixedPrice: type === "project" ? Number(formData.get("fixed_price") || 0) : null,
 		monthlyCapHours:
@@ -82,7 +82,12 @@ export const createProjectAction = action(async (formData: FormData) => {
 				: null,
 		status: "active",
 		notes: String(formData.get("notes") || ""),
-	});
+	};
+	try {
+		await db.insert(projects).values(proj);
+	} catch (err) {
+		return { error: err instanceof Error ? err.message : "Failed to create project." };
+	}
 	throw redirect("/admin/projects");
 }, "createProject");
 
@@ -196,13 +201,18 @@ export const createTimeEntryAction = action(async (formData: FormData) => {
 	"use server";
 	await requireAdmin();
 	const projectId = String(formData.get("project_id"));
-	await db.insert(timeEntries).values({
+	const entry: typeof timeEntries.$inferInsert = {
 		projectId,
 		entryDate: new Date(String(formData.get("entry_date"))),
 		hours: Number(formData.get("hours")),
 		description: String(formData.get("description")),
 		billable: formData.get("billable") === "on",
-	});
+	};
+	try {
+		await db.insert(timeEntries).values(entry);
+	} catch (err) {
+		return { error: err instanceof Error ? err.message : "Failed to log time entry." };
+	}
 	throw redirect(refererFromFormData(formData));
 }, "createTimeEntry");
 

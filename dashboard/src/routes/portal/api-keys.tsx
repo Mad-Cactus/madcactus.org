@@ -151,14 +151,14 @@ export default function PortalApiKeys() {
 													{key.label}
 												</div>
 												<div class="mono muted" style={{ "font-size": "12px" }}>
-													{key.key_prefix}
-													<Show when={key.last_used_at}>
-														{" · last used "}{new Date(key.last_used_at!).toLocaleDateString()}
+													{key.keyPrefix}
+													<Show when={key.lastUsedAt}>
+														{" · last used "}{new Date(key.lastUsedAt!).toLocaleDateString()}
 													</Show>
 												</div>
 											</div>
 											<Show
-												when={key.revoked_at}
+												when={key.revokedAt}
 												fallback={
 													<form method="post" action="/portal/api-keys/revoke">
 														<input type="hidden" name="id" value={key.id} />
