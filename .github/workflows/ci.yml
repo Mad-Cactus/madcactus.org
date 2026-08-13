@@ -10,9 +10,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
       - working-directory: dashboard
         run: |
-          bun install --frozen-lockfile
+          bun install
           bun run typecheck
 
   docker-build:

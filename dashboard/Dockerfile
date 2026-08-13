@@ -1,5 +1,5 @@
 # ═══ Builder: install + compile ═══
-FROM oven/bun:latest AS builder
+FROM oven/bun:1 AS builder
 WORKDIR /app
 
 COPY package.json bun.lock* bun.lockb* ./
@@ -9,7 +9,7 @@ COPY . .
 RUN bun run build
 
 # ═══ Runner: just the compiled output ═══
-FROM oven/bun:latest AS runner
+FROM oven/bun:1 AS runner
 WORKDIR /app
 
 COPY --from=builder /app/.output ./.output
