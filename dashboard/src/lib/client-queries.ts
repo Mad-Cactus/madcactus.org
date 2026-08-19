@@ -1,7 +1,8 @@
 import { query, action, redirect } from "@solidjs/router";
 import { eq, and, desc, inArray } from "drizzle-orm";
 import { getTableColumns } from "drizzle-orm";
-import { getClient, clientSignIn } from "./client-session";
+import { getClient, clientSignIn, setClientSessionCookie } from "./client-session";
+import { supabaseAdmin, supabaseService } from "./supabase";
 import { generateApiKey, hashKey, keyPrefix } from "./crypto";
 import { db } from "~/db";
 import {
@@ -284,6 +285,51 @@ export const clientLoginAction = action(async (formData: FormData) => {
 	if (result.error) return { error: result.error };
 	throw redirect("/portal");
 }, "client-login");
+
+// Consumes the token Supabase appends to /portal/login after an invite-email
+// click and sets the member's first password. Two proof shapes are accepted:
+// an implicit-flow access_token (fragment; what admin-API invites produce with
+// the default email template) or a token_hash (query param; custom templates).
+export const setInvitePasswordAction = action(async (formData: FormData) => {
+	"use server";
+	const accessToken = String(formData.get("access_token") || "");
+	const tokenHash = String(formData.get("token_hash") || "");
+	const password = String(formData.get("password") || "");
+	if (password.length < 6) return { error: "Password must be at least 6 characters." };
+
+	let user: { id: string; email?: string } | null = null;
+	try {
+		if (accessToken) {
+			const { data, error } = await supabaseAdmin().auth.getUser(accessToken);
+			if (!error) user = data.user;
+		} else if (tokenHash) {
+			const { data, error } = await supabaseAdmin().auth.verifyOtp({
+				token_hash: tokenHash,
+				type: "invite",
+			});
+			if (!error) user = data.user;
+		}
+	} catch {
+		// treat as expired below — Supabase timeout config wraps fetch with 10s abort
+	}
+	if (!user?.email)
+		return { error: "This invite link is invalid or has expired. Ask us to resend the invite." };
+
+	const [member] = await db
+		.select({ id: clientMembers.id, isActive: clientMembers.isActive })
+		.from(clientMembers)
+		.where(eq(clientMembers.email, user.email.toLowerCase()))
+		.limit(1);
+	if (!member || !member.isActive)
+		return { error: "Your portal account isn't active. Contact us for access." };
+
+	const { error } = await supabaseService().auth.admin.updateUserById(user.id, { password });
+	if (error) return { error: `Could not set password: ${error.message}` };
+
+	// Token proves control of the invite email — sign them straight in.
+	setClientSessionCookie(member.id);
+	throw redirect("/portal");
+}, "set-invite-password");
 
 export const createApiKeyAction = action(async (formData: FormData) => {
 	"use server";
