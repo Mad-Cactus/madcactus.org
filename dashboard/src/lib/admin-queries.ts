@@ -107,21 +107,34 @@ export const linkMemberAction = action(async (formData: FormData) => {
 	throw redirect(`/admin/companies/${companyId}`);
 }, "linkMember");
 
-export const unlinkMemberAction = action(async (formData: FormData) => {
+// Full removal: deletes the auth user, the member row, and (via FK cascade)
+// every company link + API key. Deliberately NOT an "unlink from one company" —
+// if a member belongs to multiple companies, removing them here removes them
+// everywhere. Re-create via "Add Member" if that's ever wrong.
+export const removeMemberAction = action(async (formData: FormData) => {
 	"use server";
 	await requireAdmin();
 	const memberId = String(formData.get("member_id"));
-	const companyId = String(formData.get("company_id"));
-	await db
-		.delete(clientCompanyMembers)
-		.where(
-			and(
-				eq(clientCompanyMembers.memberId, memberId),
-				eq(clientCompanyMembers.companyId, companyId),
-			),
-		);
-	throw redirect(`/admin/companies/${companyId}`);
-}, "unlinkMember");
+	const [member] = await db
+		.select({ email: clientMembers.email })
+		.from(clientMembers)
+		.where(eq(clientMembers.id, memberId))
+		.limit(1);
+	if (!member) return { error: "Member not found" };
+
+	// Find the auth user by email (admin API has no email filter; a handful of
+	// users, one page covers it).
+	const svc = supabaseService();
+	const { data: users } = await svc.auth.admin.listUsers({ perPage: 1000 });
+	const authUser = users?.users?.find((u) => u.email === member.email);
+	if (authUser) {
+		const { error: delError } = await svc.auth.admin.deleteUser(authUser.id);
+		if (delError) return { error: `Could not delete login: ${delError.message}` };
+	}
+
+	await db.delete(clientMembers).where(eq(clientMembers.id, memberId));
+	return { success: `${member.email} removed.` };
+}, "removeMember");
 
 /** Redirect URL for Supabase invite/reset links (must be allowlisted in Supabase Auth settings). */
 function inviteRedirect(): string | null {

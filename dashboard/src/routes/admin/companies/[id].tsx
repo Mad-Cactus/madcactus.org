@@ -7,7 +7,7 @@ import ConfirmButton from "~/components/ConfirmButton";
 import {
 	createMemberAction,
 	linkMemberAction,
-	unlinkMemberAction,
+	removeMemberAction,
 	getCompaniesQuery,
 	getCompanyMembersQuery,
 	getMembersQuery,
@@ -40,7 +40,7 @@ export default function CompanyDetail() {
 
 	const createMember = useAction(createMemberAction);
 	const linkMember = useAction(linkMemberAction);
-	const unlinkMember = useAction(unlinkMemberAction);
+	const removeMember = useAction(removeMemberAction);
 	const addInvoice = useAction(createInvoiceAction);
 
 	const [showMemberForm, setShowMemberForm] = createSignal(false);
@@ -184,11 +184,16 @@ export default function CompanyDetail() {
 																	{m.isActive ? "active" : "disabled"}
 																</span>
 															</div>
-															<form method="post" action="/admin/companies/unlink-member">
-																<input type="hidden" name="member_id" value={m.id} />
-																<input type="hidden" name="company_id" value={companyId()} />
-																<button type="submit" class="btn btn-sm" style={{ color: "#ef4444" }}>Unlink</button>
-															</form>
+															<ConfirmButton
+																label="Remove"
+																confirmText="Remove everywhere?"
+																danger
+																onConfirm={() => {
+																	const fd = new FormData();
+																	fd.set("member_id", m.id);
+																	return removeMember(fd);
+																}}
+															/>
 														</div>
 													)}
 												</For>
