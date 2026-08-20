@@ -162,6 +162,20 @@ export const resendInviteAction = action(async (formData: FormData) => {
 	return { success: "Invite re-sent." };
 }, "resendInvite");
 
+// Emails of auth users who have signed in at least once. A member whose email
+// is NOT in this list has a pending invite (never accepted, expired, or the
+// auth user was never created) — that's who the "Resend Invite" button is for.
+export const getSignedInEmailsQuery = query(async () => {
+	"use server";
+	await requireAdmin();
+	const { data } = await supabaseService().auth.admin.listUsers({
+		perPage: 1000,
+	});
+	return (data?.users ?? [])
+		.filter((u) => u.last_sign_in_at)
+		.map((u) => u.email!);
+}, "admin-signed-in-emails");
+
 export const toggleMemberActiveAction = action(async (formData: FormData) => {
 	"use server";
 	await requireAdmin();
