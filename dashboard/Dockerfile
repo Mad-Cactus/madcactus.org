@@ -12,6 +12,11 @@ RUN bun run build
 FROM oven/bun:1 AS runner
 WORKDIR /app
 
+# ffmpeg: meeting-publish audio splicing (admin/meetings)
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends ffmpeg \
+	&& rm -rf /var/lib/apt/lists/*
+
 COPY --from=builder /app/.output ./.output
 
 EXPOSE 3000

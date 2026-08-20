@@ -45,6 +45,9 @@ export const documentType = pgEnum("document_type", [
 export const documentVisibility = pgEnum("document_visibility", [
 	"client",
 	"internal",
+	// unpublished meeting draft pushed by the Anarlog publisher; invisible to
+	// clients until explicitly published from /admin/meetings
+	"draft",
 ]);
 
 export const invoiceStatus = pgEnum("invoice_status", [
@@ -161,8 +164,9 @@ export const documents = pgTable(
 	"documents",
 	{
 		id: uuid("id").primaryKey().defaultRandom(),
+		// nullable only for visibility='draft' meeting imports — assigned at
+		// publish time. Publish action enforces non-null before flipping to client.
 		projectId: uuid("project_id")
-			.notNull()
 			.references(() => projects.id, { onDelete: "cascade" }),
 		type: documentType("type").notNull().default("link"),
 		title: text("title").notNull(),
@@ -179,6 +183,9 @@ export const documents = pgTable(
 		// transcript audio attachment
 		audioPath: text("audio_path"),
 		audioFileName: text("audio_file_name"),
+		// speaker blocks for meeting transcripts: JSON array of
+		// { speaker, start_ms, end_ms, text } — drives the block editor + audio cuts
+		transcriptJson: text("transcript_json"),
 		createdAt: timestamp("created_at").notNull().defaultNow(),
 	},
 	(t) => [index("idx_documents_project").on(t.projectId)],
