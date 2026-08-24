@@ -22,7 +22,7 @@ export function supabaseAdmin() {
 		requireEnv("SUPABASE_ANON_KEY"),
 		{
 			auth: { persistSession: false, autoRefreshToken: false },
-			global: { fetch: fetchWithTimeout },
+			global: { fetch: fetchWithTimeout as unknown as typeof fetch },
 		},
 	);
 }
@@ -38,7 +38,7 @@ export function supabaseService() {
 		requireEnv("SUPABASE_SERVICE_KEY"),
 		{
 			auth: { persistSession: false, autoRefreshToken: false },
-			global: { fetch: fetchWithTimeout },
+			global: { fetch: fetchWithTimeout as unknown as typeof fetch },
 		},
 	);
 }
