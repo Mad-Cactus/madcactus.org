@@ -275,7 +275,7 @@ async function searchDocuments(ctx: AuthedMember, params: { query: string }) {
 		LIMIT 10
 	`);
 
-	return results.rows.map((d) => ({
+	return results.map((d) => ({
 		title: d.title,
 		type: d.type,
 		description: d.description,

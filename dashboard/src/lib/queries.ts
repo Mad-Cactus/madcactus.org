@@ -10,7 +10,7 @@ import {
 	deliverables,
 	deliverableUpdates,
 } from "~/db/schema";
-import type { Project } from "~/db/schema";
+import type { Project, EngagementType } from "~/db/schema";
 
 // ── Auth ──────────────────────────────────────────────────────────
 
@@ -69,7 +69,7 @@ export const getProjectQuery = query(async (id: string) => {
 export const createProjectAction = action(async (formData: FormData) => {
 	"use server";
 	await requireAdmin();
-	const type = String(formData.get("engagement_type"));
+	const type = String(formData.get("engagement_type")) as EngagementType;
 	await db.insert(projects).values({
 		name: String(formData.get("name")),
 		companyId: String(formData.get("company_id")),
@@ -210,6 +210,10 @@ export const deleteTimeEntryAction = action(async (formData: FormData) => {
 	"use server";
 	await requireAdmin();
 	const id = String(formData.get("id"));
-	await db.delete(timeEntries).where(eq(timeEntries.id, id));
-	throw redirect(refererFromFormData(formData));
+	try {
+		await db.delete(timeEntries).where(eq(timeEntries.id, id));
+		return { success: "Entry deleted." };
+	} catch (e) {
+		return { error: e instanceof Error ? e.message : "Failed to delete entry." };
+	}
 }, "deleteTimeEntry");

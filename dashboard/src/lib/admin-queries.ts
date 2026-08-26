@@ -3,7 +3,6 @@ import { eq, and, desc, inArray } from "drizzle-orm";
 import { getTableColumns } from "drizzle-orm";
 import { getAuthedClient } from "./session";
 import { supabaseService } from "./supabase";
-import { hashPassword } from "./crypto";
 import { db } from "~/db";
 import {
 	companies,
@@ -14,6 +13,11 @@ import {
 	invoices,
 	deliverables,
 	deliverableUpdates,
+} from "~/db/schema";
+import type {
+	DocumentType,
+	InvoiceStatus,
+	DeliverableStatus,
 } from "~/db/schema";
 
 // ── Auth guard ────────────────────────────────────────────────────
@@ -68,23 +72,27 @@ export const createMemberAction = action(async (formData: FormData) => {
 	await requireAdmin();
 	const companyId = String(formData.get("company_id"));
 	const email = String(formData.get("email")).toLowerCase();
+	const name = String(formData.get("name"));
 
-	const [member] = await db
-		.insert(clientMembers)
-		.values({
-			name: String(formData.get("name")),
-			email,
-			passwordHash: hashPassword(String(formData.get("password"))),
-		})
-		.returning();
+	const [member] = await db.insert(clientMembers).values({ name, email }).returning();
 
-	// Link member to the company
-	await db.insert(clientCompanyMembers).values({
-		memberId: member.id,
-		companyId,
+	// Link member to the company first so the row is fully usable regardless of
+	// whether the invite email sends on the first try.
+	await db
+		.insert(clientCompanyMembers)
+		.values({ memberId: member.id, companyId })
+		.onConflictDoNothing();
+
+	// Supabase sends the invite email; the client sets their own password.
+	const redirectTo = inviteRedirect();
+	const { error } = await supabaseService().auth.admin.inviteUserByEmail(email, {
+		data: { name },
+		...(redirectTo ? { redirectTo } : {}),
 	});
+	if (error)
+		return { error: `Member created, but the invite email failed: ${error.message}` };
 
-	throw redirect(`/admin/companies/${companyId}`);
+	return { success: `Member created. Invite sent to ${email}.` };
 }, "createMember");
 
 export const linkMemberAction = action(async (formData: FormData) => {
@@ -99,35 +107,74 @@ export const linkMemberAction = action(async (formData: FormData) => {
 	throw redirect(`/admin/companies/${companyId}`);
 }, "linkMember");
 
-export const unlinkMemberAction = action(async (formData: FormData) => {
+// Full removal: deletes the auth user, the member row, and (via FK cascade)
+// every company link + API key. Deliberately NOT an "unlink from one company" —
+// if a member belongs to multiple companies, removing them here removes them
+// everywhere. Re-create via "Add Member" if that's ever wrong.
+export const removeMemberAction = action(async (formData: FormData) => {
 	"use server";
 	await requireAdmin();
 	const memberId = String(formData.get("member_id"));
-	const companyId = String(formData.get("company_id"));
-	await db
-		.delete(clientCompanyMembers)
-		.where(
-			and(
-				eq(clientCompanyMembers.memberId, memberId),
-				eq(clientCompanyMembers.companyId, companyId),
-			),
-		);
-	throw redirect(`/admin/companies/${companyId}`);
-}, "unlinkMember");
+	const [member] = await db
+		.select({ email: clientMembers.email })
+		.from(clientMembers)
+		.where(eq(clientMembers.id, memberId))
+		.limit(1);
+	if (!member) return { error: "Member not found" };
 
-export const updateMemberPasswordAction = action(async (formData: FormData) => {
+	// Find the auth user by email (admin API has no email filter; a handful of
+	// users, one page covers it).
+	const svc = supabaseService();
+	const { data: users } = await svc.auth.admin.listUsers({ perPage: 1000 });
+	const authUser = users?.users?.find((u) => u.email === member.email);
+	if (authUser) {
+		const { error: delError } = await svc.auth.admin.deleteUser(authUser.id);
+		if (delError) return { error: `Could not delete login: ${delError.message}` };
+	}
+
+	await db.delete(clientMembers).where(eq(clientMembers.id, memberId));
+	return { success: `${member.email} removed.` };
+}, "removeMember");
+
+/** Redirect URL for Supabase invite/reset links (must be allowlisted in Supabase Auth settings). */
+function inviteRedirect(): string | null {
+	const site = process.env.PUBLIC_SITE_URL;
+	return site ? `${site.replace(/\/$/, "")}/portal/login` : null;
+}
+
+export const resendInviteAction = action(async (formData: FormData) => {
 	"use server";
 	await requireAdmin();
 	const id = String(formData.get("id"));
-	const password = String(formData.get("password"));
-	if (!password || password.length < 6)
-		return { error: "Password must be at least 6 characters" };
-	await db
-		.update(clientMembers)
-		.set({ passwordHash: hashPassword(password) })
-		.where(eq(clientMembers.id, id));
-	throw redirect("/admin/companies");
-}, "updateMemberPassword");
+	const [member] = await db
+		.select({ email: clientMembers.email })
+		.from(clientMembers)
+		.where(eq(clientMembers.id, id))
+		.limit(1);
+	if (!member) return { error: "Member not found" };
+
+	const redirectTo = inviteRedirect();
+	const { error } = await supabaseService().auth.admin.inviteUserByEmail(
+		member.email,
+		{ ...(redirectTo ? { redirectTo } : {}) },
+	);
+	if (error) return { error: error.message };
+	return { success: "Invite re-sent." };
+}, "resendInvite");
+
+// Emails of auth users who have signed in at least once. A member whose email
+// is NOT in this list has a pending invite (never accepted, expired, or the
+// auth user was never created) — that's who the "Resend Invite" button is for.
+export const getSignedInEmailsQuery = query(async () => {
+	"use server";
+	await requireAdmin();
+	const { data } = await supabaseService().auth.admin.listUsers({
+		perPage: 1000,
+	});
+	return (data?.users ?? [])
+		.filter((u) => u.last_sign_in_at)
+		.map((u) => u.email!);
+}, "admin-signed-in-emails");
 
 export const toggleMemberActiveAction = action(async (formData: FormData) => {
 	"use server";
@@ -181,7 +228,7 @@ export const createDocumentLinkAction = action(async (formData: FormData) => {
 	await requireAdmin();
 	await db.insert(documents).values({
 		projectId: String(formData.get("project_id")),
-		type: String(formData.get("type") || "link"),
+		type: String(formData.get("type") || "link") as DocumentType,
 		title: String(formData.get("title")),
 		url: String(formData.get("url")),
 		description: String(formData.get("description") || ""),
@@ -199,13 +246,16 @@ export const deleteDocumentAction = action(async (formData: FormData) => {
 	const storagePath = String(formData.get("storage_path") || "");
 	const audioPath = String(formData.get("audio_path") || "");
 	const paths = [storagePath, audioPath].filter(Boolean);
-	if (paths.length) {
-		const svc = supabaseService();
-		await svc.storage.from("portal-docs").remove(paths);
+	try {
+		if (paths.length) {
+			const svc = supabaseService();
+			await svc.storage.from("portal-docs").remove(paths);
+		}
+		await db.delete(documents).where(eq(documents.id, id));
+		return { success: "Document deleted." };
+	} catch (e) {
+		return { error: e instanceof Error ? e.message : "Failed to delete document." };
 	}
-	await db.delete(documents).where(eq(documents.id, id));
-	const ref = formData.get("_referer");
-	throw redirect(ref ? String(ref) : "/admin/companies");
 }, "deleteDocument");
 
 // ── Invoices ──────────────────────────────────────────────────────
@@ -227,7 +277,7 @@ export const createInvoiceAction = action(async (formData: FormData) => {
 		projectId: String(formData.get("project_id")),
 		number: String(formData.get("number")),
 		amount: Number(formData.get("amount")),
-		status: String(formData.get("status") || "draft"),
+		status: String(formData.get("status") || "draft") as InvoiceStatus,
 		issueDate: new Date(String(formData.get("issue_date"))),
 		dueDate: formData.get("due_date")
 			? new Date(String(formData.get("due_date")))
@@ -246,13 +296,16 @@ export const deleteInvoiceAction = action(async (formData: FormData) => {
 	await requireAdmin();
 	const id = String(formData.get("id"));
 	const storagePath = String(formData.get("storage_path") || "");
-	if (storagePath) {
-		const svc = supabaseService();
-		await svc.storage.from("portal-docs").remove([storagePath]);
+	try {
+		if (storagePath) {
+			const svc = supabaseService();
+			await svc.storage.from("portal-docs").remove([storagePath]);
+		}
+		await db.delete(invoices).where(eq(invoices.id, id));
+		return { success: "Invoice deleted." };
+	} catch (e) {
+		return { error: e instanceof Error ? e.message : "Failed to delete invoice." };
 	}
-	await db.delete(invoices).where(eq(invoices.id, id));
-	const ref = formData.get("_referer");
-	throw redirect(ref ? String(ref) : "/admin/companies");
 }, "deleteInvoice");
 
 // ── Deliverables ──────────────────────────────────────────────────
@@ -320,7 +373,7 @@ export const updateDeliverableStatusAction = action(
 		"use server";
 		await requireAdmin();
 		const id = String(formData.get("id"));
-		const status = String(formData.get("status"));
+		const status = String(formData.get("status")) as DeliverableStatus;
 		await db
 			.update(deliverables)
 			.set({ status, updatedAt: new Date() })
@@ -350,7 +403,10 @@ export const deleteDeliverableAction = action(async (formData: FormData) => {
 	"use server";
 	await requireAdmin();
 	const id = String(formData.get("id"));
-	await db.delete(deliverables).where(eq(deliverables.id, id));
-	const ref = formData.get("_referer");
-	throw redirect(ref ? String(ref) : "/admin/projects");
+	try {
+		await db.delete(deliverables).where(eq(deliverables.id, id));
+		return { success: "Deliverable deleted." };
+	} catch (e) {
+		return { error: e instanceof Error ? e.message : "Failed to delete deliverable." };
+	}
 }, "deleteDeliverable");

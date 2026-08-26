@@ -72,7 +72,7 @@ export default function Home() {
 		const form = e.target as HTMLFormElement;
 		const fd = new FormData(form);
 		fd.set("_referer", "/admin");
-		const result = await createEntry(fd);
+		const result = (await createEntry(fd)) as { error?: string } | undefined;
 		if (result?.error) setEntryError(result.error);
 		else form.reset();
 	}
@@ -165,7 +165,7 @@ export default function Home() {
 											{(d) => (
 												<tr>
 													<td>
-														<A href={`/admin/projects/${d.project_id}`} class="gold">
+														<A href={`/admin/projects/${d.projectId}`} class="gold">
 															{d.title}
 														</A>
 													</td>
@@ -210,8 +210,8 @@ export default function Home() {
 														${Number(inv.amount).toFixed(2)}
 													</td>
 													<td class="muted">
-														{inv.due_date
-															? new Date(inv.due_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+														{inv.dueDate
+															? new Date(inv.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })
 															: "—"}
 													</td>
 													<td>
@@ -368,7 +368,7 @@ export default function Home() {
 											{(e) => (
 												<tr>
 													<td class="muted">
-														{new Date(e.entry_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+														{new Date(e.entryDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
 													</td>
 													<td>
 														<A href={`/admin/projects/${e.projectId}`} class="gold">{e.projectName}</A>

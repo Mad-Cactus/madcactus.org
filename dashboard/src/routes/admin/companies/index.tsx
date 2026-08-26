@@ -6,9 +6,10 @@ import {
 	createCompanyAction,
 	getCompaniesQuery,
 	getMembersQuery,
-	updateMemberPasswordAction,
+	resendInviteAction,
 	toggleMemberActiveAction,
 	linkMemberAction,
+	getSignedInEmailsQuery,
 } from "~/lib/admin-queries";
 import { getUserQuery } from "~/lib/queries";
 
@@ -18,33 +19,49 @@ export default function Companies() {
 		deferStream: true,
 	});
 	const members = createAsync(() => getMembersQuery(), { deferStream: true });
+	const signedInEmails = createAsync(() => getSignedInEmailsQuery(), {
+		deferStream: true,
+	});
+	// Resend only while the invite is pending (member never signed in).
+	const invitePending = (email: string) =>
+		!(signedInEmails() ?? []).includes(email);
 	const createCompany = useAction(createCompanyAction);
-	const updatePassword = useAction(updateMemberPasswordAction);
+	const resendInvite = useAction(resendInviteAction);
 	const toggleActive = useAction(toggleMemberActiveAction);
 	const linkMember = useAction(linkMemberAction);
 
 	const [showForm, setShowForm] = createSignal(false);
 	const [showLinkForm, setShowLinkForm] = createSignal<string | null>(null);
-	const [pwModal, setPwModal] = createSignal<string | null>(null);
-	const [newPw, setNewPw] = createSignal("");
 	const [error, setError] = createSignal("");
+	const [success, setSuccess] = createSignal("");
+	const [resendingId, setResendingId] = createSignal<string | null>(null);
 
 	async function handleCreate(e: Event) {
 		e.preventDefault();
 		setError("");
 		const fd = new FormData(e.target as HTMLFormElement);
-		const result = await createCompany(fd);
+		const result = (await createCompany(fd)) as { error?: string } | undefined;
 		if (result?.error) setError(result.error);
 	}
 
-	async function handlePwUpdate(e: Event) {
-		e.preventDefault();
+	async function handleResend(id: string) {
 		setError("");
-		const fd = new FormData();
-		fd.set("id", pwModal()!);
-		fd.set("password", newPw());
-		const result = await updatePassword(fd);
-		if (result?.error) setError(result.error);
+		setSuccess("");
+		setResendingId(id);
+		try {
+			const fd = new FormData();
+			fd.set("id", id);
+			const result = await resendInvite(fd);
+			if (result?.error) {
+				setError(result.error);
+			} else if (result?.success) {
+				setSuccess(result.success);
+			}
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Failed to resend invite.");
+		} finally {
+			setResendingId(null);
+		}
 	}
 
 	return (
@@ -123,6 +140,12 @@ export default function Companies() {
 			{/* ── Members section ─────────────────────────────────── */}
 			<div style={{ "margin-top": "48px" }}>
 				<div class="section-heading">Portal Members</div>
+				<Show when={error()}>
+					<p class="login-error" style={{ "margin-top": "8px" }}>{error()}</p>
+				</Show>
+				<Show when={success()}>
+					<p style={{ color: "#16a34a", "font-size": "13px", "margin-top": "8px" }}>{success()}</p>
+				</Show>
 				<Suspense fallback={<p class="muted">Loading…</p>}>
 					<Show when={members()} fallback={<p class="muted">Loading…</p>}>
 						{(list) => (
@@ -151,7 +174,9 @@ export default function Companies() {
 													</td>
 													<td>
 														<div style={{ display: "flex", gap: "8px" }}>
-															<button class="btn btn-sm" onClick={() => setPwModal(m.id)}>Set Password</button>
+															<Show when={invitePending(m.email)}>
+																<button class="btn btn-sm" onClick={() => handleResend(m.id)} disabled={resendingId() === m.id}>{resendingId() === m.id ? "Sending…" : "Resend Invite"}</button>
+															</Show>
 															<form method="post" action="/admin/companies/toggle-member">
 																<input type="hidden" name="id" value={m.id} />
 																<input type="hidden" name="is_active" value={String(m.isActive)} />
@@ -170,28 +195,6 @@ export default function Companies() {
 				</Suspense>
 			</div>
 
-			{/* Password modal */}
-			<Show when={pwModal()}>
-				<div
-					style={{ position: "fixed", inset: "0", background: "rgba(0,0,0,0.7)", display: "flex", "align-items": "center", "justify-content": "center", "z-index": "100" }}
-					onClick={() => setPwModal(null)}
-				>
-					<div class="card" style={{ width: "400px", padding: "32px" }} onClick={(e) => e.stopPropagation()}>
-						<h3 style={{ "margin-bottom": "16px" }}>Set New Password</h3>
-						<form onSubmit={handlePwUpdate}>
-							<div class="form-group">
-								<label for="newpw">New Password</label>
-								<input type="text" id="newpw" required minlength="6" value={newPw()} onInput={(e) => setNewPw(e.currentTarget.value)} />
-							</div>
-							<Show when={error()}><p class="login-error">{error()}</p></Show>
-							<div style={{ display: "flex", gap: "8px", "margin-top": "16px" }}>
-								<button type="submit" class="btn btn-primary">Update</button>
-								<button type="button" class="btn" onClick={() => { setPwModal(null); setNewPw(""); setError(""); }}>Cancel</button>
-							</div>
-						</form>
-					</div>
-				</div>
-			</Show>
 		</Layout>
 	);
 }

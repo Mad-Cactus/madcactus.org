@@ -1,5 +1,5 @@
 import { query, redirect } from "@solidjs/router";
-import { eq, and, inArray, desc, sql } from "drizzle-orm";
+import { eq, and, inArray, desc, sql, getTableColumns } from "drizzle-orm";
 import { Resend } from "resend";
 import { getAuthedClient } from "./session";
 import { db } from "~/db";
@@ -54,9 +54,11 @@ async function resendLeads(): Promise<ExternalResult<{ subscribers: number; over
 async function posthogStats(): Promise<
 	ExternalResult<{ pageviews30d: number; uniqueUsers30d: number; pageviews7d: number }>
 > {
-	const host = process.env.POSTHOG_HOST;
+	// ponytail: PostHog Cloud is single-region (us/eu); host is a stable default
+	// rather than a required secret. Override via POSTHOG_HOST only if on EU cloud.
+	const host = process.env.POSTHOG_HOST ?? "https://us.i.posthog.com";
 	const key = process.env.POSTHOG_PERSONAL_KEY;
-	if (!host || !key) return notConfigured();
+	if (!key) return notConfigured();
 	try {
 		const headers: Record<string, string> = {
 			"Content-Type": "application/json",
@@ -82,7 +84,9 @@ async function posthogStats(): Promise<
 					query:
 						"select count() as pv30, count(DISTINCT distinct_id) as uniques, " +
 						"countIf(timestamp > now() - interval 7 day) as pv7 " +
-						"from events where event = '$pageview' and timestamp > now() - interval 30 day",
+						"from events where event = '$pageview' and timestamp > now() - interval 30 day " +
+						"and (properties.$pathname is null or properties.$pathname not like '/admin%') " +
+						"and (properties.$host is null or (properties.$host not like 'localhost%' and properties.$host not like '127.0.0.1%'))",
 				},
 			}),
 		});
@@ -121,7 +125,7 @@ async function linearIssues(): Promise<
 			body: JSON.stringify({
 				query:
 					`{ issues(filter: { assignee: { isMe: { eq: true } }, ` +
-					`state: { type: { neq: completed } } }, orderBy: updatedAt) ` +
+					`state: { type: { neq: "completed" } } }, orderBy: updatedAt) ` +
 					`{ nodes { id identifier title priority state { name } } } }`,
 			}),
 		});
@@ -205,7 +209,7 @@ export const getOverviewQuery = query(async (): Promise<OverviewData> => {
 	const [delivRows, invRows, companyRows, posthog, resend, linear] = await Promise.all([
 		db
 			.select({
-				...deliverables,
+				...getTableColumns(deliverables),
 				projectName: projects.name,
 				companyName: companies.name,
 				projectStatus: projects.status,
@@ -215,7 +219,7 @@ export const getOverviewQuery = query(async (): Promise<OverviewData> => {
 			.innerJoin(companies, eq(companies.id, projects.companyId))
 			.orderBy(desc(deliverables.updatedAt)),
 		db
-			.select({ ...invoices, projectName: projects.name })
+			.select({ ...getTableColumns(invoices), projectName: projects.name })
 			.from(invoices)
 			.innerJoin(projects, eq(projects.id, invoices.projectId))
 			.where(inArray(invoices.status, ["sent", "draft"])),

@@ -1,6 +1,9 @@
 import type { APIEvent } from "@solidjs/start/server";
-import { getCookie } from "@solidjs/start/http";
-import { supabaseAdmin, supabaseService } from "~/lib/supabase";
+import { supabaseService } from "~/lib/supabase";
+import { getAuthedClient } from "~/lib/session";
+import { db } from "~/db";
+import { documents } from "~/db/schema";
+import type { DocumentType } from "~/db/schema";
 
 /** Extract text from file content for full-text search indexing. */
 function extractText(fileName: string, mime: string, bytes: ArrayBuffer): string {
@@ -20,25 +23,18 @@ function extractText(fileName: string, mime: string, bytes: ArrayBuffer): string
 /** Upload a file to Supabase Storage and create a document record.
  *  Admin-only — requires mc-access-token cookie. */
 export async function POST(event: APIEvent) {
-	const accessToken = getCookie("mc-access-token");
-	const refreshToken = getCookie("mc-refresh-token");
-	if (!accessToken || !refreshToken) {
+	// Auth via session helper. DB writes go through Drizzle, not the Supabase
+	// JS client — migrations grant no privileges to `authenticated`, so
+	// PostgREST inserts fail with "permission denied for schema public".
+	if (!(await getAuthedClient())) {
 		return new Response("Unauthorized", { status: 401 });
 	}
-
-	// Verify admin session
-	const admin = supabaseAdmin();
-	const { data: session } = await admin.auth.setSession({
-		access_token: accessToken,
-		refresh_token: refreshToken,
-	});
-	if (!session.session) return new Response("Unauthorized", { status: 401 });
 
 	const formData = await event.request.formData();
 	const file = formData.get("file") as File;
 	const projectId = String(formData.get("project_id") || "");
 	const title = String(formData.get("title") || file.name);
-	const docType = String(formData.get("doc_type") || "file");
+	const docType = String(formData.get("doc_type") || "file") as DocumentType;
 	const description = String(formData.get("description") || "");
 	const referer = String(
 		formData.get("_referer") || event.request.headers.get("referer") || "/admin/clients",
@@ -63,26 +59,30 @@ export async function POST(event: APIEvent) {
 		return new Response(`Upload failed: ${uploadErr.message}`, { status: 500 });
 	}
 
-	// Extract text for full-text search indexing (search_vector is generated automatically)
-	const extractedText = extractText(file.name, file.type, fileBytes);
-	let content: string | null = extractedText || null;
+	// ponytail: no generated search_vector column exists yet; extracted text is
+	// stored as plain text. Add a tsvector + trigger when FTS is wired up.
+	const content = extractText(file.name, file.type, fileBytes) || null;
 
-	// Create document record
-	const { error: dbErr } = await admin.from("documents").insert({
-		project_id: projectId,
-		type: docType,
-		title,
-		url: storagePath,
-		file_name: file.name,
-		file_size: file.size,
-		mime_type: file.type,
-		description,
-		content,
-		visibility: "client",
-	});
-
-	if (dbErr) {
-		return new Response(`DB error: ${dbErr.message}`, { status: 500 });
+	try {
+		await db.insert(documents).values({
+			projectId,
+			type: docType,
+			title,
+			url: storagePath,
+			fileName: file.name,
+			fileSize: file.size,
+			mimeType: file.type,
+			description,
+			content,
+			visibility: "client",
+		});
+	} catch (dbErr) {
+		// Clean up uploaded file if DB insert failed
+		await svc.storage.from("portal-docs").remove([storagePath]);
+		return new Response(
+			`DB error: ${dbErr instanceof Error ? dbErr.message : String(dbErr)}`,
+			{ status: 500 },
+		);
 	}
 
 	return new Response(null, {

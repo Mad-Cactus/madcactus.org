@@ -2,6 +2,7 @@ import { Title } from "@solidjs/meta";
 import { createAsync, useAction } from "@solidjs/router";
 import { For, Show, createSignal } from "solid-js";
 import PortalLayout from "~/components/PortalLayout";
+import ConfirmButton from "~/components/ConfirmButton";
 import {
 	createApiKeyAction,
 	getClientApiKeysQuery,
@@ -33,9 +34,7 @@ export default function PortalApiKeys() {
 		const fd = new FormData();
 		fd.set("label", label() || "Default");
 		const result = await createKey(fd);
-		if (result?.error) {
-			setError(result.error);
-		} else if (result?.key) {
+		if (result?.key) {
 			setNewKey(result.key);
 			setLabel("");
 			// Refresh the list
@@ -151,19 +150,23 @@ export default function PortalApiKeys() {
 													{key.label}
 												</div>
 												<div class="mono muted" style={{ "font-size": "12px" }}>
-													{key.key_prefix}
-													<Show when={key.last_used_at}>
-														{" · last used "}{new Date(key.last_used_at!).toLocaleDateString()}
+													{key.keyPrefix}
+													<Show when={key.lastUsedAt}>
+														{" · last used "}{new Date(key.lastUsedAt!).toLocaleDateString()}
 													</Show>
 												</div>
 											</div>
 											<Show
-												when={key.revoked_at}
+												when={key.revokedAt}
 												fallback={
-													<form method="post" action="/portal/api-keys/revoke">
-														<input type="hidden" name="id" value={key.id} />
-														<button type="submit" class="btn btn-sm">Revoke</button>
-													</form>
+													<ConfirmButton
+																			label="Revoke"
+																			onConfirm={async () => {
+																				const fd = new FormData();
+																				fd.set("id", key.id);
+																				return revokeKey(fd);
+																			}}
+																		/>
 												}
 											>
 												<span class="badge badge-paused">Revoked</span>

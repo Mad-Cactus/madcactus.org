@@ -53,8 +53,8 @@ export default function PortalInvoices() {
 												<td class="mono" style={{ "font-weight": "500" }}>
 													${inv.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}
 												</td>
-												<td class="muted">{inv.issue_date}</td>
-												<td class="muted">{inv.due_date ?? "—"}</td>
+												<td class="muted">{inv.issueDate.toLocaleDateString()}</td>
+												<td class="muted">{inv.dueDate ? inv.dueDate.toLocaleDateString() : "—"}</td>
 												<td>
 													<span class={`badge ${statusBadge[inv.status]}`}>
 														{inv.status}
@@ -62,9 +62,9 @@ export default function PortalInvoices() {
 												</td>
 												<td>
 													<div style={{ display: "flex", gap: "8px" }}>
-														<Show when={inv.payment_url && inv.status !== "paid"}>
+														<Show when={inv.paymentUrl && inv.status !== "paid"}>
 															<a
-																href={inv.payment_url!}
+																href={inv.paymentUrl!}
 																target="_blank"
 																rel="noopener noreferrer"
 																class="btn btn-sm btn-primary"
@@ -72,9 +72,9 @@ export default function PortalInvoices() {
 																Pay Now
 															</a>
 														</Show>
-														<Show when={inv.storage_path}>
+														<Show when={inv.storagePath}>
 															<a
-																href={`/api/download?path=${encodeURIComponent(inv.storage_path!)}`}
+																href={`/api/download?path=${encodeURIComponent(inv.storagePath!)}`}
 																class="btn btn-sm"
 																download=""
 															>

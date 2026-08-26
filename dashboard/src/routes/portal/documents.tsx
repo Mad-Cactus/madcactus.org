@@ -5,6 +5,7 @@ import PortalLayout from "~/components/PortalLayout";
 import {
 	getClientDocumentsQuery,
 	getClientUserQuery,
+	searchDocumentsQuery,
 } from "~/lib/client-queries";
 import type { DocumentType } from "~/db/schema";
 
@@ -13,16 +14,6 @@ const typeLabel: Record<DocumentType, string> = {
 	file: "File",
 	transcript: "Transcript",
 };
-
-interface SearchHit {
-	id: string;
-	title: string;
-	type: DocumentType;
-	url: string | null;
-	file_name: string | null;
-	description: string | null;
-	content_snippet: string | null;
-}
 
 export default function PortalDocuments() {
 	const user = createAsync(() => getClientUserQuery(), { deferStream: true });
@@ -33,10 +24,8 @@ export default function PortalDocuments() {
 	const [searchQuery, setSearchQuery] = createSignal("");
 	const [searchResults] = createResource(searchQuery, async (q) => {
 		if (q.trim().length < 2) return null;
-		const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
-		if (!res.ok) return null;
-		const data = await res.json();
-		return (data.results ?? []) as SearchHit[];
+		const hits = await searchDocumentsQuery(q);
+		return hits.length > 0 ? hits : null;
 	});
 
 	const showSearch = () =>
@@ -145,11 +134,11 @@ export default function PortalDocuments() {
 												</Show>
 												<div class="muted" style={{ "font-size": "12px", "margin-top": "4px" }}>
 													{typeLabel[doc.type]}
-													<Show when={doc.file_name}> · {doc.file_name}</Show>
-													<Show when={doc.file_size}>
-														{" "}= {(doc.file_size! / 1024).toFixed(0)}KB
+													<Show when={doc.fileName}> · {doc.fileName}</Show>
+													<Show when={doc.fileSize}>
+														{" "}= {(doc.fileSize! / 1024).toFixed(0)}KB
 													</Show>
-													{" · "}{new Date(doc.created_at).toLocaleDateString()}
+													{" · "}{new Date(doc.createdAt).toLocaleDateString()}
 												</div>
 											</div>
 											<div>
@@ -176,9 +165,9 @@ export default function PortalDocuments() {
 														Open
 													</a>
 												</Show>
-											<Show when={doc.audio_path}>
+											<Show when={doc.audioPath}>
 												<a
-													href={`/api/download?path=${encodeURIComponent(doc.audio_path!)}`}
+													href={`/api/download?path=${encodeURIComponent(doc.audioPath!)}`}
 													class="btn btn-sm"
 													download=""
 												>

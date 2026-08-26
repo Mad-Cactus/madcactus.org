@@ -1,19 +1,20 @@
 import { Title } from "@solidjs/meta";
-import { A, createAsync, useAction, useParams } from "@solidjs/router";
+import { A, createAsync, useAction, useParams, revalidate } from "@solidjs/router";
 import { For, Show, Suspense, createSignal } from "solid-js";
 import Layout from "~/components/Layout";
+import ProjectDocuments from "~/components/ProjectDocuments";
+import ConfirmButton from "~/components/ConfirmButton";
 import {
 	createMemberAction,
 	linkMemberAction,
-	unlinkMemberAction,
+	removeMemberAction,
+	resendInviteAction,
+	getSignedInEmailsQuery,
 	getCompaniesQuery,
 	getCompanyMembersQuery,
 	getMembersQuery,
 	getProjectsForSelectQuery,
-	getDocumentsQuery,
 	getInvoicesQuery,
-	createDocumentLinkAction,
-	deleteDocumentAction,
 	createInvoiceAction,
 	deleteInvoiceAction,
 } from "~/lib/admin-queries";
@@ -23,7 +24,7 @@ import type { InvoiceStatus } from "~/db/schema";
 export default function CompanyDetail() {
 	const user = createAsync(() => getUserQuery(), { deferStream: true });
 	const params = useParams();
-	const companyId = () => params.id;
+	const companyId = () => params.id!;
 
 	const companies = createAsync(() => getCompaniesQuery(), { deferStream: true });
 	const company = () => (companies() ?? []).find((c) => c.id === companyId());
@@ -32,6 +33,13 @@ export default function CompanyDetail() {
 		() => getCompanyMembersQuery(companyId()),
 		{ deferStream: true },
 	);
+	const signedInEmails = createAsync(() => getSignedInEmailsQuery(), {
+		deferStream: true,
+	});
+	// Invite pending = member never signed in (invite unaccepted/expired, or
+	// auth user missing). Resend button shows until their first sign-in.
+	const invitePending = (email: string) =>
+		!(signedInEmails() ?? []).includes(email);
 	const allMembers = createAsync(() => getMembersQuery(), { deferStream: true });
 	const projects = createAsync(() => getProjectsForSelectQuery(), {
 		deferStream: true,
@@ -41,17 +49,16 @@ export default function CompanyDetail() {
 
 	const createMember = useAction(createMemberAction);
 	const linkMember = useAction(linkMemberAction);
-	const unlinkMember = useAction(unlinkMemberAction);
-	const addDocLink = useAction(createDocumentLinkAction);
-	const deleteDoc = useAction(deleteDocumentAction);
+	const removeMember = useAction(removeMemberAction);
+	const resendInvite = useAction(resendInviteAction);
 	const addInvoice = useAction(createInvoiceAction);
-	const deleteInvoice = useAction(deleteInvoiceAction);
 
 	const [showMemberForm, setShowMemberForm] = createSignal(false);
 	const [showLinkForm, setShowLinkForm] = createSignal(false);
-	const [showDocForm, setShowDocForm] = createSignal<string | null>(null);
 	const [showInvForm, setShowInvForm] = createSignal<string | null>(null);
 	const [error, setError] = createSignal("");
+	const [success, setSuccess] = createSignal("");
+	const [submitting, setSubmitting] = createSignal(false);
 
 	const referer = () => `/admin/companies/${companyId()}`;
 	const today = new Date().toISOString().slice(0, 10);
@@ -65,10 +72,41 @@ export default function CompanyDetail() {
 	async function handleCreateMember(e: Event) {
 		e.preventDefault();
 		setError("");
-		const fd = new FormData(e.target as HTMLFormElement);
-		fd.set("company_id", companyId());
-		const result = await createMember(fd);
-		if (result?.error) setError(result.error);
+		setSuccess("");
+		setSubmitting(true);
+		try {
+			const fd = new FormData(e.target as HTMLFormElement);
+			fd.set("company_id", companyId());
+			const result = await createMember(fd);
+			if (result?.error) {
+				setError(result.error);
+				return;
+			}
+			if (result?.success) {
+				setSuccess(result.success);
+				setShowMemberForm(false);
+				(e.target as HTMLFormElement).reset();
+				await revalidate(getCompanyMembersQuery.key);
+			}
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Something went wrong.");
+		} finally {
+			setSubmitting(false);
+		}
+	}
+
+	async function handleResendInvite(memberId: string, email: string) {
+		setError("");
+		setSuccess("");
+		try {
+			const fd = new FormData();
+			fd.set("id", memberId);
+			const result = await resendInvite(fd);
+			if (result?.error) setError(result.error);
+			else setSuccess(`Invite re-sent to ${email}.`);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Failed to resend invite.");
+		}
 	}
 
 	async function handleLink(e: Event) {
@@ -76,14 +114,6 @@ export default function CompanyDetail() {
 		const fd = new FormData(e.target as HTMLFormElement);
 		fd.set("company_id", companyId());
 		await linkMember(fd);
-	}
-
-	async function handleDocLink(e: Event, projectId: string) {
-		e.preventDefault();
-		const fd = new FormData(e.target as HTMLFormElement);
-		fd.set("project_id", projectId);
-		fd.set("_referer", referer());
-		await addDocLink(fd);
 	}
 
 	async function handleInvoice(e: Event, projectId: string) {
@@ -152,15 +182,16 @@ export default function CompanyDetail() {
 												<input type="email" id="m_email" name="email" required placeholder="john@company.com" />
 											</div>
 										</div>
-										<div class="form-group">
-											<label for="m_password">Initial Password</label>
-											<input type="text" id="m_password" name="password" required minlength="6" placeholder="Share with the client" />
-										</div>
+										<p class="muted" style={{ "font-size": "12px", "margin-bottom": "12px" }}>An invite email will be sent so they can set their own password.</p>
 										<Show when={error()}><p class="login-error">{error()}</p></Show>
-										<button type="submit" class="btn btn-primary">Create + Link</button>
+										<button type="submit" class="btn btn-primary" disabled={submitting()}>{submitting() ? "Sending…" : "Create + Link"}</button>
 									</form>
 								</div>
 							</Show>
+
+						<Show when={success()}>
+							<p style={{ color: "#16a34a", "font-size": "13px", "margin-bottom": "12px" }}>{success()}</p>
+						</Show>
 
 							<Suspense fallback={<p class="muted">Loading…</p>}>
 								<Show when={companyMembers()}>
@@ -177,11 +208,26 @@ export default function CompanyDetail() {
 																	{m.isActive ? "active" : "disabled"}
 																</span>
 															</div>
-															<form method="post" action="/admin/companies/unlink-member">
-																<input type="hidden" name="member_id" value={m.id} />
-																<input type="hidden" name="company_id" value={companyId()} />
-																<button type="submit" class="btn btn-sm" style={{ color: "#ef4444" }}>Unlink</button>
-															</form>
+															<div style={{ display: "flex", gap: "8px" }}>
+																<Show when={invitePending(m.email)}>
+																	<button
+																		class="btn btn-sm"
+																		onClick={() => handleResendInvite(m.id, m.email)}
+																	>
+																		Resend Invite
+																	</button>
+																</Show>
+																<ConfirmButton
+																	label="Remove"
+																	confirmText="Remove everywhere?"
+																		danger
+																		onConfirm={() => {
+																			const fd = new FormData();
+																			fd.set("member_id", m.id);
+																			return removeMember(fd);
+																		}}
+																	/>
+															</div>
 														</div>
 													)}
 												</For>
@@ -203,11 +249,8 @@ export default function CompanyDetail() {
 												proj={proj}
 												referer={referer()}
 												today={today}
-												showDocForm={showDocForm() === proj.id}
 												showInvForm={showInvForm() === proj.id}
-												toggleDocForm={() => setShowDocForm(showDocForm() === proj.id ? null : proj.id)}
 												toggleInvForm={() => setShowInvForm(showInvForm() === proj.id ? null : proj.id)}
-												onDocLink={(e) => handleDocLink(e, proj.id)}
 												onInvoice={(e) => handleInvoice(e, proj.id)}
 											/>
 										)}
@@ -228,16 +271,11 @@ function CompanyProjectSection(props: {
 	proj: { id: string; name: string; companyName: string };
 	referer: string;
 	today: string;
-	showDocForm: boolean;
 	showInvForm: boolean;
-	toggleDocForm: () => void;
 	toggleInvForm: () => void;
-	onDocLink: (e: Event) => void;
 	onInvoice: (e: Event) => void;
 }) {
-	const docs = createAsync(() => getDocumentsQuery(props.proj.id), { deferStream: true });
 	const invoices = createAsync(() => getInvoicesQuery(props.proj.id), { deferStream: true });
-	const deleteDoc = useAction(deleteDocumentAction);
 	const deleteInvoice = useAction(deleteInvoiceAction);
 
 	return (
@@ -248,79 +286,7 @@ function CompanyProjectSection(props: {
 				</A>
 			</div>
 
-			{/* Documents */}
-			<div style={{ "margin-bottom": "24px" }}>
-				<div style={{ display: "flex", "justify-content": "space-between", "align-items": "center", "margin-bottom": "8px" }}>
-					<span class="muted" style={{ "font-size": "13px" }}>Documents</span>
-					<button class="btn btn-sm" onClick={props.toggleDocForm}>Add Link</button>
-				</div>
-				<Show when={props.showDocForm}>
-					<div class="card" style={{ "margin-bottom": "8px", padding: "16px" }}>
-						<form onSubmit={props.onDocLink}>
-							<div class="form-row">
-								<div class="form-group">
-									<label for={`doc_title_${props.proj.id}`}>Title</label>
-									<input type="text" id={`doc_title_${props.proj.id}`} name="title" required placeholder="Project Brief" />
-								</div>
-								<div class="form-group">
-									<label for={`doc_type_${props.proj.id}`}>Type</label>
-									<select id={`doc_type_${props.proj.id}`} name="type">
-										<option value="link">Link</option>
-										<option value="transcript">Transcript Link</option>
-									</select>
-								</div>
-							</div>
-							<div class="form-group">
-								<label for={`doc_url_${props.proj.id}`}>URL</label>
-								<input type="url" id={`doc_url_${props.proj.id}`} name="url" required placeholder="https://docs.google.com/…" />
-							</div>
-							<div class="form-group">
-								<label for={`doc_desc_${props.proj.id}`}>Description</label>
-								<input type="text" id={`doc_desc_${props.proj.id}`} name="description" placeholder="Brief description" />
-							</div>
-							<div class="form-group">
-								<label for={`doc_content_${props.proj.id}`}>Content for search (optional)</label>
-								<textarea id={`doc_content_${props.proj.id}`} name="content" rows={3} placeholder="Paste key text to make searchable…" />
-							</div>
-							<button type="submit" class="btn btn-primary">Add</button>
-						</form>
-					</div>
-				</Show>
-				<Suspense fallback={<p class="muted" style={{ "font-size": "12px" }}>Loading…</p>}>
-					<Show when={docs()}>
-						{(list) => (
-							<Show when={list().length > 0} fallback={<p class="muted" style={{ "font-size": "12px" }}>No documents.</p>}>
-								<div style={{ display: "flex", "flex-direction": "column", gap: "4px" }}>
-									<For each={list()}>
-										{(doc) => (
-											<div style={{ display: "flex", "align-items": "center", gap: "8px", "font-size": "13px" }}>
-												<Show when={doc.type === "link" && doc.url}>
-													<a href={doc.url!} target="_blank" rel="noopener noreferrer" class="gold">{doc.title}</a>
-												</Show>
-												<Show when={doc.type !== "link"}>
-													<span>{doc.title}</span>
-												</Show>
-												<span class="badge badge-paused" style={{ "text-transform": "capitalize" }}>{doc.type}</span>
-												<form method="post" action="/admin/companies/delete-doc" style={{ display: "inline", "margin-left": "auto" }}>
-													<input type="hidden" name="id" value={doc.id} />
-													<Show when={doc.url && doc.type !== "link"}>
-														<input type="hidden" name="storage_path" value={doc.url!} />
-													</Show>
-													<Show when={doc.audioPath}>
-														<input type="hidden" name="audio_path" value={doc.audioPath!} />
-													</Show>
-													<input type="hidden" name="_referer" value={props.referer} />
-													<button type="submit" class="btn btn-sm" style={{ color: "#ef4444" }}>Delete</button>
-												</form>
-											</div>
-										)}
-									</For>
-								</div>
-							</Show>
-						)}
-					</Show>
-				</Suspense>
-			</div>
+			<ProjectDocuments projectId={props.proj.id} referer={props.referer} />
 
 			{/* Invoices */}
 			<div>
@@ -377,14 +343,18 @@ function CompanyProjectSection(props: {
 											<Show when={inv.paymentUrl}>
 												<a href={inv.paymentUrl!} target="_blank" rel="noopener noreferrer" class="muted" style={{ "font-size": "12px" }}>Pay</a>
 											</Show>
-											<form method="post" action="/admin/companies/delete-inv" style={{ display: "inline", "margin-left": "auto" }}>
-												<input type="hidden" name="id" value={inv.id} />
-												<Show when={inv.storagePath}>
-													<input type="hidden" name="storage_path" value={inv.storagePath!} />
-												</Show>
-												<input type="hidden" name="_referer" value={props.referer} />
-												<button type="submit" class="btn btn-sm" style={{ color: "#ef4444" }}>Delete</button>
-											</form>
+											<ConfirmButton
+																label="Delete"
+																danger
+																style={{ "margin-left": "auto" }}
+																onConfirm={async () => {
+																	const fd = new FormData();
+																	fd.set("id", inv.id);
+																	if (inv.storagePath)
+																		fd.set("storage_path", inv.storagePath!);
+																	return deleteInvoice(fd);
+																}}
+															/>
 										</div>
 									)}
 								</For>
