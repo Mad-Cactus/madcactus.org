@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Rendered by install.sh: __API_KEY__ and __URL__ are substituted. -->
+<!-- Rendered by install.sh: __API_KEY__, __URL__, __BUN__ are substituted. -->
 <plist version="1.0">
 <dict>
 	<key>Label</key>
 	<string>com.madcactus.meeting-publisher</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/usr/bin/python3</string>
-		<string>__HOME__/publish.py</string>
+		<string>__BUN__</string>
+		<string>__HOME__/publish.ts</string>
 	</array>
-	<!-- cron-style: one pass every 60s; publish.py exits after each pass -->
+	<!-- cron-style: one pass every 60s; publish.ts exits after each pass -->
 	<key>StartInterval</key>
 	<integer>60</integer>
 	<key>EnvironmentVariables</key>
