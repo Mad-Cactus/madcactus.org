@@ -1,5 +1,7 @@
 import type { APIEvent } from "@solidjs/start/server";
 import { Resend } from "resend";
+import { generateScorecardPDF } from "./scorecard-pdf";
+import type { ScoreData } from "./types";
 
 export async function OPTIONS() {
 	return new Response(null, {
@@ -25,21 +27,48 @@ export async function POST(event: APIEvent) {
 		return json({ error: "Valid email required" }, 400);
 	}
 
+	const scoreData: ScoreData | undefined = body?.scoreData;
+
 	const resend = new Resend(key);
-	const { data, error } = await resend.contacts.create({
+
+	// Add to audience (dedup is fine)
+	await resend.contacts.create({
 		email,
 		unsubscribed: false,
-	});
+	}).catch(() => {});
 
-	if (error) {
-		// Duplicate email — treat as success
-		if (error.name === "validation_error") {
-			return json({ ok: true, message: "already_subscribed" });
+	// If score data present, generate personalized PDF and email it
+	if (scoreData) {
+		try {
+			const pdfBuffer = await generateScorecardPDF(scoreData);
+
+			await resend.emails.send({
+				from: "Mad Cactus <dispatch@madcactus.org>",
+				to: [email],
+				subject: `Your AI Readiness Score: ${scoreData.pct}% (${scoreData.tier})`,
+				html: `
+					<div style="font-family: Georgia, serif; max-width: 560px; margin: 0 auto; color: #0a0a0a;">
+						<p>Here's your personalized AI Readiness Assessment.</p>
+						<p>Your score: <strong>${scoreData.pct}% — ${scoreData.tier}</strong></p>
+						<p>The attached PDF breaks down each category, what it's costing you, and specific steps to fix each area.</p>
+						<p>If you want this customized for your company with a concrete 90-day plan, <a href="https://cal.com/cpfeifer/info-meeting">book a free audit</a>.</p>
+						<p>— Collin</p>
+					</div>
+				`,
+				attachments: [
+					{
+						filename: "AI-Readiness-Assessment.pdf",
+						content: pdfBuffer,
+					},
+				],
+			});
+		} catch {
+			// PDF generation failed — still subscribed them
+			return json({ ok: true, message: "subscribed_pdf_failed" });
 		}
-		return json({ error: "Failed to subscribe", detail: error.message }, 502);
 	}
 
-	return json({ ok: true, id: data?.id });
+	return json({ ok: true });
 }
 
 function json(body: unknown, status = 200) {

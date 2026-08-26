@@ -1,0 +1,415 @@
+---
+import "../styles/global.css";
+import Footer from "../components/Footer.astro";
+import Header from "../components/Header.astro";
+import PostHog from "../components/PostHog.astro";
+---
+
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <link rel="icon" type="image/svg+xml" href="/cactus-seal.svg" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta name="generator" content={Astro.generator} />
+        <title>The Cactus Dispatch | Mad Cactus</title>
+        <meta
+            name="description"
+            content="Weekly AI teardowns for business owners. Real deployments, real numbers, and the blueprint your team needs to build the same thing."
+        />
+        <PostHog />
+    </head>
+    <body>
+        <Header />
+
+        {/* ════════ HERO ════════ */}
+        <section class="hero">
+            <div class="hero-inner">
+                <div class="hero-text">
+                    <h1 class="hero-headline">
+                        AI teardowns<br />
+                        <em>from our real clients.</em>
+                    </h1>
+                    <p class="hero-body">
+                        Weekly breakdowns of real AI deployments. What we
+                        built, what it cost, and the blueprint to do the same
+                        thing. Higher margins, more revenue, no new headcount.
+                    </p>
+
+                    {/* ════════ SIGNUP FORM ════════ */}
+                    <form class="signup-form" id="signupForm">
+                        <input
+                            type="email"
+                            name="email"
+                            placeholder="your@email.com"
+                            required
+                            autocomplete="email"
+                        />
+                        <button type="submit" class="cta-bracketed cta-hero" data-ph-event="newsletter_signup">
+                            &#123; SUBSCRIBE &#125;
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </section>
+
+        {/* ════════ WHAT YOU GET ════════ */}
+        <section id="what-you-get">
+            <div class="section-header">
+                <h2 class="section-title">What you get</h2>
+                <hr class="section-rule" />
+            </div>
+            <div class="features-grid">
+                <div class="feature-col">
+                    <div class="feature-num">01</div>
+                    <h3>The story</h3>
+                    <p>
+                        The company, the problem, why it mattered. What
+                        we deployed and where it moved the needle.
+                    </p>
+                </div>
+                <div class="feature-col">
+                    <div class="feature-num">02</div>
+                    <h3>The blueprint</h3>
+                    <p>
+                        The full agent lifecycle. The tools, the prompts, the
+                        evals. Forward it to your team each week for a quick
+                        AI win.
+                    </p>
+                </div>
+                <div class="feature-col">
+                    <div class="feature-num">03</div>
+                    <h3>The numbers</h3>
+                    <p>
+                        Before and after. What changed in the business, what's
+                        still changing, and the long-term growth impact.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        {/* ════════ PAST ISSUES ════════ */}
+        <section id="past-issues">
+            <div class="archive-inner">
+                <a href="/newsletter/issue-01" class="archive-card">
+                    <div class="archive-meta">
+                        <span class="archive-num">Issue 01</span>
+                        <span class="archive-date">January 2026</span>
+                    </div>
+                    <h3 class="archive-title">
+                        3,000 cold emails, zero replies. Then we found 585 warm prospects in 16 minutes.
+                    </h3>
+                    <p class="archive-desc">
+                        How a coding agent turned public records into a ranked
+                        sales dashboard. The prompt, the verification loop, and
+                        what happened when the sales team saw it.
+                    </p>
+                    <span class="archive-link">&#123; READ THE TEARDOWN &#125;</span>
+                </a>
+            </div>
+        </section>
+
+        {/* ════════ DARK BAND, SCORECARD CTA ════════ */}
+        <div class="dark-band">
+            <div class="dark-band-inner">
+                <h2 class="dark-band-headline">
+                    How much is manual work<br />
+                    <em>costing your firm?</em>
+                </h2>
+                <p class="dark-band-body">
+                    See where your team wastes the most time and where AI can
+                    have the biggest impact.
+                </p>
+                <a
+                    href="/scorecard"
+                    class="cta-bracketed cta-hero"
+                    style="color: var(--color-letterpress-black);"
+                    >&#123; TAKE THE AI SCORECARD &#125;</a
+                >
+            </div>
+        </div>
+
+        <Footer />
+    </body>
+</html>
+
+<script>
+    // Capture traffic source on newsletter landing
+    if (window.posthog) {
+        var ref = document.referrer;
+        var params = new URLSearchParams(window.location.search);
+        var utmSource = params.get('utm_source') || '';
+        var utmMedium = params.get('utm_medium') || '';
+        var utmCampaign = params.get('utm_campaign') || '';
+        var source = utmSource || (ref ? new URL(ref).hostname : 'direct');
+        posthog.capture('newsletter_landed', {
+            source: source,
+            referrer: ref,
+            utm_source: utmSource,
+            utm_medium: utmMedium,
+            utm_campaign: utmCampaign,
+            path: window.location.pathname,
+        });
+    }
+
+    document.getElementById('signupForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const form = e.target;
+        const email = form.email.value.trim();
+        const btn = form.querySelector('button[type="submit"]');
+
+        btn.textContent = 'Subscribing...';
+        btn.disabled = true;
+
+        try {
+            const API_URL = window.location.hostname === 'localhost'
+                ? 'http://localhost:3000/api/newsletter'
+                : 'https://app.madcactus.org/api/newsletter';
+
+            const res = await fetch(API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email }),
+            });
+            const data = await res.json();
+
+            if (data.ok) {
+                form.innerHTML = '<p class="signup-success">You\'re in. Check your inbox.</p>';
+            } else {
+                throw new Error(data.error || 'Subscription failed');
+            }
+        } catch (err) {
+            btn.textContent = '{ SUBSCRIBE }';
+            btn.disabled = false;
+        }
+    });
+</script>
+
+<style is:global>
+    /* ═══ Hero ═══ */
+    .hero {
+        padding: var(--spacing-48) var(--spacing-64) var(--spacing-80);
+    }
+    .hero-inner {
+        max-width: 760px;
+        margin: 0 auto;
+        text-align: center;
+    }
+    .hero-headline {
+        font-family: var(--font-serif);
+        font-weight: 400;
+        font-size: clamp(40px, 9vw, 64px);
+        line-height: var(--leading-display);
+        letter-spacing: -1px;
+        margin-bottom: var(--spacing-32);
+    }
+    .hero-headline em {
+        font-style: italic;
+        font-weight: 400;
+    }
+    .hero-body {
+        font-family: var(--font-serif);
+        font-size: var(--text-body);
+        line-height: 1.5;
+        color: var(--color-letterpress-black);
+        max-width: 560px;
+        margin: 0 auto var(--spacing-48);
+    }
+
+    /* ═══ Section rules, full width ═══ */
+    .section-rule {
+        width: calc(100% + 2 * var(--spacing-64));
+        margin-left: calc(-1 * var(--spacing-64));
+    }
+
+    /* ═══ Signup Form ═══ */
+    .signup-form {
+        display: flex;
+        gap: var(--spacing-16);
+        justify-content: center;
+        align-items: stretch;
+        max-width: 480px;
+        margin: 0 auto;
+    }
+    .signup-form input {
+        flex: 1;
+        font-family: var(--font-serif);
+        font-size: var(--text-body);
+        padding: 14px 18px;
+        border: 1px solid var(--color-letterpress-black);
+        background: var(--color-paper);
+        color: var(--color-letterpress-black);
+        outline: none;
+    }
+    .signup-form input:focus {
+        border-color: var(--color-burnished-gold);
+    }
+    .signup-form button {
+        cursor: pointer;
+        background: none;
+        border: none;
+        padding: 14px 24px;
+        white-space: nowrap;
+    }
+    .signup-form button:disabled {
+        opacity: 0.5;
+        cursor: wait;
+    }
+    .signup-success {
+        font-family: var(--font-serif);
+        font-style: italic;
+        font-size: var(--text-subheading);
+        color: var(--color-letterpress-black);
+        padding: var(--spacing-16) 0;
+    }
+
+    /* ═══ Section headers ═══ */
+    .section-header {
+        text-align: center;
+        padding: 0 var(--spacing-64) var(--spacing-48);
+    }
+
+    /* ═══ Features grid ═══ */
+    .features-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: var(--spacing-48);
+        max-width: var(--page-max-width);
+        margin: 0 auto;
+        padding: 0 var(--spacing-64) var(--spacing-80);
+    }
+    .feature-col {
+        text-align: center;
+    }
+    .feature-num {
+        font-family: var(--font-sans);
+        font-size: var(--text-caption);
+        font-weight: 700;
+        letter-spacing: 2px;
+        color: var(--color-burnished-gold);
+        margin-bottom: var(--spacing-16);
+    }
+    .feature-col h3 {
+        font-family: var(--font-serif);
+        font-style: italic;
+        font-weight: 400;
+        font-size: var(--text-subheading);
+        margin-bottom: var(--spacing-16);
+    }
+    .feature-col p {
+        font-family: var(--font-serif);
+        font-size: var(--text-body);
+        line-height: 1.5;
+        color: var(--color-silver-wash);
+    }
+
+    /* ═══ CTA band ═══ */
+    .dark-band {
+        background: var(--color-vellum-white);
+        border-top: 1px solid var(--color-burnished-gold);
+        padding: var(--spacing-80) var(--spacing-64);
+        text-align: center;
+    }
+    .dark-band-inner {
+        max-width: 640px;
+        margin: 0 auto;
+    }
+    .dark-band-headline {
+        font-family: var(--font-serif);
+        font-weight: 400;
+        font-size: clamp(32px, 6vw, 42px);
+        line-height: var(--leading-display);
+        color: var(--color-letterpress-black);
+        margin-bottom: var(--spacing-32);
+    }
+    .dark-band-headline em {
+        font-style: italic;
+    }
+    .dark-band-body {
+        font-family: var(--font-serif);
+        font-size: var(--text-body);
+        line-height: 1.5;
+        color: var(--color-silver-wash);
+        margin-bottom: var(--spacing-40);
+    }
+
+    /* ═══ Archive ═══ */
+    #past-issues {
+        padding: var(--spacing-80) 0;
+        border-top: 1px solid var(--color-letterpress-black);
+    }
+    .archive-inner {
+        max-width: 640px;
+        margin: 0 auto;
+        padding: 0 var(--spacing-64);
+    }
+    .archive-card {
+        display: block;
+        border: 1px solid var(--color-letterpress-black);
+        padding: var(--spacing-32);
+        transition: border-color 0.15s;
+    }
+    .archive-card:hover {
+        border-color: var(--color-burnished-gold);
+    }
+    .archive-meta {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: var(--spacing-24);
+    }
+    .archive-num {
+        font-family: var(--font-sans);
+        font-size: var(--text-caption);
+        font-weight: 700;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        color: var(--color-burnished-gold);
+    }
+    .archive-date {
+        font-family: var(--font-sans);
+        font-size: var(--text-caption);
+        color: var(--color-silver-wash);
+    }
+    .archive-title {
+        font-family: var(--font-serif);
+        font-weight: 400;
+        font-size: var(--text-subheading);
+        line-height: var(--leading-display);
+        color: var(--color-letterpress-black);
+        margin-bottom: var(--spacing-20);
+    }
+    .archive-desc {
+        font-family: var(--font-serif);
+        font-size: var(--text-body-sm);
+        line-height: var(--leading-body);
+        color: var(--color-silver-wash);
+        margin-bottom: var(--spacing-32);
+    }
+    .archive-link {
+        font-family: var(--font-sans);
+        font-size: var(--text-body-sm);
+        font-weight: 700;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        color: var(--color-letterpress-black);
+    }
+    .archive-card:hover .archive-link {
+        color: var(--color-burnished-gold);
+    }
+
+    /* ═══ Responsive ═══ */
+    @media (max-width: 900px) {
+        .hero,
+        .features-grid,
+        .dark-band {
+            padding-left: var(--spacing-24);
+            padding-right: var(--spacing-24);
+        }
+        .features-grid {
+            grid-template-columns: 1fr;
+            gap: var(--spacing-48);
+        }
+        .archive-inner {
+            padding: 0 var(--spacing-24);
+        }
+    }
+</style>
