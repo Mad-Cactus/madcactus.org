@@ -9,9 +9,10 @@
 #    meetings recorded from now on are candidates.
 # 3. Renders the launchd plist (cron-style, one pass per minute) and loads it.
 #
-# Edit ~/.madcactus/meeting-publisher/config.json to choose which meetings
-# push (titlePatterns / participantPatterns — default-deny). Test with:
-#   ~/./.bun/bin/bun ~/.madcactus/meeting-publisher/publish.ts --scan
+# Which meetings push is configured in the dashboard: each company page has a
+# "Meeting pseudonyms" field. A meeting pushes when its Anarlog title contains
+# a client's name or pseudonym. Test with:
+#   ~/.bun/bin/bun ~/.madcactus/meeting-publisher/publish.ts --scan
 set -euo pipefail
 
 API_KEY="${1:?usage: ./install.sh <mc_api_key> [dashboard_url]}"
@@ -26,8 +27,6 @@ BUN="$(command -v bun || true)"
 
 mkdir -p "$STATE"
 cp "$HERE/publish.ts" "$HOME_DIR/publish.ts"
-# don't clobber an existing config on reinstall
-[ -f "$HOME_DIR/config.json" ] || cp "$HERE/config.example.json" "$HOME_DIR/config.json"
 touch "$STATE/pushed.txt"
 
 # Seed: mark all existing sessions as pushed (idempotent re-install)
@@ -48,4 +47,4 @@ cp "$HOME_DIR/$LABEL.plist" "$HOME/Library/LaunchAgents/$LABEL.plist"
 launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/$LABEL.plist"
 
 echo "Installed + started. Logs: $STATE/log  (drafts appear at $URL/admin/meetings)"
-echo "Config: $HOME_DIR/config.json"
+echo "Pseudonyms are edited per client in the dashboard: $URL/admin/companies"

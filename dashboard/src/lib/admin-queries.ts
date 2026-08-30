@@ -44,6 +44,23 @@ export const createCompanyAction = action(async (formData: FormData) => {
 	throw redirect("/admin/companies");
 }, "createCompany");
 
+/** Pseudonyms the meeting publisher matches against Anarlog titles.
+ *  Input: comma-separated; stored as a JSON array of strings. */
+export const updateCompanyAliasesAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const id = String(formData.get("id"));
+	const aliases = String(formData.get("aliases") || "")
+		.split(",")
+		.map((a) => a.trim())
+		.filter(Boolean);
+	await db
+		.update(companies)
+		.set({ aliases: aliases.length ? JSON.stringify(aliases) : null })
+		.where(eq(companies.id, id));
+	return { success: "Aliases saved." };
+}, "updateCompanyAliases");
+
 // ── Members ───────────────────────────────────────────────────────
 
 export const getMembersQuery = query(async () => {

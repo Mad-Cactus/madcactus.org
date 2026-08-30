@@ -67,6 +67,9 @@ export const invoiceStatus = pgEnum("invoice_status", [
 export const companies = pgTable("companies", {
 	id: uuid("id").primaryKey().defaultRandom(),
 	name: text("name").notNull(),
+	// pseudonyms the meeting publisher matches against Anarlog titles,
+	// stored as a JSON array of strings (e.g. ["CDL", "Customs Data Lock"])
+	aliases: text("aliases"),
 	createdAt: timestamp("created_at").notNull().defaultNow(),
 	updatedAt: timestamp("updated_at")
 		.notNull()

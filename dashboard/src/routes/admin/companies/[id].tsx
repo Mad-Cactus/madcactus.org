@@ -15,6 +15,7 @@ import {
 	getInvoicesQuery,
 	createInvoiceAction,
 	deleteInvoiceAction,
+	updateCompanyAliasesAction,
 } from "~/lib/admin-queries";
 import { getUserQuery } from "~/lib/queries";
 import type { InvoiceStatus } from "~/db/schema";
@@ -42,6 +43,7 @@ export default function CompanyDetail() {
 	const linkMember = useAction(linkMemberAction);
 	const unlinkMember = useAction(unlinkMemberAction);
 	const addInvoice = useAction(createInvoiceAction);
+	const saveAliases = useAction(updateCompanyAliasesAction);
 
 	const [showMemberForm, setShowMemberForm] = createSignal(false);
 	const [showLinkForm, setShowLinkForm] = createSignal(false);
@@ -111,6 +113,33 @@ export default function CompanyDetail() {
 				{(c) => (
 					<>
 						<h1 class="page-title">{c().name}</h1>
+
+						{/* ── Meeting pseudonyms (Anarlog publisher) ── */}
+						<div class="card" style={{ padding: "16px", "margin-top": "16px" }}>
+							<div class="muted" style={{ "font-size": "13px", "margin-bottom": "6px" }}>
+								Meeting pseudonyms — Anarlog meetings whose title contains one of these push to the dashboard as drafts
+							</div>
+							<form
+								onSubmit={async (e) => {
+									e.preventDefault();
+									const fd = new FormData(e.target as HTMLFormElement);
+									fd.set("id", companyId());
+									const res = (await saveAliases(fd)) as { error?: string } | undefined;
+									if (res?.error) setError(res.error);
+									await revalidate(getCompaniesQuery.key);
+								}}
+								style={{ display: "flex", gap: "8px", "align-items": "center" }}
+							>
+								<input
+									type="text"
+									name="aliases"
+									placeholder="e.g. CDL, Customs Data Lock"
+									value={(JSON.parse(c().aliases ?? "[]") as string[]).join(", ")}
+									style={{ flex: "1" }}
+								/>
+								<button type="submit" class="btn btn-sm">Save</button>
+							</form>
+						</div>
 
 						{/* ── Members ─────────────────────────────────── */}
 						<div style={{ "margin-top": "32px" }}>

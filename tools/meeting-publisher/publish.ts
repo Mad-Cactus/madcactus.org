@@ -2,15 +2,17 @@
 /** Anarlog → Mad Cactus meeting publisher (pure Bun/TS, no agent).
  *
  * One pass per invocation (launchd runs it every 60s). For each finished
- * meeting in Anarlog's local app.db that (a) matches the filter config and
- * (b) hasn't been pushed: words_json → speaker blocks → POST draft + audio.
+ * meeting in Anarlog's local app.db that (a) matches a dashboard client and
+ * (b) hasn't been pushed: words_json + memo → speaker blocks → POST draft
+ * + audio.
  *
- * Filtering is DEFAULT-DENY: config.json (next to this script) lists
- * titlePatterns / participantPatterns; a session pushes only if one matches.
- * Anarlog has no user-facing tags feature (verified: no UI, no docs, no CLI),
- * so titles — which you already name by client — are the reliable signal.
+ * Filtering is DEFAULT-DENY, driven by the dashboard: a meeting pushes when
+ * its title contains a client's name or one of that client's pseudonyms
+ * (aliases are edited on the company page in /admin). Anarlog has no
+ * user-facing tags feature (verified: no UI, no docs, no CLI), so titles —
+ * which you already name by client — are the reliable signal.
  *
- * `bun publish.ts --scan` lists ready sessions and which pattern matched.
+ * `bun publish.ts --scan` lists ready sessions and which client matched.
  */
 
 import { Database } from "bun:sqlite";
@@ -23,6 +25,7 @@ const DB_PATH = `${process.env.HOME}/Library/Application Support/hyprnote/app.db
 const API_KEY = process.env.MADCACTUS_API_KEY ?? "";
 const BASE_URL = process.env.MADCACTUS_URL ?? "https://app.madcactus.org";
 const UPLOAD_URL = `${BASE_URL}/api/upload-transcript`;
+const CLIENTS_URL = `${BASE_URL}/api/clients`;
 const MAX_ATTEMPTS = 3;
 
 const PAUSE_MS = 1500; // utterance split: silence gap (matches meetings-cli)
@@ -42,9 +45,9 @@ interface Block {
 	end_ms: number;
 	text: string;
 }
-interface Config {
-	titlePatterns: string[];
-	participantPatterns: string[];
+interface Client {
+	name: string;
+	aliases: string[];
 }
 
 mkdirSync(STATE, { recursive: true });
@@ -56,32 +59,60 @@ function log(msg: string): void {
 	);
 }
 
-function loadConfig(): Config {
-	const path = join(HOME_DIR, "config.json");
-	if (!existsSync(path)) return { titlePatterns: [], participantPatterns: [] };
+/** Clients + pseudonyms from the dashboard (edited on each company page). */
+async function fetchClients(): Promise<Client[] | null> {
 	try {
-		const cfg = JSON.parse(readFileSync(path, "utf8")) as Partial<Config>;
-		return {
-			titlePatterns: Array.isArray(cfg.titlePatterns) ? cfg.titlePatterns.map(String) : [],
-			participantPatterns: Array.isArray(cfg.participantPatterns) ? cfg.participantPatterns.map(String) : [],
-		};
+		const res = await fetch(CLIENTS_URL, {
+			headers: { Authorization: `Bearer ${API_KEY}` },
+			signal: AbortSignal.timeout(30_000),
+		});
+		const text = await res.text();
+		let body: { clients?: Client[] };
+		try {
+			body = JSON.parse(text);
+		} catch {
+			throw new Error(`http=${res.status} non-JSON response: ${text.slice(0, 80)}`);
+		}
+		if (!res.ok) throw new Error(`http=${res.status} ${text.slice(0, 120)}`);
+		return body.clients ?? [];
 	} catch (e) {
-		log(`config.json unreadable: ${e} — pushing nothing until fixed`);
-		return { titlePatterns: [], participantPatterns: [] };
+		const msg = `fetching clients from ${CLIENTS_URL} failed: ${e} — pushing nothing this pass`;
+		console.error(msg);
+		log(msg);
+		return null;
 	}
 }
 
-/** Which pattern matched (case-insensitive substring), or null = don't push. */
-function matchConfig(cfg: Config, title: string, participants: string[]): string | null {
-	for (const p of cfg.titlePatterns) {
-		if (p && title.toLowerCase().includes(p.toLowerCase())) return `title~"${p}"`;
-	}
-	for (const p of cfg.participantPatterns) {
-		for (const who of participants) {
-			if (p && who.toLowerCase().includes(p.toLowerCase())) return `participant~"${p}"`;
+/** Which client (+ token) the title matches, or null = don't push.
+ *  Match: title contains the client name or any pseudonym (case-insensitive). */
+function matchClients(title: string, clients: Client[]): { client: Client; via: string } | null {
+	const t = title.toLowerCase();
+	for (const client of clients) {
+		const tokens = [client.name, ...client.aliases].filter(Boolean);
+		for (const token of tokens) {
+			if (t.includes(token.toLowerCase())) return { client, via: token };
 		}
 	}
 	return null;
+}
+
+/** Flatten Anarlog's ProseMirror memo JSON to plain text ("" if absent). */
+function memoToText(raw: string | null): string {
+	if (!raw) return "";
+	try {
+		const doc = JSON.parse(raw);
+		if (doc?.type !== "doc") return "";
+		const walk = (node: any): string => {
+			if (node?.type === "text") return node.text ?? "";
+			const inner = (node?.content ?? []).map(walk).join("");
+			return ["paragraph", "listItem", "heading", "blockquote", "codeBlock"].includes(node?.type)
+				? `${inner}\n`
+				: inner;
+		};
+		return walk(doc).replace(/\n{3,}/g, "\n\n").trim();
+	} catch {
+		return ""; // not JSON → not a memo
+	}
 }
 
 // Finished meetings: real transcript, quiet ≥10 min, recent, batch row or
@@ -219,12 +250,12 @@ async function publish(db: Database, sessionId: string): Promise<string | null> 
 	// final transcript row: batch beats live; latest wins within each
 	const [trow] = db
 		.query(
-			`SELECT words_json, started_at_ms FROM transcripts
+			`SELECT words_json, started_at_ms, memo FROM transcripts
 			 WHERE session_id = ? AND deleted_at IS NULL AND words_json IS NOT NULL
 			 ORDER BY CASE source WHEN 'batch_transcription' THEN 0 ELSE 1 END,
 					updated_at DESC LIMIT 1`,
 		)
-		.all(sessionId) as { words_json: string; started_at_ms: number }[];
+		.all(sessionId) as { words_json: string; started_at_ms: number; memo: string | null }[];
 	if (!trow) return "no transcript";
 	const words = JSON.parse(trow.words_json) as Word[];
 
@@ -247,6 +278,8 @@ async function publish(db: Database, sessionId: string): Promise<string | null> 
 	const form = new FormData();
 	form.set("visibility", "draft");
 	form.set("title", fullTitle);
+	const memo = memoToText(trow.memo);
+	if (memo) form.set("description", memo);
 	form.set("content", content);
 	form.set("transcript_json", JSON.stringify(blocks));
 	form.append("audio", new Blob([Bun.file(audio)], { type: "audio/mpeg" }), "audio.mp3");
@@ -274,36 +307,58 @@ async function publish(db: Database, sessionId: string): Promise<string | null> 
 	return `upload failed: http=${res.status} ${JSON.stringify(body)?.slice(0, 200)}`;
 }
 
-function scan(db: Database): void {
-	const cfg = loadConfig();
+async function scan(db: Database): Promise<void> {
+	const clients = await fetchClients();
+	if (!clients) {
+		console.error("--scan needs a reachable dashboard + MADCACTUS_API_KEY");
+		return;
+	}
 	const pushed = loadPushed();
-	console.log(`config: titlePatterns=${JSON.stringify(cfg.titlePatterns)} participantPatterns=${JSON.stringify(cfg.participantPatterns)}`);
+	console.log(`clients: ${clients.map((c) => `${c.name}(${[c.name, ...c.aliases].join("/")})`).join(", ") || "NONE — nothing will push"}`);
 	for (const sid of readySessions(db)) {
 		const { title, participants } = sessionMeta(db, sid);
-		const matched = matchConfig(cfg, title, participants);
+		const matched = matchClients(title, clients);
 		console.log(
-			`${matched ? "PUSH" : "skip"}  ${title}  [${participants.join(", ") || "no participants"}]${matched ? ` (${matched})` : ""}${pushed.has(sid) ? " (already pushed)" : ""}`,
+			`${matched ? "PUSH" : "skip"}  ${title}  [${participants.join(", ") || "no participants"}]${matched ? ` → ${matched.client.name} via "${matched.via}"` : ""}${pushed.has(sid) ? " (already pushed)" : ""}`,
 		);
 	}
 }
 
+/** Readonly when possible. Falls back to read-write (SELECT-only) because a
+ *  readonly connection cannot create the WAL -shm file when Anarlog is closed
+ *  — SQLITE_CANTOPEN. The fallback does what the sqlite3 CLI does.
+ *  bun:sqlite opens lazily: probe with a real query before trusting readonly. */
+function openDb(): Database {
+	if (!existsSync(DB_PATH)) {
+		throw new Error(`Anarlog database not found at ${DB_PATH}`);
+	}
+	try {
+		const db = new Database(DB_PATH, { readonly: true });
+		db.query("SELECT 1").get();
+		return db;
+	} catch {
+		return new Database(DB_PATH);
+	}
+}
+
 async function main(): Promise<number> {
-	const db = new Database(DB_PATH, { readonly: true, create: false });
+	const db = openDb();
 
 	if (process.argv.includes("--scan")) {
-		scan(db);
+		await scan(db);
 		return 0;
 	}
 
-	const cfg = loadConfig();
+	const clients = await fetchClients();
+	if (!clients) return 0; // dashboard unreachable → fail closed, retry next pass
 	const pushed = loadPushed();
 	const attempts = loadAttempts();
 
 	for (const sid of readySessions(db)) {
 		if (pushed.has(sid)) continue;
-		const { title, participants } = sessionMeta(db, sid);
-		const matched = matchConfig(cfg, title, participants);
-		if (!matched) continue; // default-deny: not a configured meeting type
+		const { title } = sessionMeta(db, sid);
+		const matched = matchClients(title, clients);
+		if (!matched) continue; // default-deny: not a client meeting
 
 		const n = attempts.get(sid) ?? 0;
 		if (n >= MAX_ATTEMPTS) {
@@ -316,7 +371,7 @@ async function main(): Promise<number> {
 
 		attempts.set(sid, n + 1);
 		saveAttempts(attempts);
-		log(`${sid} pushing "${title}" ${matched} (attempt ${n + 1})`);
+		log(`${sid} pushing "${title}" → ${matched.client.name} via "${matched.via}" (attempt ${n + 1})`);
 		const err = await publish(db, sid);
 		if (err === null) {
 			markPushed(sid);

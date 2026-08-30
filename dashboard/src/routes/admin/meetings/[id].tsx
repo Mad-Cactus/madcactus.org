@@ -8,6 +8,7 @@ import {
 } from "@solidjs/router";
 import { For, Show, Suspense, createSignal } from "solid-js";
 import Layout from "~/components/Layout";
+import Waveform from "~/components/Waveform";
 import { getUserQuery } from "~/lib/queries";
 import {
 	getMeetingDraftQuery,
@@ -48,6 +49,13 @@ export default function MeetingEditor() {
 	const [projectId, setProjectId] = createSignal("");
 	const [msg, setMsg] = createSignal<{ ok: boolean; text: string } | null>(null);
 	const [busy, setBusy] = createSignal(false);
+	const [audioEl, setAudioEl] = createSignal<HTMLAudioElement>();
+	const wave = createAsync(() =>
+		fetch(`/api/waveform?path=${encodeURIComponent(draft()?.audioPath ?? "")}`).then(
+			(r) => (r.ok ? (r.json() as Promise<{ peaks: number[]; durationMs: number }>) : null),
+		),
+		{ deferStream: true },
+	);
 
 	// Hydrate local state once the draft arrives (query cache is immutable)
 	const d = draft();
@@ -69,6 +77,17 @@ export default function MeetingEditor() {
 
 	function updateBlock(i: number, patch: Partial<EditableBlock>) {
 		setBlocks((bs) => bs.map((b, j) => (j === i ? { ...b, ...patch } : b)));
+	}
+
+	/** Waveform drag-select: cut every block the span touches — or, if they're
+	 *  all already cut, restore them (toggle). */
+	function selectRange(fromMs: number, toMs: number) {
+		const idx = blocks()
+			.map((b, i) => (b.end_ms > fromMs && b.start_ms < toMs ? i : -1))
+			.filter((i) => i >= 0);
+		if (idx.length === 0) return;
+		const allCut = idx.every((i) => blocks()[i].cut);
+		setBlocks((bs) => bs.map((b, j) => (idx.includes(j) ? { ...b, cut: !allCut } : b)));
 	}
 
 	function keptBlocks(): TranscriptBlock[] {
@@ -147,7 +166,19 @@ export default function MeetingEditor() {
 						</div>
 						<Show when={audioUrl()}>
 							{/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-							<audio controls preload="none" src={audioUrl()!} style={{ width: "100%" }} />
+							<audio ref={setAudioEl} controls preload="none" src={audioUrl()!} style={{ width: "100%" }} />
+						</Show>
+						<Show when={wave()}>
+							<Waveform
+								peaks={wave()!.peaks}
+								durationMs={wave()!.durationMs}
+								regions={() => blocks().map((b) => ({ start_ms: b.start_ms, end_ms: b.end_ms, cut: b.cut }))}
+								audio={audioEl()}
+								onSelectRange={selectRange}
+							/>
+							<div class="muted" style={{ "font-size": "12px" }}>
+								Click to seek · drag across the wave to cut (or restore) everything in that span
+							</div>
 						</Show>
 						<div class="muted" style={{ "font-size": "12px" }}>
 							Unchecked blocks are cut from the transcript <Show when={audioUrl()}>and spliced out of the audio</Show>.

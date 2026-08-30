@@ -1,10 +1,9 @@
 import type { APIEvent } from "@solidjs/start/server";
-import { and, eq, sql } from "drizzle-orm";
-import { createHash } from "crypto";
 import { supabaseService } from "~/lib/supabase";
 import { getAuthedClient } from "~/lib/session";
+import { checkApiKey } from "~/lib/api-key";
 import { db } from "~/db";
-import { apiKeys, documents } from "~/db/schema";
+import { documents } from "~/db/schema";
 
 /** Upload a meeting transcript with searchable text + optional audio.
  *  Creates one document row of type='transcript'.
@@ -17,18 +16,9 @@ export async function POST(event: APIEvent) {
 	const isBearer = authHeader.startsWith("Bearer mc_");
 
 	if (isBearer) {
-		const keyHash = createHash("sha256").update(authHeader.slice(7)).digest("hex");
-		const [keyRow] = await db
-			.select({ id: apiKeys.id })
-			.from(apiKeys)
-			.where(and(eq(apiKeys.keyHash, keyHash), sql`${apiKeys.revokedAt} IS NULL`))
-			.limit(1);
-		if (!keyRow) return json({ error: "Invalid API key" }, 401);
-		db.update(apiKeys)
-			.set({ lastUsedAt: new Date() })
-			.where(eq(apiKeys.id, keyRow.id))
-			.then(() => {})
-			.catch(() => {});
+		if (!(await checkApiKey(request))) {
+			return json({ error: "Invalid API key" }, 401);
+		}
 	} else if (!(await getAuthedClient())) {
 		return new Response("Unauthorized", { status: 401 });
 	}
