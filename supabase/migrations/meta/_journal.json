@@ -43,6 +43,13 @@
       "when": 1788127528506,
       "tag": "0005_robust_wind_dancer",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788135661028,
+      "tag": "0006_omniscient_sunspot",
+      "breakpoints": true
     }
   ]
 }

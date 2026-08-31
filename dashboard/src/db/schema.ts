@@ -224,8 +224,9 @@ export const apiKeys = pgTable(
 	"api_keys",
 	{
 		id: uuid("id").primaryKey().defaultRandom(),
+		// null = admin-created key (not tied to a portal member) — used for
+		// server-to-server auth like the Anarlog meeting publisher
 		memberId: uuid("member_id")
-			.notNull()
 			.references(() => clientMembers.id, { onDelete: "cascade" }),
 		label: text("label").notNull().default("Default"),
 		keyHash: text("key_hash").notNull().unique(),

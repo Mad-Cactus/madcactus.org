@@ -74,6 +74,9 @@ async function authenticate(request: Request): Promise<AuthedMember | null> {
 		.then(() => {})
 		.catch(() => {});
 
+	// memberless (admin) keys are for server-to-server routes only — MCP is client-scoped
+	if (!keyRow.memberId) return null;
+
 	const [member] = await db
 		.select({ id: clientMembers.id, name: clientMembers.name, email: clientMembers.email })
 		.from(clientMembers)

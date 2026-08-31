@@ -1,5 +1,5 @@
-import { query, action, redirect } from "@solidjs/router";
-import { eq, and, desc, inArray } from "drizzle-orm";
+import { query, action, redirect, revalidate } from "@solidjs/router";
+import { eq, and, desc, inArray, isNull } from "drizzle-orm";
 import { getTableColumns } from "drizzle-orm";
 import { getAuthedClient } from "./session";
 import { supabaseService } from "./supabase";
@@ -13,12 +13,14 @@ import {
 	invoices,
 	deliverables,
 	deliverableUpdates,
+	apiKeys,
 } from "~/db/schema";
 import type {
 	DocumentType,
 	InvoiceStatus,
 	DeliverableStatus,
 } from "~/db/schema";
+import { generateApiKey, hashKey, keyPrefix } from "~/lib/crypto";
 
 // ── Auth guard ────────────────────────────────────────────────────
 
@@ -591,3 +593,56 @@ async function spliceAudio(
 	await fsp.rm(dir, { recursive: true, force: true }).catch(() => {});
 	return { bytes };
 }
+
+// ── Admin API keys (memberless — server-to-server, e.g. meeting publisher) ──
+
+export const getAdminApiKeysQuery = query(async () => {
+	"use server";
+	await requireAdmin();
+	return db
+		.select({
+			id: apiKeys.id,
+			label: apiKeys.label,
+			keyPrefix: apiKeys.keyPrefix,
+			lastUsedAt: apiKeys.lastUsedAt,
+			revokedAt: apiKeys.revokedAt,
+			createdAt: apiKeys.createdAt,
+		})
+		.from(apiKeys)
+		.where(isNull(apiKeys.memberId))
+		.orderBy(desc(apiKeys.createdAt));
+}, "admin-api-keys");
+
+export const createAdminApiKeyAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const label = String(formData.get("label") || "Default");
+	const rawKey = generateApiKey();
+	try {
+		await db.insert(apiKeys).values({
+			memberId: null,
+			label,
+			keyHash: hashKey(rawKey),
+			keyPrefix: keyPrefix(rawKey),
+		});
+	} catch (err) {
+		return { error: err instanceof Error ? err.message : "Failed to create API key." };
+	}
+	await revalidate(getAdminApiKeysQuery.key);
+	return { key: rawKey }; // shown once — only the hash is stored
+}, "createAdminApiKey");
+
+export const revokeAdminApiKeyAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const id = String(formData.get("id"));
+	try {
+		await db
+			.update(apiKeys)
+			.set({ revokedAt: new Date() })
+			.where(and(eq(apiKeys.id, id), isNull(apiKeys.memberId)));
+		return { success: "Key revoked." };
+	} catch (e) {
+		return { error: e instanceof Error ? e.message : "Failed to revoke key." };
+	}
+}, "revokeAdminApiKey");
