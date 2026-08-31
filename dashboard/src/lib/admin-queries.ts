@@ -1,5 +1,5 @@
-import { query, action, redirect } from "@solidjs/router";
-import { eq, and, desc, inArray } from "drizzle-orm";
+import { query, action, redirect, revalidate } from "@solidjs/router";
+import { eq, and, desc, inArray, isNull } from "drizzle-orm";
 import { getTableColumns } from "drizzle-orm";
 import { getAuthedClient } from "./session";
 import { supabaseService } from "./supabase";
@@ -13,12 +13,14 @@ import {
 	invoices,
 	deliverables,
 	deliverableUpdates,
+	apiKeys,
 } from "~/db/schema";
 import type {
 	DocumentType,
 	InvoiceStatus,
 	DeliverableStatus,
 } from "~/db/schema";
+import { generateApiKey, hashKey, keyPrefix } from "~/lib/crypto";
 
 // ── Auth guard ────────────────────────────────────────────────────
 
@@ -43,6 +45,23 @@ export const createCompanyAction = action(async (formData: FormData) => {
 	});
 	throw redirect("/admin/companies");
 }, "createCompany");
+
+/** Pseudonyms the meeting publisher matches against Anarlog titles.
+ *  Input: comma-separated; stored as a JSON array of strings. */
+export const updateCompanyAliasesAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const id = String(formData.get("id"));
+	const aliases = String(formData.get("aliases") || "")
+		.split(",")
+		.map((a) => a.trim())
+		.filter(Boolean);
+	await db
+		.update(companies)
+		.set({ aliases: aliases.length ? JSON.stringify(aliases) : null })
+		.where(eq(companies.id, id));
+	return { success: "Aliases saved." };
+}, "updateCompanyAliases");
 
 // ── Members ───────────────────────────────────────────────────────
 
@@ -410,3 +429,257 @@ export const deleteDeliverableAction = action(async (formData: FormData) => {
 		return { error: e instanceof Error ? e.message : "Failed to delete deliverable." };
 	}
 }, "deleteDeliverable");
+
+// ── Meeting drafts (Anarlog publisher) ─────────────────────────────────
+
+export interface TranscriptBlock {
+	speaker: string;
+	start_ms: number;
+	end_ms: number;
+	text: string;
+}
+
+function parseBlocks(raw: string): TranscriptBlock[] {
+	const arr: unknown = JSON.parse(raw);
+	if (!Array.isArray(arr)) throw new Error("blocks must be a JSON array");
+	return arr.map((b: any) => ({
+		speaker: String(b.speaker ?? "Speaker"),
+		start_ms: Number(b.start_ms) || 0,
+		end_ms: Number(b.end_ms) || 0,
+		text: String(b.text ?? "").trim(),
+	}));
+}
+
+export function renderTranscript(blocks: TranscriptBlock[]): string {
+	return blocks
+		.filter((b) => b.text)
+		.map((b) => `${b.speaker}: ${b.text}`)
+		.join("\n\n");
+}
+
+export const getMeetingDraftsQuery = query(async () => {
+	"use server";
+	await requireAdmin();
+	return db
+		.select({
+			id: documents.id,
+			title: documents.title,
+			description: documents.description,
+			createdAt: documents.createdAt,
+			hasAudio: documents.audioPath,
+			projectId: documents.projectId,
+		})
+		.from(documents)
+		.where(eq(documents.visibility, "draft"))
+		.orderBy(desc(documents.createdAt));
+}, "admin-meeting-drafts");
+
+export const getMeetingDraftQuery = query(async (id: string) => {
+	"use server";
+	await requireAdmin();
+	const [doc] = await db.select().from(documents).where(eq(documents.id, id)).limit(1);
+	return doc ?? null;
+}, "admin-meeting-draft");
+
+/** Persist in-editor changes (title, block text) without publishing. */
+export const saveMeetingDraftAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const id = String(formData.get("id"));
+	const title = String(formData.get("title") || "Untitled Transcript");
+	const blocks = parseBlocks(String(formData.get("blocks_json")));
+	await db
+		.update(documents)
+		.set({ title, transcriptJson: JSON.stringify(blocks) })
+		.where(eq(documents.id, id));
+	return { success: "Draft saved." };
+}, "saveMeetingDraft");
+
+/** Pad kept ranges ±300ms and merge overlaps/tiny gaps so cuts don't clip words. */
+function mergeKeptRanges(blocks: TranscriptBlock[]): Array<[number, number]> {
+	const PAD = 300;
+	const sorted = blocks
+		.filter((b) => b.end_ms > b.start_ms)
+		.sort((a, b) => a.start_ms - b.start_ms)
+		.map((b) => [Math.max(0, b.start_ms - PAD), b.end_ms + PAD] as [number, number]);
+	const merged: Array<[number, number]> = [];
+	for (const r of sorted) {
+		const last = merged[merged.length - 1];
+		if (last && r[0] <= last[1] + 500) {
+			last[1] = Math.max(last[1], r[1]);
+		} else {
+			merged.push([...r] as [number, number]);
+		}
+	}
+	return merged;
+}
+
+/** Publish a meeting draft: cut audio to the kept ranges, rewrite content,
+ *  assign the project, flip visibility to client. */
+export const publishMeetingAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const id = String(formData.get("id"));
+	const projectId = String(formData.get("project_id") || "");
+	if (!projectId) return { error: "Pick a project before publishing." };
+	const blocks = parseBlocks(String(formData.get("blocks_json")));
+	if (blocks.length === 0) return { error: "Nothing left to publish — all blocks cut." };
+
+	const [doc] = await db.select().from(documents).where(eq(documents.id, id)).limit(1);
+	if (!doc) return { error: "Draft not found." };
+
+	const svc = supabaseService();
+	let audioPath = doc.audioPath;
+	let audioFileName = doc.audioFileName;
+
+	// Audio must (a) reflect the cuts and (b) live under `${projectId}/` —
+	// /api/download authorizes client access by path prefix.
+	const needsRelocate = !!doc.audioPath && !doc.audioPath.startsWith(`${projectId}/`);
+	const needsSplice = !!doc.audioPath;
+	if (doc.audioPath && (needsRelocate || needsSplice)) {
+		const { data: blob, error: dlErr } = await svc.storage
+			.from("portal-docs")
+			.download(doc.audioPath);
+		if (dlErr || !blob) {
+			return { error: `Could not fetch audio: ${dlErr?.message ?? "empty"}` };
+		}
+
+		let bytes: Buffer = Buffer.from(await blob.arrayBuffer());
+		if (needsSplice) {
+			const ranges = mergeKeptRanges(blocks);
+			const spliced = await spliceAudio(bytes, ranges);
+			if (spliced.error) return spliced;
+			bytes = spliced.bytes!;
+		}
+
+		// splice output is always mp3 — force the extension to match, whatever
+		// the draft was uploaded as (m4a re-encoded by the upload route, etc.)
+		const base = (audioFileName || "audio").replace(/\.[^.]*$/, "").replace(/[^a-zA-Z0-9._-]/g, "_");
+		const newPath = `${projectId}/${Date.now()}-${base}.mp3`;
+		const { error: upErr } = await svc.storage.from("portal-docs").upload(newPath, bytes, {
+			contentType: "audio/mpeg",
+		});
+		if (upErr) return { error: `Audio re-upload failed: ${upErr.message}` };
+		// Remove the original draft upload (old project-scoped paths stay if same project)
+		if (doc.audioPath !== newPath) {
+			await svc.storage.from("portal-docs").remove([doc.audioPath]);
+		}
+		audioPath = newPath;
+	}
+
+	await db
+		.update(documents)
+		.set({
+			projectId,
+			content: renderTranscript(blocks),
+			transcriptJson: JSON.stringify(blocks),
+			audioPath,
+			audioFileName,
+			visibility: "client",
+		})
+		.where(eq(documents.id, id));
+	return { success: "Published." };
+}, "publishMeeting");
+
+/** ffmpeg keep-list splice: atrim each range, concat. Returns re-encoded mp3. */
+async function spliceAudio(
+	input: Buffer,
+	ranges: Array<[number, number]>,
+): Promise<{ bytes?: Buffer; error?: string }> {
+	const { promises: fsp } = await import("node:fs");
+	const os = await import("node:os");
+	const path = await import("node:path");
+	const { execFile } = await import("node:child_process");
+	const run = (cmd: string, args: string[]) =>
+		new Promise<{ ok: boolean; stderr: string }>((resolve) => {
+			execFile(cmd, args, { timeout: 300_000, maxBuffer: 10 * 1024 * 1024 }, (err, _so, se) =>
+				resolve({ ok: !err, stderr: se || String(err) }),
+			);
+		});
+
+	const dir = await fsp.mkdtemp(path.join(os.tmpdir(), "mc-splice-"));
+	const inPath = path.join(dir, "in.audio");
+	const outPath = path.join(dir, "out.mp3");
+	await fsp.writeFile(inPath, input);
+
+	// Supabase Free caps every object at 50MB — size the bitrate from the
+	// output duration so any meeting length fits (same math as the upload
+	// route's reencodeAudio; 96k ceiling, 16k floor).
+	const durationSec = ranges.reduce((sum, [s, e]) => sum + (e - s) / 1000, 0);
+	const TARGET_BYTES = 45 * 1024 * 1024;
+	const kbps = Math.min(96, Math.max(16, Math.floor((TARGET_BYTES * 8) / durationSec / 1000)));
+
+	const parts = ranges.map(
+		([s, e], i) =>
+			`[0:a]atrim=start=${(s / 1000).toFixed(3)}:end=${(e / 1000).toFixed(3)},asetpts=PTS-STARTPTS[a${i}]`,
+	);
+	const filter =
+		parts.join(";") + `;${ranges.map((_, i) => `[a${i}]`).join("")}concat=n=${ranges.length}:v=0:a=1[out]`;
+	const res = await run("ffmpeg", [
+		"-hide_banner", "-loglevel", "error",
+		"-i", inPath,
+		"-filter_complex", filter,
+		"-map", "[out]",
+		"-b:a", `${kbps}k`,
+		outPath,
+	]);
+	if (!res.ok) {
+		return { error: `ffmpeg failed (is it installed?): ${res.stderr.slice(0, 300)}` };
+	}
+	const bytes = await fsp.readFile(outPath);
+	await fsp.rm(dir, { recursive: true, force: true }).catch(() => {});
+	return { bytes };
+}
+
+// ── Admin API keys (memberless — server-to-server, e.g. meeting publisher) ──
+
+export const getAdminApiKeysQuery = query(async () => {
+	"use server";
+	await requireAdmin();
+	return db
+		.select({
+			id: apiKeys.id,
+			label: apiKeys.label,
+			keyPrefix: apiKeys.keyPrefix,
+			lastUsedAt: apiKeys.lastUsedAt,
+			revokedAt: apiKeys.revokedAt,
+			createdAt: apiKeys.createdAt,
+		})
+		.from(apiKeys)
+		.where(isNull(apiKeys.memberId))
+		.orderBy(desc(apiKeys.createdAt));
+}, "admin-api-keys");
+
+export const createAdminApiKeyAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const label = String(formData.get("label") || "Default");
+	const rawKey = generateApiKey();
+	try {
+		await db.insert(apiKeys).values({
+			memberId: null,
+			label,
+			keyHash: hashKey(rawKey),
+			keyPrefix: keyPrefix(rawKey),
+		});
+	} catch (err) {
+		return { error: err instanceof Error ? err.message : "Failed to create API key." };
+	}
+	await revalidate(getAdminApiKeysQuery.key);
+	return { key: rawKey }; // shown once — only the hash is stored
+}, "createAdminApiKey");
+
+export const revokeAdminApiKeyAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const id = String(formData.get("id"));
+	try {
+		await db
+			.update(apiKeys)
+			.set({ revokedAt: new Date() })
+			.where(and(eq(apiKeys.id, id), isNull(apiKeys.memberId)));
+		return { success: "Key revoked." };
+	} catch (e) {
+		return { error: e instanceof Error ? e.message : "Failed to revoke key." };
+	}
+}, "revokeAdminApiKey");

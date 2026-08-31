@@ -13,7 +13,8 @@ FROM oven/bun:1.4 AS runner
 WORKDIR /app
 
 # ffmpeg: re-encodes oversized meeting audio before Supabase upload
-# (Free plan caps every storage object at 50MB globally).
+# (Free plan caps every storage object at 50MB globally) + splices meeting
+# drafts in /admin/meetings.
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 

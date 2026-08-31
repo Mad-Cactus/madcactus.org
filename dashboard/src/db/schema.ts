@@ -45,6 +45,9 @@ export const documentType = pgEnum("document_type", [
 export const documentVisibility = pgEnum("document_visibility", [
 	"client",
 	"internal",
+	// unpublished meeting draft pushed by the Anarlog publisher; invisible to
+	// clients until explicitly published from /admin/meetings
+	"draft",
 ]);
 
 export const invoiceStatus = pgEnum("invoice_status", [
@@ -64,6 +67,9 @@ export const invoiceStatus = pgEnum("invoice_status", [
 export const companies = pgTable("companies", {
 	id: uuid("id").primaryKey().defaultRandom(),
 	name: text("name").notNull(),
+	// pseudonyms the meeting publisher matches against Anarlog titles,
+	// stored as a JSON array of strings (e.g. ["CDL", "Customs Data Lock"])
+	aliases: text("aliases"),
 	createdAt: timestamp("created_at").notNull().defaultNow(),
 	updatedAt: timestamp("updated_at")
 		.notNull()
@@ -161,8 +167,9 @@ export const documents = pgTable(
 	"documents",
 	{
 		id: uuid("id").primaryKey().defaultRandom(),
+		// nullable only for visibility='draft' meeting imports — assigned at
+		// publish time. Publish action enforces non-null before flipping to client.
 		projectId: uuid("project_id")
-			.notNull()
 			.references(() => projects.id, { onDelete: "cascade" }),
 		type: documentType("type").notNull().default("link"),
 		title: text("title").notNull(),
@@ -179,6 +186,9 @@ export const documents = pgTable(
 		// transcript audio attachment
 		audioPath: text("audio_path"),
 		audioFileName: text("audio_file_name"),
+		// speaker blocks for meeting transcripts: JSON array of
+		// { speaker, start_ms, end_ms, text } — drives the block editor + audio cuts
+		transcriptJson: text("transcript_json"),
 		createdAt: timestamp("created_at").notNull().defaultNow(),
 	},
 	(t) => [index("idx_documents_project").on(t.projectId)],
@@ -214,8 +224,9 @@ export const apiKeys = pgTable(
 	"api_keys",
 	{
 		id: uuid("id").primaryKey().defaultRandom(),
+		// null = admin-created key (not tied to a portal member) — used for
+		// server-to-server auth like the Anarlog meeting publisher
 		memberId: uuid("member_id")
-			.notNull()
 			.references(() => clientMembers.id, { onDelete: "cascade" }),
 		label: text("label").notNull().default("Default"),
 		keyHash: text("key_hash").notNull().unique(),
