@@ -41,6 +41,9 @@ export default function ProjectDetail() {
 	const deleteEntry = useAction(deleteTimeEntryAction);
 	const deleteDeliverable = useAction(deleteDeliverableAction);
 	const [error, setError] = createSignal("");
+	// Guard + in-flight indicator: a second click while the action runs must
+	// not submit a duplicate entry.
+	const [logging, setLogging] = createSignal(false);
 	const [showDeliverableForm, setShowDeliverableForm] = createSignal(false);
 	const [updateDeliverableId, setUpdateDeliverableId] = createSignal<string | null>(null);
 
@@ -50,13 +53,19 @@ export default function ProjectDetail() {
 
 	async function handleLog(e: Event) {
 		e.preventDefault();
+		if (logging()) return;
 		setError("");
-		const form = e.target as HTMLFormElement;
-		const fd = new FormData(form);
-		fd.set("_referer", `/admin/projects/${params.id}`);
-		const result = (await createEntry(fd)) as { error?: string } | undefined;
-		if (result?.error) setError(result.error);
-		else form.reset();
+		setLogging(true);
+		try {
+			const form = e.target as HTMLFormElement;
+			const fd = new FormData(form);
+			fd.set("_referer", `/admin/projects/${params.id}`);
+			const result = (await createEntry(fd)) as { error?: string } | undefined;
+			if (result?.error) setError(result.error);
+			else form.reset();
+		} finally {
+			setLogging(false);
+		}
 	}
 
 	return (
@@ -230,7 +239,9 @@ export default function ProjectDetail() {
 									<Show when={error()}>
 										<p class="login-error" style={{ "margin-bottom": "12px" }}>{error()}</p>
 									</Show>
-									<button type="submit" class="btn btn-primary">Log Entry</button>
+									<button type="submit" class="btn btn-primary" disabled={logging()}>
+							{logging() ? "Logging…" : "Log Entry"}
+						</button>
 								</form>
 							</div>
 

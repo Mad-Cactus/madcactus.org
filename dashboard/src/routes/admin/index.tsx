@@ -2,8 +2,10 @@ import { Title } from "@solidjs/meta";
 import { A, createAsync, useAction } from "@solidjs/router";
 import { For, Show, Suspense, createSignal } from "solid-js";
 import Layout from "~/components/Layout";
+import ConfirmButton from "~/components/ConfirmButton";
 import {
 	createTimeEntryAction,
+	deleteTimeEntryAction,
 	getDashboardQuery,
 	getUserQuery,
 } from "~/lib/queries";
@@ -62,19 +64,29 @@ export default function Home() {
 	const data = createAsync(() => getDashboardQuery(), { deferStream: true });
 	const overview = createAsync(() => getOverviewQuery(), { deferStream: true });
 	const createEntry = useAction(createTimeEntryAction);
+	const deleteEntry = useAction(deleteTimeEntryAction);
 	const [entryError, setEntryError] = createSignal("");
+	// Guard + in-flight indicator: a second click while the action runs must
+	// not submit a duplicate entry.
+	const [logging, setLogging] = createSignal(false);
 
 	const today = new Date().toISOString().slice(0, 10);
 
 	async function handleLog(e: Event) {
 		e.preventDefault();
+		if (logging()) return;
 		setEntryError("");
-		const form = e.target as HTMLFormElement;
-		const fd = new FormData(form);
-		fd.set("_referer", "/admin");
-		const result = (await createEntry(fd)) as { error?: string } | undefined;
-		if (result?.error) setEntryError(result.error);
-		else form.reset();
+		setLogging(true);
+		try {
+			const form = e.target as HTMLFormElement;
+			const fd = new FormData(form);
+			fd.set("_referer", "/admin");
+			const result = (await createEntry(fd)) as { error?: string } | undefined;
+			if (result?.error) setEntryError(result.error);
+			else form.reset();
+		} finally {
+			setLogging(false);
+		}
 	}
 
 	return (
@@ -347,7 +359,9 @@ export default function Home() {
 									<Show when={entryError()}>
 										<p class="login-error" style={{ "margin-bottom": "12px" }}>{entryError()}</p>
 									</Show>
-									<button type="submit" class="btn btn-primary">Log Entry</button>
+									<button type="submit" class="btn btn-primary" disabled={logging()}>
+										{logging() ? "Logging…" : "Log Entry"}
+									</button>
 								</form>
 							</div>
 
@@ -361,6 +375,7 @@ export default function Home() {
 											<th>Project</th>
 											<th>Description</th>
 											<th style={{ "text-align": "right" }}>Hours</th>
+											<th></th>
 										</tr>
 									</thead>
 									<tbody>
@@ -375,6 +390,17 @@ export default function Home() {
 													</td>
 													<td>{e.description}</td>
 													<td class="hours" style={{ "text-align": "right" }}>{e.hours}</td>
+													<td style={{ width: "40px" }}>
+														<ConfirmButton
+															label="Delete"
+															class="delete-btn"
+															onConfirm={async () => {
+																const fd = new FormData();
+																fd.set("id", e.id);
+																return deleteEntry(fd);
+															}}
+														/>
+													</td>
 												</tr>
 											)}
 										</For>
