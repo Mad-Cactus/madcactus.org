@@ -16,7 +16,15 @@
  */
 
 import { Database } from "bun:sqlite";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	appendFileSync,
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	statSync,
+	writeFileSync,
+} from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 
 const HOME_DIR = import.meta.dir;
@@ -267,6 +275,32 @@ async function publish(db: Database, sessionId: string): Promise<string | null> 
 		return null;
 	}
 
+	// Fly's proxy rejects bodies ≥100MB before the dashboard's own re-encode
+	// can run, so downmix oversized recordings to mono AAC sized to stay under
+	// the server's 45MB re-encode threshold (one transcode, not two).
+	let audioPath = audio;
+	const MAX_BYTES = 90 * 1024 * 1024;
+	if (statSync(audio).size > MAX_BYTES) {
+		const tmp = `/tmp/${sessionId}-mono.m4a`;
+		try {
+			const dur = Number(
+				execFileSync("ffprobe", [
+					"-v", "error", "-show_entries", "format=duration",
+					"-of", "csv=p=0", audio,
+				]).toString().trim(),
+			);
+			// fit under 40MB with headroom; floor at 16k so audio stays intelligible
+			const bitrate = Math.max(16, Math.min(48, Math.floor((40 * 1024 * 1024 * 8) / dur / 1000)));
+			execFileSync("ffmpeg", ["-y", "-i", audio, "-ac", "1", "-b:a", `${bitrate}k`, tmp], {
+				stdio: "ignore",
+			});
+			audioPath = tmp;
+			log(`${sessionId} downmixed ${dur.toFixed(0)}s to mono ${bitrate}k (${(statSync(tmp).size / 1048576).toFixed(1)}MB)`);
+		} catch (e) {
+			return `downmix failed (is ffmpeg installed?): ${e}`;
+		}
+	}
+
 	const blocks = buildBlocks(words);
 	if (blocks.length === 0) return "no speakable blocks";
 
@@ -282,7 +316,7 @@ async function publish(db: Database, sessionId: string): Promise<string | null> 
 	if (memo) form.set("description", memo);
 	form.set("content", content);
 	form.set("transcript_json", JSON.stringify(blocks));
-	form.append("audio", new Blob([Bun.file(audio)], { type: "audio/mpeg" }), "audio.mp3");
+	form.append("audio", new Blob([Bun.file(audioPath)], { type: "audio/mpeg" }), "audio.mp3");
 
 	let res: Response;
 	try {
