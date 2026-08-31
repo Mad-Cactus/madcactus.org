@@ -276,10 +276,11 @@ async function publish(db: Database, sessionId: string): Promise<string | null> 
 	}
 
 	// Fly's proxy rejects bodies ≥100MB before the dashboard's own re-encode
-	// can run, so downmix oversized recordings to mono AAC sized to stay under
-	// the server's 45MB re-encode threshold (one transcode, not two).
+	// can run, and 45-90MB uploads stall out mid-flight anyway — so downmix
+	// anything over the server's 45MB re-encode threshold to mono AAC sized
+	// to land under it (one transcode, not two).
 	let audioPath = audio;
-	const MAX_BYTES = 90 * 1024 * 1024;
+	const MAX_BYTES = 45 * 1024 * 1024;
 	if (statSync(audio).size > MAX_BYTES) {
 		const tmp = `/tmp/${sessionId}-mono.m4a`;
 		try {
