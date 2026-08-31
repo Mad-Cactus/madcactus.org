@@ -1,7 +1,10 @@
 ---
+import { Image } from "astro:assets";
 import "../styles/global.css";
 import Footer from "../components/Footer.astro";
+import Header from "../components/Header.astro";
 import PostHog from "../components/PostHog.astro";
+import cactusInBloom from "../assets/cactus-in-bloom.jpg";
 ---
 
 <html lang="en">
@@ -20,15 +23,7 @@ import PostHog from "../components/PostHog.astro";
         <PostHog />
     </head>
     <body>
-        {/* ════════ TOP BAR ════════ */}
-        <header class="top-bar">
-            <div class="top-bar-inner">
-                <a href="/" class="logo-link">
-                    <img src="/cactus-seal.svg" alt="Mad Cactus" class="logo-seal" />
-                </a>
-                <a href="https://app.madcactus.org/portal/login" class="top-bar-signin">Sign In</a>
-            </div>
-        </header>
+        <Header />
 
         {/* ════════ HERO ════════ */}
         <section class="hero">
@@ -45,15 +40,17 @@ import PostHog from "../components/PostHog.astro";
                         twenty-five.
                     </p>
                     <a
-                        href="https://cal.com/cpfeifer/info-meeting"
-                        target="_blank"
-                        class="cta-bracketed cta-hero">&#123; SCHEDULE A CONVERSATION &#125;</a
+                        href="/scorecard"
+                        class="cta-bracketed cta-hero" data-ph-event="cta_scorecard">&#123; TAKE THE AI SCORECARD &#125;</a
                     >
                 </div>
                 <div class="hero-plate">
-                    <img
-                        src="/cactus-in-bloom.jpg"
+                    <Image
+                        src={cactusInBloom}
                         alt="Cactus in bloom"
+                        widths={[480, 800, 1200]}
+                        sizes="50vw"
+                        loading="eager"
                     />
                 </div>
             </div>
@@ -117,13 +114,38 @@ import PostHog from "../components/PostHog.astro";
             </div>
         </div>
 
+        {/* ════════ NEWSLETTER BAND ════════ */}
+        <section id="newsletter-band">
+            <div class="newsletter-band-inner">
+                <div class="newsletter-band-text">
+                    <h3 class="newsletter-band-heading">
+                        AI teardowns <em>from real clients.</em>
+                    </h3>
+                    <p class="newsletter-band-body">
+                        Weekly breakdowns of real AI deployments. What we
+                        built, what it cost, and the blueprint to do the same.
+                    </p>
+                </div>
+                <form class="newsletter-band-form" id="newsletterBandForm">
+                    <input
+                        type="email"
+                        name="email"
+                        placeholder="your@email.com"
+                        required
+                        autocomplete="email"
+                    />
+                    <button type="submit" class="cta-bracketed" data-ph-event="newsletter_signup_home">&#123; SUBSCRIBE &#125;</button>
+                </form>
+            </div>
+        </section>
+
         {/* ════════ CASE STUDY ════════ */}
         <section id="case-studies">
             <div class="section-header">
                 <h2 class="section-title">Proven in Production</h2>
                 <hr class="section-rule" />
             </div>
-            <a href="/iu" class="case-study-card">
+            <a href="/iu" class="case-study-card" data-ph-event="case_study_click">
                 <div class="case-study-visual">
                     <span class="case-study-institution">INDIANA<br /><em>UNIVERSITY</em></span>
                     <span class="case-study-sector">Data Engineering</span>
@@ -135,8 +157,8 @@ import PostHog from "../components/PostHog.astro";
                     </h3>
                     <p class="case-study-desc">
                         A custom AI agent performing intelligent first-pass
-                        analysis on incoming data engineering tickets —
-                        triaging issues, identifying root causes, and routing
+                        analysis on incoming data engineering tickets.
+                        Triaging issues, identifying root causes, and routing
                         with context.
                     </p>
                     <div class="case-study-stats">
@@ -149,11 +171,11 @@ import PostHog from "../components/PostHog.astro";
                             <span>Significantly Reduced</span>
                         </div>
                         <div class="stat">
-                            <strong>Q2—Q3</strong>
+                            <strong>Q2-Q3</strong>
                             <span>Measured Impact</span>
                         </div>
                     </div>
-                    <span class="case-study-link">Read Full Case Study</span>
+                    <span class="case-study-link cta-bracketed">&#123; READ FULL CASE STUDY &#125;</span>
                 </div>
             </a>
         </section>
@@ -174,7 +196,7 @@ import PostHog from "../components/PostHog.astro";
                         the estimated annual cost, and where AI can have the
                         biggest impact.
                     </p>
-                    <a href="/scorecard" class="cta-bracketed">&#123; TAKE THE SCORECARD &#125;</a
+                    <a href="/scorecard" class="cta-bracketed" data-ph-event="cta_scorecard">&#123; TAKE THE AI SCORECARD &#125;</a
                     >
                 </div>
             </div>
@@ -358,6 +380,65 @@ import PostHog from "../components/PostHog.astro";
         margin: 0 auto;
     }
 
+    /* ═══ Newsletter Band ═══ */
+    #newsletter-band {
+        background: var(--color-paper);
+        border-top: 1px solid var(--color-letterpress-black);
+        border-bottom: 1px solid var(--color-letterpress-black);
+    }
+    .newsletter-band-inner {
+        max-width: var(--page-max-width);
+        margin: 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--spacing-48);
+        padding: var(--spacing-48) var(--spacing-64);
+    }
+    .newsletter-band-heading {
+        font-family: var(--font-serif);
+        font-weight: 400;
+        font-size: var(--text-subheading);
+        line-height: var(--leading-display);
+        color: var(--color-letterpress-black);
+        margin-bottom: var(--spacing-8);
+    }
+    .newsletter-band-heading em {
+        font-style: italic;
+    }
+    .newsletter-band-body {
+        font-family: var(--font-serif);
+        font-size: var(--text-body-sm);
+        line-height: var(--leading-body);
+        color: var(--color-silver-wash);
+        max-width: 380px;
+    }
+    .newsletter-band-form {
+        display: flex;
+        gap: var(--spacing-16);
+        flex-shrink: 0;
+    }
+    .newsletter-band-form input {
+        font-family: var(--font-serif);
+        font-size: var(--text-body);
+        padding: 12px 16px;
+        border: 1px solid var(--color-letterpress-black);
+        background: var(--color-vellum-white);
+        color: var(--color-letterpress-black);
+        outline: none;
+        width: 220px;
+    }
+    .newsletter-band-form input:focus {
+        border-color: var(--color-burnished-gold);
+    }
+    .newsletter-band-form button {
+        cursor: pointer;
+        background: none;
+        border: none;
+        padding: 12px 20px;
+        white-space: nowrap;
+    }
+
     /* ═══ Case Study ═══ */
     .case-study-card {
         display: block;
@@ -416,35 +497,51 @@ import PostHog from "../components/PostHog.astro";
         margin-bottom: var(--spacing-32);
     }
     .case-study-stats {
-        display: flex;
-        gap: var(--spacing-48);
-        padding-top: var(--spacing-24);
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 0;
+        padding-top: var(--spacing-32);
         border-top: 1px solid var(--color-letterpress-black);
     }
+    .stat {
+        padding: 0 var(--spacing-16);
+        border-right: 1px solid var(--color-letterpress-black);
+    }
+    .stat:first-child {
+        padding-left: 0;
+    }
+    .stat:last-child {
+        border-right: none;
+        padding-right: 0;
+    }
     .stat strong {
-        font-family: var(--font-serif);
-        font-weight: 400;
+        font-family: var(--font-sans);
+        font-weight: 700;
         font-size: var(--text-subheading);
-        color: var(--color-burnished-gold);
+        letter-spacing: 1px;
+        color: var(--color-letterpress-black);
         display: block;
         line-height: 1;
+        margin-bottom: var(--spacing-8);
     }
     .stat span {
         font-family: var(--font-sans);
         font-size: var(--text-caption);
         color: var(--color-silver-wash);
-        margin-top: var(--spacing-8);
         display: block;
     }
     .case-study-link {
-        font-family: var(--font-serif);
-        font-style: italic;
+        font-family: var(--font-sans);
         font-size: var(--text-body-sm);
+        font-weight: 700;
+        letter-spacing: 2px;
+        text-transform: uppercase;
         color: var(--color-letterpress-black);
-        border-bottom: 1px solid var(--color-letterpress-black);
-        padding-bottom: 4px;
         margin-top: var(--spacing-32);
         display: inline-block;
+    }
+    .case-study-link:hover {
+        color: var(--color-burnished-gold);
     }
 
     /* ═══ Lead Magnet ═══ */
@@ -531,8 +628,28 @@ import PostHog from "../components/PostHog.astro";
             padding: 0 var(--spacing-24);
         }
         .case-study-stats {
-            flex-wrap: wrap;
+            grid-template-columns: 1fr;
             gap: var(--spacing-24);
+        }
+        .stat {
+            border-right: none;
+            border-bottom: 1px solid var(--color-letterpress-black);
+            padding: 0 0 var(--spacing-16) 0;
+        }
+        .stat:last-child {
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+        .newsletter-band-inner {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+        .newsletter-band-form {
+            width: 100%;
+        }
+        .newsletter-band-form input {
+            width: 100%;
+            flex: 1;
         }
         .lead-inner {
             grid-template-columns: 1fr;
@@ -545,3 +662,36 @@ import PostHog from "../components/PostHog.astro";
         }
     }
 </style>
+
+<script>
+    // Newsletter band signup
+    const bandForm = document.getElementById('newsletterBandForm');
+    if (bandForm) {
+        bandForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = bandForm.email.value.trim();
+            const btn = bandForm.querySelector('button');
+            const API_URL = window.location.hostname === 'localhost'
+                ? 'http://localhost:3000/api/newsletter'
+                : 'https://app.madcactus.org/api/newsletter';
+            btn.textContent = 'Subscribing...';
+            btn.disabled = true;
+            try {
+                const res = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email }),
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    bandForm.innerHTML = '<p style="font-family: var(--font-serif); font-style: italic; font-size: var(--text-body-sm);">You\'re in. Check your inbox.</p>';
+                } else {
+                    throw new Error(data.error || 'Failed');
+                }
+            } catch (err) {
+                btn.textContent = '{ SUBSCRIBE }';
+                btn.disabled = false;
+            }
+        });
+    }
+</script>

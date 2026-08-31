@@ -7,7 +7,9 @@ import ConfirmButton from "~/components/ConfirmButton";
 import {
 	createMemberAction,
 	linkMemberAction,
-	unlinkMemberAction,
+	removeMemberAction,
+	resendInviteAction,
+	getSignedInEmailsQuery,
 	getCompaniesQuery,
 	getCompanyMembersQuery,
 	getMembersQuery,
@@ -32,6 +34,13 @@ export default function CompanyDetail() {
 		() => getCompanyMembersQuery(companyId()),
 		{ deferStream: true },
 	);
+	const signedInEmails = createAsync(() => getSignedInEmailsQuery(), {
+		deferStream: true,
+	});
+	// Invite pending = member never signed in (invite unaccepted/expired, or
+	// auth user missing). Resend button shows until their first sign-in.
+	const invitePending = (email: string) =>
+		!(signedInEmails() ?? []).includes(email);
 	const allMembers = createAsync(() => getMembersQuery(), { deferStream: true });
 	const projects = createAsync(() => getProjectsForSelectQuery(), {
 		deferStream: true,
@@ -41,7 +50,8 @@ export default function CompanyDetail() {
 
 	const createMember = useAction(createMemberAction);
 	const linkMember = useAction(linkMemberAction);
-	const unlinkMember = useAction(unlinkMemberAction);
+	const removeMember = useAction(removeMemberAction);
+	const resendInvite = useAction(resendInviteAction);
 	const addInvoice = useAction(createInvoiceAction);
 	const saveAliases = useAction(updateCompanyAliasesAction);
 
@@ -84,6 +94,20 @@ export default function CompanyDetail() {
 			setError(err instanceof Error ? err.message : "Something went wrong.");
 		} finally {
 			setSubmitting(false);
+		}
+	}
+
+	async function handleResendInvite(memberId: string, email: string) {
+		setError("");
+		setSuccess("");
+		try {
+			const fd = new FormData();
+			fd.set("id", memberId);
+			const result = await resendInvite(fd);
+			if (result?.error) setError(result.error);
+			else setSuccess(`Invite re-sent to ${email}.`);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Failed to resend invite.");
 		}
 	}
 
@@ -213,11 +237,26 @@ export default function CompanyDetail() {
 																	{m.isActive ? "active" : "disabled"}
 																</span>
 															</div>
-															<form method="post" action="/admin/companies/unlink-member">
-																<input type="hidden" name="member_id" value={m.id} />
-																<input type="hidden" name="company_id" value={companyId()} />
-																<button type="submit" class="btn btn-sm" style={{ color: "#ef4444" }}>Unlink</button>
-															</form>
+															<div style={{ display: "flex", gap: "8px" }}>
+																<Show when={invitePending(m.email)}>
+																	<button
+																		class="btn btn-sm"
+																		onClick={() => handleResendInvite(m.id, m.email)}
+																	>
+																		Resend Invite
+																	</button>
+																</Show>
+																<ConfirmButton
+																	label="Remove"
+																	confirmText="Remove everywhere?"
+																		danger
+																		onConfirm={() => {
+																			const fd = new FormData();
+																			fd.set("member_id", m.id);
+																			return removeMember(fd);
+																		}}
+																	/>
+															</div>
 														</div>
 													)}
 												</For>

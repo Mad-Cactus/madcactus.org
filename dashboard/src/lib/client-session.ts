@@ -70,6 +70,11 @@ export async function clientSignIn(email: string, password: string) {
 	return { error: null };
 }
 
+/** Issues the portal session cookie (login + invite activation). */
+export function setClientSessionCookie(memberId: string) {
+	setCookie(COOKIE_NAME, memberId, COOKIE_OPTS);
+}
+
 export async function clientSignOut() {
 	setCookie(COOKIE_NAME, "", { ...COOKIE_OPTS, maxAge: 0 });
 }

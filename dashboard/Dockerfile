@@ -1,5 +1,5 @@
 # ═══ Builder: install + compile ═══
-FROM oven/bun:1 AS builder
+FROM oven/bun:1.4 AS builder
 WORKDIR /app
 
 COPY package.json bun.lock* bun.lockb* ./
@@ -9,13 +9,14 @@ COPY . .
 RUN bun run build
 
 # ═══ Runner: just the compiled output ═══
-FROM oven/bun:1 AS runner
+FROM oven/bun:1.4 AS runner
 WORKDIR /app
 
-# ffmpeg: meeting-publish audio splicing (admin/meetings)
-RUN apt-get update \
-	&& apt-get install -y --no-install-recommends ffmpeg \
-	&& rm -rf /var/lib/apt/lists/*
+# ffmpeg: re-encodes oversized meeting audio before Supabase upload
+# (Free plan caps every storage object at 50MB globally) + splices meeting
+# drafts in /admin/meetings.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/.output ./.output
 

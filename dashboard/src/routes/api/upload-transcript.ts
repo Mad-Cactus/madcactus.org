@@ -1,4 +1,5 @@
 import type { APIEvent } from "@solidjs/start/server";
+import { $ } from "bun";
 import { supabaseService } from "~/lib/supabase";
 import { getAuthedClient } from "~/lib/session";
 import { checkApiKey } from "~/lib/api-key";
@@ -62,14 +63,36 @@ export async function POST(event: APIEvent) {
 	let audioPath: string | null = null;
 	let audioFileName: string | null = null;
 
+	// Supabase Free plan caps EVERY storage object at 50MB globally — bucket
+	// limits can't override it. Re-encode oversized audio to mono AAC sized to
+	// land under the cap. ponytail: when meetings outgrow ~7h or storage nears
+	// the 1GB Free quota, move audio to R2 or upgrade the plan.
+	const REENCODE_THRESHOLD = 45 * 1024 * 1024;
+
 	if (audioFile && audioFile.size > 0) {
-		audioPath = `meetings/${Date.now()}-${(audioFile.name || "audio.mp3").replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-		audioFileName = audioFile.name || "audio.mp3";
+		audioFileName = audioFile.name;
+		let bytes: Uint8Array<ArrayBuffer> = new Uint8Array(await audioFile.arrayBuffer());
+		let contentType = audioFile.type || "application/octet-stream";
+
+		if (bytes.byteLength > REENCODE_THRESHOLD) {
+			const encoded = await reencodeAudio(bytes);
+			if (encoded) {
+				bytes = encoded;
+				contentType = "audio/mp4";
+			}
+			// encoded === null → ffmpeg unavailable/failed; upload the original
+			// as-is and let storage surface the size error.
+		}
+
+		const ext = contentType === "audio/mp4" ? ".m4a" : extOf(audioFile.name);
+		// drafts have no project yet — staged under meetings/ until the publish
+		// action relocates them under the assigned project's prefix
+		audioPath = `${projectId ?? "meetings"}/${Date.now()}-${baseName(audioFile.name)}${ext}`;
 		const svc = supabaseService();
 		const { error: uploadErr } = await svc.storage
 			.from("portal-docs")
-			.upload(audioPath, await audioFile.arrayBuffer(), {
-				contentType: audioFile.type || "audio/mpeg",
+			.upload(audioPath, bytes, {
+				contentType,
 			});
 		if (uploadErr) {
 			return isBearer
@@ -116,4 +139,49 @@ function json(body: unknown, status: number) {
 		status,
 		headers: { "content-type": "application/json" },
 	});
+}
+
+/** Transcode audio to mono AAC sized to fit under the 50MB storage cap.
+ *  Bitrate comes from the input duration so any meeting length fits in one
+ *  pass (48kbps ceiling, 16kbps floor ≈ 7h+ before it can't).
+ *  Returns null if ffmpeg is missing or fails — caller uploads the original. */
+async function reencodeAudio(input: Uint8Array): Promise<Uint8Array<ArrayBuffer> | null> {
+	const TARGET_BYTES = 45 * 1024 * 1024;
+	const dir = `${process.env.TMPDIR ?? "/tmp"}/mc-audio-${Date.now()}-${crypto.randomUUID()}`;
+	try {
+		await $`mkdir -p ${dir}`.quiet();
+		const inPath = `${dir}/in`;
+		const outPath = `${dir}/out.m4a`;
+		await Bun.write(inPath, input);
+
+		const durationSec = Number(
+			(
+				await $`ffprobe -v error -show_entries format=duration -of csv=p=0 ${inPath}`
+					.quiet()
+					.text()
+			).trim(),
+		);
+		if (!Number.isFinite(durationSec) || durationSec <= 0) return null;
+
+		const kbps = Math.min(48, Math.max(16, Math.floor((TARGET_BYTES * 8) / durationSec / 1000)));
+		await $`ffmpeg -y -v error -i ${inPath} -c:a aac -b:a ${kbps}k -ac 1 ${outPath}`.quiet();
+
+		const out = new Uint8Array(await Bun.file(outPath).arrayBuffer());
+		return out.byteLength < input.byteLength ? out : null;
+	} catch (e) {
+		console.error("audio re-encode failed:", e);
+		return null;
+	} finally {
+		await $`rm -rf ${dir}`.quiet();
+	}
+}
+
+function baseName(name: string): string {
+	const i = name.lastIndexOf(".");
+	return i > 0 ? name.slice(0, i) : name;
+}
+
+function extOf(name: string): string {
+	const i = name.lastIndexOf(".");
+	return i > 0 ? name.slice(i) : "";
 }

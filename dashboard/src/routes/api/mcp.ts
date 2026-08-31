@@ -1,5 +1,5 @@
 import type { APIEvent } from "@solidjs/start/server";
-import { eq, and, inArray, desc } from "drizzle-orm";
+import { eq, and, inArray, desc, gt } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import { hashKey } from "~/lib/crypto";
 import { db } from "~/db";
@@ -52,6 +52,7 @@ function rpcError(
 interface AuthedMember {
 	member: { id: string; name: string; email: string };
 	projectIds: string[];
+	lastUsedAt: Date | null; // captured before the last_used_at update fires
 }
 
 async function authenticate(request: Request): Promise<AuthedMember | null> {
@@ -61,7 +62,7 @@ async function authenticate(request: Request): Promise<AuthedMember | null> {
 	if (!rawKey.startsWith("mc_")) return null;
 
 	const [keyRow] = await db
-		.select({ id: apiKeys.id, memberId: apiKeys.memberId })
+		.select({ id: apiKeys.id, memberId: apiKeys.memberId, lastUsedAt: apiKeys.lastUsedAt })
 		.from(apiKeys)
 		.where(and(eq(apiKeys.keyHash, hashKey(rawKey)), sql`${apiKeys.revokedAt} IS NULL`))
 		.limit(1);
@@ -91,7 +92,7 @@ async function authenticate(request: Request): Promise<AuthedMember | null> {
 		.where(eq(clientCompanyMembers.memberId, member.id));
 
 	const companyIds = memberCompanies.map((c) => c.companyId);
-	if (companyIds.length === 0) return { member, projectIds: [] };
+	if (companyIds.length === 0) return { member, projectIds: [], lastUsedAt: keyRow.lastUsedAt };
 
 	const memberProjects = await db
 		.select({ id: projects.id })
@@ -101,6 +102,7 @@ async function authenticate(request: Request): Promise<AuthedMember | null> {
 	return {
 		member,
 		projectIds: memberProjects.map((p) => p.id),
+		lastUsedAt: keyRow.lastUsedAt,
 	};
 }
 
@@ -129,6 +131,12 @@ const TOOLS = [
 		name: "get_deliverables",
 		description:
 			"List all project deliverables with their current status and progress updates.",
+		inputSchema: { type: "object", properties: {} },
+	},
+	{
+		name: "get_daily_briefing",
+		description:
+			"Everything that changed across the client's projects since the last time this MCP server was called (new deliverable updates, new documents, new invoices), plus a one-line status snapshot per project. Best starting point for a daily check-in summary.",
 		inputSchema: { type: "object", properties: {} },
 	},
 	{
@@ -249,6 +257,96 @@ async function getDeliverables(ctx: AuthedMember) {
 	}));
 }
 
+async function getDailyBriefing(ctx: AuthedMember) {
+	const since = ctx.lastUsedAt ?? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000); // ponytail: first-ever call = last 7 days
+
+	if (ctx.projectIds.length === 0) {
+		return { since, projects: [], new_updates: [], new_documents: [], new_invoices: [] };
+	}
+
+	const projectRows = await db
+		.select({
+			name: projects.name,
+			status: projects.status,
+		})
+		.from(projects)
+		.where(inArray(projects.id, ctx.projectIds));
+
+	const newUpdates = await db
+		.select({
+			project: projects.name,
+			deliverable: deliverables.title,
+			status: deliverables.status,
+			date: deliverableUpdates.createdAt,
+			body: deliverableUpdates.body,
+		})
+		.from(deliverableUpdates)
+		.innerJoin(deliverables, eq(deliverables.id, deliverableUpdates.deliverableId))
+		.innerJoin(projects, eq(projects.id, deliverables.projectId))
+		.where(
+			and(
+				inArray(deliverables.projectId, ctx.projectIds),
+				gt(deliverableUpdates.createdAt, since),
+			),
+		)
+		.orderBy(desc(deliverableUpdates.createdAt));
+
+	const newDocuments = await db
+		.select({
+			title: documents.title,
+			type: documents.type,
+			description: documents.description,
+			url: documents.url,
+			created: documents.createdAt,
+		})
+		.from(documents)
+		.where(
+			and(
+				inArray(documents.projectId, ctx.projectIds),
+				eq(documents.visibility, "client"),
+				gt(documents.createdAt, since),
+			),
+		)
+		.orderBy(desc(documents.createdAt));
+
+	const newInvoices = await db
+		.select({
+			number: invoices.number,
+			amount: invoices.amount,
+			status: invoices.status,
+			issued: invoices.issueDate,
+			due: invoices.dueDate,
+			payment_url: invoices.paymentUrl,
+			created: invoices.createdAt,
+		})
+		.from(invoices)
+		.where(and(inArray(invoices.projectId, ctx.projectIds), gt(invoices.createdAt, since)))
+		.orderBy(desc(invoices.createdAt));
+
+	return {
+		since,
+		note: "Changes since the last time this API key called the server. First-ever call defaults to the last 7 days.",
+		projects: projectRows,
+		new_updates: newUpdates,
+		new_documents: newDocuments.map((d) => ({
+			title: d.title,
+			type: d.type,
+			description: d.description,
+			url: d.type === "link" ? d.url : null,
+			created: d.created,
+		})),
+		new_invoices: newInvoices.map((i) => ({
+			number: i.number,
+			amount: `$${Number(i.amount).toLocaleString("en-US", { minimumFractionDigits: 2 })}`,
+			status: i.status,
+			issued: i.issued,
+			due: i.due,
+			payment_url: i.payment_url,
+			created: i.created,
+		})),
+	};
+}
+
 async function searchDocuments(ctx: AuthedMember, params: { query: string }) {
 	if (ctx.projectIds.length === 0 || !params.query?.trim()) return [];
 
@@ -341,6 +439,9 @@ export async function POST(event: APIEvent) {
 						break;
 					case "get_deliverables":
 						result = await getDeliverables(ctx);
+						break;
+					case "get_daily_briefing":
+						result = await getDailyBriefing(ctx);
 						break;
 					case "search_documents":
 						result = await searchDocuments(ctx, toolArgs);

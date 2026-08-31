@@ -1,6 +1,7 @@
 ---
 import "../styles/global.css";
 import Footer from "../components/Footer.astro";
+import Header from "../components/Header.astro";
 import PostHog from "../components/PostHog.astro";
 ---
 
@@ -20,15 +21,7 @@ import PostHog from "../components/PostHog.astro";
         <PostHog />
     </head>
     <body>
-        {/* ════════ TOP BAR ════════ */}
-        <header class="top-bar">
-            <div class="top-bar-inner">
-                <a href="/" class="logo-link">
-                    <img src="/cactus-seal.svg" alt="Mad Cactus" class="logo-seal" />
-                </a>
-                <a href="https://app.madcactus.org/portal/login" class="top-bar-signin">Sign In</a>
-            </div>
-        </header>
+        <Header />
 
         {/* ════════ HERO ════════ */}
         <div class="case-hero">

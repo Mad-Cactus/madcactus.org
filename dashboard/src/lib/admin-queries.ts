@@ -126,21 +126,34 @@ export const linkMemberAction = action(async (formData: FormData) => {
 	throw redirect(`/admin/companies/${companyId}`);
 }, "linkMember");
 
-export const unlinkMemberAction = action(async (formData: FormData) => {
+// Full removal: deletes the auth user, the member row, and (via FK cascade)
+// every company link + API key. Deliberately NOT an "unlink from one company" —
+// if a member belongs to multiple companies, removing them here removes them
+// everywhere. Re-create via "Add Member" if that's ever wrong.
+export const removeMemberAction = action(async (formData: FormData) => {
 	"use server";
 	await requireAdmin();
 	const memberId = String(formData.get("member_id"));
-	const companyId = String(formData.get("company_id"));
-	await db
-		.delete(clientCompanyMembers)
-		.where(
-			and(
-				eq(clientCompanyMembers.memberId, memberId),
-				eq(clientCompanyMembers.companyId, companyId),
-			),
-		);
-	throw redirect(`/admin/companies/${companyId}`);
-}, "unlinkMember");
+	const [member] = await db
+		.select({ email: clientMembers.email })
+		.from(clientMembers)
+		.where(eq(clientMembers.id, memberId))
+		.limit(1);
+	if (!member) return { error: "Member not found" };
+
+	// Find the auth user by email (admin API has no email filter; a handful of
+	// users, one page covers it).
+	const svc = supabaseService();
+	const { data: users } = await svc.auth.admin.listUsers({ perPage: 1000 });
+	const authUser = users?.users?.find((u) => u.email === member.email);
+	if (authUser) {
+		const { error: delError } = await svc.auth.admin.deleteUser(authUser.id);
+		if (delError) return { error: `Could not delete login: ${delError.message}` };
+	}
+
+	await db.delete(clientMembers).where(eq(clientMembers.id, memberId));
+	return { success: `${member.email} removed.` };
+}, "removeMember");
 
 /** Redirect URL for Supabase invite/reset links (must be allowlisted in Supabase Auth settings). */
 function inviteRedirect(): string | null {
@@ -167,6 +180,20 @@ export const resendInviteAction = action(async (formData: FormData) => {
 	if (error) return { error: error.message };
 	return { success: "Invite re-sent." };
 }, "resendInvite");
+
+// Emails of auth users who have signed in at least once. A member whose email
+// is NOT in this list has a pending invite (never accepted, expired, or the
+// auth user was never created) — that's who the "Resend Invite" button is for.
+export const getSignedInEmailsQuery = query(async () => {
+	"use server";
+	await requireAdmin();
+	const { data } = await supabaseService().auth.admin.listUsers({
+		perPage: 1000,
+	});
+	return (data?.users ?? [])
+		.filter((u) => u.last_sign_in_at)
+		.map((u) => u.email!);
+}, "admin-signed-in-emails");
 
 export const toggleMemberActiveAction = action(async (formData: FormData) => {
 	"use server";
@@ -525,7 +552,10 @@ export const publishMeetingAction = action(async (formData: FormData) => {
 			bytes = spliced.bytes!;
 		}
 
-		const newPath = `${projectId}/${Date.now()}-${(audioFileName || "audio.mp3").replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+		// splice output is always mp3 — force the extension to match, whatever
+		// the draft was uploaded as (m4a re-encoded by the upload route, etc.)
+		const base = (audioFileName || "audio").replace(/\.[^.]*$/, "").replace(/[^a-zA-Z0-9._-]/g, "_");
+		const newPath = `${projectId}/${Date.now()}-${base}.mp3`;
 		const { error: upErr } = await svc.storage.from("portal-docs").upload(newPath, bytes, {
 			contentType: "audio/mpeg",
 		});
@@ -568,9 +598,16 @@ async function spliceAudio(
 		});
 
 	const dir = await fsp.mkdtemp(path.join(os.tmpdir(), "mc-splice-"));
-	const inPath = path.join(dir, "in.mp3");
+	const inPath = path.join(dir, "in.audio");
 	const outPath = path.join(dir, "out.mp3");
 	await fsp.writeFile(inPath, input);
+
+	// Supabase Free caps every object at 50MB — size the bitrate from the
+	// output duration so any meeting length fits (same math as the upload
+	// route's reencodeAudio; 96k ceiling, 16k floor).
+	const durationSec = ranges.reduce((sum, [s, e]) => sum + (e - s) / 1000, 0);
+	const TARGET_BYTES = 45 * 1024 * 1024;
+	const kbps = Math.min(96, Math.max(16, Math.floor((TARGET_BYTES * 8) / durationSec / 1000)));
 
 	const parts = ranges.map(
 		([s, e], i) =>
@@ -583,7 +620,7 @@ async function spliceAudio(
 		"-i", inPath,
 		"-filter_complex", filter,
 		"-map", "[out]",
-		"-b:a", "96k",
+		"-b:a", `${kbps}k`,
 		outPath,
 	]);
 	if (!res.ok) {

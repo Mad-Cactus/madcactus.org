@@ -9,6 +9,7 @@ import {
 	resendInviteAction,
 	toggleMemberActiveAction,
 	linkMemberAction,
+	getSignedInEmailsQuery,
 } from "~/lib/admin-queries";
 import { getUserQuery } from "~/lib/queries";
 
@@ -18,6 +19,12 @@ export default function Companies() {
 		deferStream: true,
 	});
 	const members = createAsync(() => getMembersQuery(), { deferStream: true });
+	const signedInEmails = createAsync(() => getSignedInEmailsQuery(), {
+		deferStream: true,
+	});
+	// Resend only while the invite is pending (member never signed in).
+	const invitePending = (email: string) =>
+		!(signedInEmails() ?? []).includes(email);
 	const createCompany = useAction(createCompanyAction);
 	const resendInvite = useAction(resendInviteAction);
 	const toggleActive = useAction(toggleMemberActiveAction);
@@ -167,7 +174,9 @@ export default function Companies() {
 													</td>
 													<td>
 														<div style={{ display: "flex", gap: "8px" }}>
-															<button class="btn btn-sm" onClick={() => handleResend(m.id)} disabled={resendingId() === m.id}>{resendingId() === m.id ? "Sending…" : "Resend Invite"}</button>
+															<Show when={invitePending(m.email)}>
+																<button class="btn btn-sm" onClick={() => handleResend(m.id)} disabled={resendingId() === m.id}>{resendingId() === m.id ? "Sending…" : "Resend Invite"}</button>
+															</Show>
 															<form method="post" action="/admin/companies/toggle-member">
 																<input type="hidden" name="id" value={m.id} />
 																<input type="hidden" name="is_active" value={String(m.isActive)} />
