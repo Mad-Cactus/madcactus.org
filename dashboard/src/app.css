@@ -563,3 +563,117 @@ input:not(.form-group input):focus {
   position: relative;
   z-index: 1;
 }
+
+/* ── Timer widget (sidebar) ─────────────────────────────────── */
+
+.timer-widget {
+	padding: 16px 24px;
+	border-top: 1px solid rgba(255, 255, 255, 0.08);
+	font-family: var(--font-sans);
+}
+
+.timer-widget-label {
+	font-size: 9px;
+	letter-spacing: 1.5px;
+	text-transform: uppercase;
+	color: rgba(255, 255, 255, 0.4);
+	margin-bottom: 8px;
+}
+
+.timer-widget select,
+.timer-widget input {
+	width: 100%;
+	box-sizing: border-box;
+	background: rgba(255, 255, 255, 0.05);
+	border: 1px solid rgba(255, 255, 255, 0.12);
+	color: #fff;
+	font-family: var(--font-sans);
+	font-size: 12px;
+	padding: 6px 8px;
+	margin-bottom: 8px;
+	border-radius: 0;
+}
+
+.timer-widget select option {
+	color: #000;
+}
+
+.timer-widget button {
+	width: 100%;
+	cursor: pointer;
+	font-family: var(--font-sans);
+	font-size: 12px;
+	padding: 7px 0;
+	border-radius: 0;
+	letter-spacing: 0.5px;
+}
+
+.timer-start {
+	background: var(--gold);
+	border: none;
+	color: #0a0a0a;
+	font-weight: 600;
+}
+
+.timer-start:hover {
+	filter: brightness(1.1);
+}
+
+.timer-elapsed {
+	font-size: 26px;
+	color: var(--gold);
+	font-variant-numeric: tabular-nums;
+	margin-bottom: 2px;
+}
+
+.timer-project {
+	font-size: 13px;
+	color: #fff;
+	margin-bottom: 8px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.timer-project span {
+	color: rgba(255, 255, 255, 0.4);
+}
+
+.timer-desc {
+	font-size: 11px;
+	color: rgba(255, 255, 255, 0.5);
+	margin-bottom: 8px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.timer-stop {
+	background: none;
+	border: 1px solid var(--gold);
+	color: var(--gold);
+	margin-bottom: 6px;
+}
+
+.timer-stop:hover {
+	background: rgba(188, 156, 92, 0.12);
+}
+
+.timer-discard {
+	background: none;
+	border: none;
+	color: rgba(255, 255, 255, 0.4);
+	font-size: 11px !important;
+	padding: 0 !important;
+	text-decoration: underline;
+}
+
+.timer-discard:hover {
+	color: rgba(255, 255, 255, 0.7);
+}
+
+.timer-error {
+	margin-top: 8px;
+	font-size: 11px;
+	color: #e07a6a;
+}

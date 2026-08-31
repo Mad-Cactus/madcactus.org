@@ -278,6 +278,18 @@ export const deliverableUpdates = pgTable(
 	],
 );
 
+// ── Timer (singleton — one running timer, id always 1) ────────────
+// A running timer is a row here; stopping converts it into a time entry.
+
+export const timer = pgTable("timer", {
+	id: integer("id").primaryKey(), // constrained to 1 via CHECK in migration 0004
+	projectId: uuid("project_id")
+		.notNull()
+		.references(() => projects.id, { onDelete: "cascade" }),
+	description: text("description").notNull().default(""),
+	startedAt: timestamp("started_at").notNull().defaultNow(),
+});
+
 // ── View: monthly hours per project ────────────────────────────────
 
 export const monthlyHoursByProject = pgView("monthly_hours_by_project").as(
@@ -311,6 +323,7 @@ export type Invoice = typeof invoices.$inferSelect;
 export type ApiKey = typeof apiKeys.$inferSelect;
 export type Deliverable = typeof deliverables.$inferSelect;
 export type DeliverableUpdate = typeof deliverableUpdates.$inferSelect;
+export type Timer = typeof timer.$inferSelect;
 
 // Type aliases for UI code (badge maps, selects, etc.)
 export type EngagementType = Project["engagementType"];

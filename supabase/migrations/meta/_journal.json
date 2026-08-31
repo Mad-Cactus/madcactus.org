@@ -50,6 +50,13 @@
       "when": 1788135661028,
       "tag": "0006_omniscient_sunspot",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788136682331,
+      "tag": "0007_white_madripoor",
+      "breakpoints": true
     }
   ]
 }
