@@ -1,4 +1,4 @@
-import { query, action, redirect } from "@solidjs/router";
+import { query, action, redirect, revalidate } from "@solidjs/router";
 import { eq, and, gte, lte, desc, sql } from "drizzle-orm";
 import { getTableColumns } from "drizzle-orm";
 import { getCurrentUser, signIn } from "./session";
@@ -9,6 +9,7 @@ import {
 	timeEntries,
 	deliverables,
 	deliverableUpdates,
+	timer,
 } from "~/db/schema";
 import type { Project, EngagementType } from "~/db/schema";
 
@@ -217,3 +218,70 @@ export const deleteTimeEntryAction = action(async (formData: FormData) => {
 		return { error: e instanceof Error ? e.message : "Failed to delete entry." };
 	}
 }, "deleteTimeEntry");
+
+// ── Timer ─────────────────────────────────────────────────────────
+
+export const getTimerQuery = query(async () => {
+	"use server";
+	await requireAdmin();
+	const [row] = await db
+		.select({
+			...getTableColumns(timer),
+			projectName: projects.name,
+			companyName: companies.name,
+		})
+		.from(timer)
+		.innerJoin(projects, eq(projects.id, timer.projectId))
+		.innerJoin(companies, eq(companies.id, projects.companyId))
+		.limit(1);
+	return row ?? null;
+}, "timer");
+
+export const startTimerAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const projectId = String(formData.get("project_id"));
+	if (!projectId) return { error: "Pick a project first." };
+	try {
+		await db.insert(timer).values({
+			id: 1,
+			projectId,
+			description: String(formData.get("description") || ""),
+		});
+	} catch {
+		// singleton PK collision = a timer is already running; never clobber it
+		return { error: "A timer is already running." };
+	}
+	revalidate(getTimerQuery.key);
+	throw redirect(refererFromFormData(formData));
+}, "startTimer");
+
+export const stopTimerAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const [t] = await db.select().from(timer).limit(1);
+	if (!t) return { error: "No timer running." };
+	const hours =
+		Math.round(((Date.now() - t.startedAt.getTime()) / 3_600_000) * 100) / 100;
+	await db.transaction(async (tx) => {
+		await tx.insert(timeEntries).values({
+			projectId: t.projectId,
+			entryDate: t.startedAt,
+			hours,
+			description: t.description,
+			billable: true,
+		});
+		await tx.delete(timer);
+	});
+	revalidate(getTimerQuery.key);
+	revalidate(getDashboardQuery.key);
+	throw redirect(refererFromFormData(formData));
+}, "stopTimer");
+
+export const discardTimerAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	await db.delete(timer);
+	revalidate(getTimerQuery.key);
+	throw redirect(refererFromFormData(formData));
+}, "discardTimer");
