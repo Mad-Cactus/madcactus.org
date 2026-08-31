@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Rendered by install.sh: __API_KEY__, __URL__, __BUN__ are substituted. -->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.madcactus.meeting-publisher</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>__BUN__</string>
+		<string>__HOME__/publish.ts</string>
+	</array>
+	<!-- cron-style: one pass every 60s; publish.ts exits after each pass -->
+	<key>StartInterval</key>
+	<integer>60</integer>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>MADCACTUS_URL</key>
+		<string>__URL__</string>
+		<key>MADCACTUS_API_KEY</key>
+		<string>__API_KEY__</string>
+	</dict>
+	<key>StandardOutPath</key>
+	<string>__HOME__/launchd.out</string>
+	<key>StandardErrorPath</key>
+	<string>__HOME__/launchd.err</string>
+</dict>
+</plist>

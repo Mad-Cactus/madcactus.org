@@ -29,6 +29,27 @@
       "when": 1786560900000,
       "tag": "0003_portal_docs_size_limit",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1787197178727,
+      "tag": "0004_flat_flatman",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788127528506,
+      "tag": "0005_robust_wind_dancer",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788135661028,
+      "tag": "0006_omniscient_sunspot",
+      "breakpoints": true
     }
   ]
 }

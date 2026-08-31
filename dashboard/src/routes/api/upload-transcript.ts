@@ -2,31 +2,61 @@ import type { APIEvent } from "@solidjs/start/server";
 import { $ } from "bun";
 import { supabaseService } from "~/lib/supabase";
 import { getAuthedClient } from "~/lib/session";
+import { checkApiKey } from "~/lib/api-key";
 import { db } from "~/db";
 import { documents } from "~/db/schema";
 
 /** Upload a meeting transcript with searchable text + optional audio.
  *  Creates one document row of type='transcript'.
- *  Admin-only — requires mc-access-token cookie. */
+ *  Auth: admin session cookie (form UX) OR `Authorization: Bearer mc_<key>`
+ *  (used by the Anarlog meeting publisher to push visibility='draft' rows).
+ *  Bearer requests get JSON; cookie requests get a 302 back to the referer. */
 export async function POST(event: APIEvent) {
-	// Auth via session helper (matches createDocumentLinkAction). DB writes go
-	// through Drizzle, not the Supabase JS client — migrations grant no
-	// privileges to the `authenticated` role, so PostgREST inserts fail with
-	// "permission denied for schema public".
-	if (!(await getAuthedClient())) {
+	const request = event.request;
+	const authHeader = request.headers.get("authorization") || "";
+	const isBearer = authHeader.startsWith("Bearer mc_");
+
+	if (isBearer) {
+		if (!(await checkApiKey(request))) {
+			return json({ error: "Invalid API key" }, 401);
+		}
+	} else if (!(await getAuthedClient())) {
 		return new Response("Unauthorized", { status: 401 });
 	}
 
-	const formData = await event.request.formData();
-	const projectId = String(formData.get("project_id") || "");
+	const formData = await request.formData();
+	const projectId = String(formData.get("project_id") || "") || null;
 	const title = String(formData.get("title") || "Untitled Transcript");
 	const description = String(formData.get("description") || "");
 	const content = String(formData.get("content") || "");
+	const transcriptJson = String(formData.get("transcript_json") || "") || null;
+	const visibility = String(formData.get("visibility") || "client");
 	const referer = String(
-		formData.get("_referer") || event.request.headers.get("referer") || "/admin/clients",
+		formData.get("_referer") || request.headers.get("referer") || "/admin/clients",
 	);
 
-	if (!projectId) return new Response("Missing project_id", { status: 400 });
+	if (visibility !== "client" && visibility !== "draft") {
+		return isBearer
+			? json({ error: "visibility must be 'client' or 'draft'" }, 400)
+			: new Response("Invalid visibility", { status: 400 });
+	}
+	// client-visible docs must belong to a project; drafts are assigned at
+	// publish time in /admin/meetings
+	if (!projectId && visibility === "client") {
+		return isBearer
+			? json({ error: "Missing project_id" }, 400)
+			: new Response("Missing project_id", { status: 400 });
+	}
+	if (transcriptJson !== null) {
+		try {
+			const parsed: unknown = JSON.parse(transcriptJson);
+			if (!Array.isArray(parsed)) throw new Error("not an array");
+		} catch {
+			return isBearer
+				? json({ error: "transcript_json must be a JSON array of blocks" }, 400)
+				: new Response("Invalid transcript_json", { status: 400 });
+		}
+	}
 
 	// Upload audio if provided
 	const audioFile = formData.get("audio") as File | null;
@@ -55,7 +85,9 @@ export async function POST(event: APIEvent) {
 		}
 
 		const ext = contentType === "audio/mp4" ? ".m4a" : extOf(audioFile.name);
-		audioPath = `${projectId}/${Date.now()}-${baseName(audioFile.name)}${ext}`;
+		// drafts have no project yet — staged under meetings/ until the publish
+		// action relocates them under the assigned project's prefix
+		audioPath = `${projectId ?? "meetings"}/${Date.now()}-${baseName(audioFile.name)}${ext}`;
 		const svc = supabaseService();
 		const { error: uploadErr } = await svc.storage
 			.from("portal-docs")
@@ -63,22 +95,33 @@ export async function POST(event: APIEvent) {
 				contentType,
 			});
 		if (uploadErr) {
-			return new Response(`Audio upload failed: ${uploadErr.message}`, { status: 500 });
+			return isBearer
+				? json({ error: `Audio upload failed: ${uploadErr.message}` }, 500)
+				: new Response(`Audio upload failed: ${uploadErr.message}`, { status: 500 });
 		}
 	}
 
 	// ponytail: no generated search_vector column exists yet; content is stored
 	// as plain text. Add a tsvector + trigger when full-text search is wired up.
 	try {
-		await db.insert(documents).values({
-			projectId,
-			type: "transcript",
-			title,
-			description,
-			content: content || null,
-			visibility: "client",
-			audioPath,
-			audioFileName,
+		const [row] = await db
+			.insert(documents)
+			.values({
+				projectId,
+				type: "transcript",
+				title,
+				description,
+				content: content || null,
+				visibility,
+				audioPath,
+				audioFileName,
+				transcriptJson,
+			})
+			.returning({ id: documents.id });
+		if (isBearer) return json({ ok: true, id: row.id }, 201);
+		return new Response(null, {
+			status: 302,
+			headers: { Location: referer },
 		});
 	} catch (dbErr) {
 		// Clean up uploaded audio if DB insert failed
@@ -86,15 +129,15 @@ export async function POST(event: APIEvent) {
 			const svc = supabaseService();
 			await svc.storage.from("portal-docs").remove([audioPath]);
 		}
-		return new Response(
-			`DB error: ${dbErr instanceof Error ? dbErr.message : String(dbErr)}`,
-			{ status: 500 },
-		);
+		const msg = dbErr instanceof Error ? dbErr.message : String(dbErr);
+		return isBearer ? json({ error: `DB error: ${msg}` }, 500) : new Response(`DB error: ${msg}`, { status: 500 });
 	}
+}
 
-	return new Response(null, {
-		status: 302,
-		headers: { Location: referer },
+function json(body: unknown, status: number) {
+	return new Response(JSON.stringify(body), {
+		status,
+		headers: { "content-type": "application/json" },
 	});
 }
 

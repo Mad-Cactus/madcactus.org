@@ -6,6 +6,8 @@ const links = [
 	{ href: "/admin", label: "Dashboard" },
 { href: "/admin/projects", label: "Projects" },
 	{ href: "/admin/companies", label: "Companies" },
+	{ href: "/admin/meetings", label: "Meetings" },
+	{ href: "/admin/api-keys", label: "API Keys" },
 ];
 
 const Layout: ParentComponent<{ user?: { id?: string; email?: string } | null }> = (props) => {
