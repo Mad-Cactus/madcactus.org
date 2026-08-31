@@ -18,7 +18,12 @@ function fmtElapsed(ms: number): string {
 	return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
-/** Live start/stop timer, persisted server-side so it survives refresh. */
+/** Live start/stop timer, persisted server-side so it survives refresh.
+ *
+ * keyed: Solid passes the row value itself instead of a guarded accessor.
+ * The non-keyed accessor throws "Stale read from <Show>" if the 1s interval
+ * effect reads t() while timer() flips during a start/stop revalidation.
+ */
 export default function Timer() {
 	const timer = createAsync(() => getTimerQuery());
 	const projects = createAsync(() => getProjectsQuery());
@@ -56,6 +61,7 @@ export default function Timer() {
 		<div class="timer-widget">
 			<Show
 				when={timer()}
+				keyed
 				fallback={
 					<form onSubmit={[run, start]}>
 						<div class="timer-widget-label">Timer</div>
@@ -85,14 +91,14 @@ export default function Timer() {
 					<>
 						<div class="timer-widget-label">Timer</div>
 						<div class="timer-elapsed">
-							{fmtElapsed(now() - new Date(t().startedAt).getTime())}
+							{fmtElapsed(now() - new Date(t.startedAt).getTime())}
 						</div>
 						<div class="timer-project">
-							{t().projectName}
-							<span> · {t().companyName}</span>
+							{t.projectName}
+							<span> · {t.companyName}</span>
 						</div>
-						<Show when={t().description}>
-							<div class="timer-desc">{t().description}</div>
+						<Show when={t.description}>
+							<div class="timer-desc">{t.description}</div>
 						</Show>
 						<form onSubmit={[run, stop]}>
 							<button type="submit" class="timer-stop">

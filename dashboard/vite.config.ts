@@ -9,6 +9,9 @@ const __dirname = dirname(__filename);
 
 export default defineConfig({
   plugins: [solidStart(), nitro()],
+  // `bun` is a runtime builtin on the oven/bun image (API routes use Bun.$);
+  // keep the bundler from trying to resolve it.
+  build: { rolldownOptions: { external: ["bun"] } },
   resolve: {
     alias: {
       "@": resolve(__dirname, "./src"),
