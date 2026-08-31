@@ -1,5 +1,6 @@
 import { A } from "@solidjs/router";
 import { For, ParentComponent, Show, createEffect } from "solid-js";
+import Timer from "~/components/Timer";
 
 const links = [
 	{ href: "/admin", label: "Dashboard" },
@@ -42,6 +43,7 @@ const Layout: ParentComponent<{ user?: { id?: string; email?: string } | null }>
 						)}
 					</For>
 				</nav>
+				<Timer />
 				<div class="sidebar-footer">
 					<Show when={props.user?.email}>
 						<div style={{ "margin-bottom": "8px" }}>{props.user!.email}</div>
