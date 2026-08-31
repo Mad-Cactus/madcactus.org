@@ -10,6 +10,7 @@ import { For, Show, Suspense, createSignal } from "solid-js";
 import Layout from "~/components/Layout";
 import Waveform from "~/components/Waveform";
 import { getUserQuery } from "~/lib/queries";
+import { getWaveformQuery } from "~/lib/waveform";
 import {
 	getMeetingDraftQuery,
 	getProjectsForSelectQuery,
@@ -50,14 +51,11 @@ export default function MeetingEditor() {
 	const [msg, setMsg] = createSignal<{ ok: boolean; text: string } | null>(null);
 	const [busy, setBusy] = createSignal(false);
 	const [audioEl, setAudioEl] = createSignal<HTMLAudioElement>();
-	// SSR-safe: draft() is undefined on the server's first pass — fetching a
-	// relative URL there throws ERR_INVALID_URL and 500s the whole page. Wait
-	// for the draft and bail with null; createAsync re-runs once it resolves.
+	// Server query, not a fetch to /api/waveform — a relative fetch() throws
+	// ERR_INVALID_URL during SSR and 500s the page. Re-runs when draft() lands.
 	const wave = createAsync(async () => {
 		const path = draft()?.audioPath;
-		if (!path) return null;
-		const r = await fetch(`/api/waveform?path=${encodeURIComponent(path)}`);
-		return r.ok ? ((await r.json()) as { peaks: number[]; durationMs: number }) : null;
+		return path ? getWaveformQuery(path) : null;
 	}, { deferStream: true });
 
 	// Hydrate local state once the draft arrives (query cache is immutable)
