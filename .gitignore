@@ -27,3 +27,6 @@ pnpm-debug.log*
 # Pix Agent
 .pi/
 .pi-lens/
+
+# meeting-publisher runtime state (logs, pushed ids, API key)
+tools/meeting-publisher/state/

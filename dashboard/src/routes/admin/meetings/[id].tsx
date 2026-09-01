@@ -6,10 +6,11 @@ import {
 	useNavigate,
 	useParams,
 } from "@solidjs/router";
-import { For, Show, Suspense, createSignal } from "solid-js";
+import { For, Show, Suspense, createEffect, createSignal, on } from "solid-js";
 import Layout from "~/components/Layout";
 import Waveform from "~/components/Waveform";
 import { getUserQuery } from "~/lib/queries";
+import { getWaveformQuery } from "~/lib/waveform";
 import {
 	getMeetingDraftQuery,
 	getProjectsForSelectQuery,
@@ -50,16 +51,20 @@ export default function MeetingEditor() {
 	const [msg, setMsg] = createSignal<{ ok: boolean; text: string } | null>(null);
 	const [busy, setBusy] = createSignal(false);
 	const [audioEl, setAudioEl] = createSignal<HTMLAudioElement>();
-	const wave = createAsync(() =>
-		fetch(`/api/waveform?path=${encodeURIComponent(draft()?.audioPath ?? "")}`).then(
-			(r) => (r.ok ? (r.json() as Promise<{ peaks: number[]; durationMs: number }>) : null),
-		),
-		{ deferStream: true },
-	);
+	// Server query, not a fetch to /api/waveform — a relative fetch() throws
+	// ERR_INVALID_URL during SSR and 500s the page. Re-runs when draft() lands.
+	const wave = createAsync(async () => {
+		const path = draft()?.audioPath;
+		return path ? getWaveformQuery(path) : null;
+	}, { deferStream: true });
 
-	// Hydrate local state once the draft arrives (query cache is immutable)
-	const d = draft();
-	if (d && !loaded()) {
+	// Hydrate local state once the draft arrives (query cache is immutable).
+	// SSR: draft is resolved before render, so the inline call populates the
+	// server HTML. Client-side navigation: the component constructs while the
+	// resource is still pending, so also re-run reactively when it lands —
+	// otherwise the page stays blank until a manual refresh.
+	const hydrate = (d: { title: string; transcriptJson: string | null; content: string | null } | undefined) => {
+		if (!d || loaded()) return;
 		setTitle(d.title);
 		let parsed: TranscriptBlock[] = [];
 		try {
@@ -73,7 +78,9 @@ export default function MeetingEditor() {
 		}
 		setBlocks(parsed.map((b) => ({ ...b, cut: false })));
 		setLoaded(true);
-	}
+	};
+	hydrate(draft());
+	createEffect(on(draft, hydrate));
 
 	function updateBlock(i: number, patch: Partial<EditableBlock>) {
 		setBlocks((bs) => bs.map((b, j) => (j === i ? { ...b, ...patch } : b)));
