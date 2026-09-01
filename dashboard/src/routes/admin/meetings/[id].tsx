@@ -6,7 +6,7 @@ import {
 	useNavigate,
 	useParams,
 } from "@solidjs/router";
-import { For, Show, Suspense, createSignal } from "solid-js";
+import { For, Show, Suspense, createEffect, createSignal, on } from "solid-js";
 import Layout from "~/components/Layout";
 import Waveform from "~/components/Waveform";
 import { getUserQuery } from "~/lib/queries";
@@ -58,9 +58,13 @@ export default function MeetingEditor() {
 		return path ? getWaveformQuery(path) : null;
 	}, { deferStream: true });
 
-	// Hydrate local state once the draft arrives (query cache is immutable)
-	const d = draft();
-	if (d && !loaded()) {
+	// Hydrate local state once the draft arrives (query cache is immutable).
+	// SSR: draft is resolved before render, so the inline call populates the
+	// server HTML. Client-side navigation: the component constructs while the
+	// resource is still pending, so also re-run reactively when it lands —
+	// otherwise the page stays blank until a manual refresh.
+	const hydrate = (d: { title: string; transcriptJson: string | null; content: string | null } | undefined) => {
+		if (!d || loaded()) return;
 		setTitle(d.title);
 		let parsed: TranscriptBlock[] = [];
 		try {
@@ -74,7 +78,9 @@ export default function MeetingEditor() {
 		}
 		setBlocks(parsed.map((b) => ({ ...b, cut: false })));
 		setLoaded(true);
-	}
+	};
+	hydrate(draft());
+	createEffect(on(draft, hydrate));
 
 	function updateBlock(i: number, patch: Partial<EditableBlock>) {
 		setBlocks((bs) => bs.map((b, j) => (j === i ? { ...b, ...patch } : b)));
