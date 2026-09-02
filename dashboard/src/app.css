@@ -677,3 +677,24 @@ input:not(.form-group input):focus {
 	font-size: 11px;
 	color: #e07a6a;
 }
+
+/* ── Docs editor (Lexical) ─────────────────────────────────────── */
+.doc-editor {
+	border: 1px solid rgba(0, 0, 0, 0.12);
+	background: var(--bg-card);
+	padding: 24px 28px;
+	min-height: 420px;
+	font-size: 15px;
+	line-height: 1.6;
+	outline: none;
+}
+.doc-editor:focus { border-color: rgba(0, 0, 0, 0.3); }
+.doc-editor.readonly { opacity: 0.7; }
+.doc-editor h1 { font-size: 26px; margin: 16px 0 8px; }
+.doc-editor h2 { font-size: 20px; margin: 14px 0 6px; }
+.doc-editor h3, .doc-editor h4 { font-size: 16px; margin: 12px 0 4px; }
+.doc-editor ul, .doc-editor ol { padding-left: 24px; }
+.doc-editor code { background: rgba(0, 0, 0, 0.05); padding: 1px 5px; font-family: ui-monospace, monospace; font-size: 13px; }
+.doc-editor pre { background: rgba(0, 0, 0, 0.04); padding: 12px; overflow-x: auto; }
+.doc-editor a { color: var(--text); text-decoration: underline; text-decoration-color: var(--gold, #bc9c5c); }
+.doc-editor .lexical-highlight, .doc-editor mark { background: rgba(188, 156, 92, 0.35); }

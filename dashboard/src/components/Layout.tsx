@@ -1,6 +1,7 @@
 import { A } from "@solidjs/router";
 import { For, ParentComponent, Show, createEffect } from "solid-js";
 import Timer from "~/components/Timer";
+import CommandPalette from "~/components/CommandPalette";
 
 const links = [
 	{ href: "/admin", label: "Dashboard" },
@@ -8,6 +9,7 @@ const links = [
 	{ href: "/admin/companies", label: "Companies" },
 	{ href: "/admin/meetings", label: "Meetings" },
 	{ href: "/admin/outreach", label: "Outreach" },
+	{ href: "/admin/docs", label: "Docs" },
 	{ href: "/admin/api-keys", label: "API Keys" },
 ];
 
@@ -24,6 +26,7 @@ const Layout: ParentComponent<{ user?: { id?: string; email?: string } | null }>
 
 	return (
 		<div class="layout">
+			<CommandPalette />
 			<aside class="sidebar">
 				<div class="sidebar-logo">
 					<img src="/cactus-seal.svg" alt="Mad Cactus" />
@@ -47,6 +50,9 @@ const Layout: ParentComponent<{ user?: { id?: string; email?: string } | null }>
 					</For>
 				</nav>
 				<Timer />
+				<div class="muted" style={{ "font-size": "11px", "margin-top": "10px" }}>
+					⌘K commands · g e email · g d docs
+				</div>
 				<div class="sidebar-footer">
 					<Show when={props.user?.email}>
 						<div style={{ "margin-bottom": "8px" }}>{props.user!.email}</div>
