@@ -726,8 +726,9 @@ export const createOutreachAction = action(async (formData: FormData) => {
 		brainUrl: String(formData.get("brain_url") || "").trim() || null,
 		videoUrl: String(formData.get("video_url") || "").trim() || null,
 		stage: String(formData.get("stage") || "sent") as OutreachStage,
-		// datetime-local submits wall-clock time; Date parses it as local —
-		// single-admin app, so the server's TZ is the admin's TZ.
+		// Client converts datetime-local to ISO+Z in the browser's tz before
+		// submitting, so this parses to the intended instant regardless of
+		// the server's TZ (prod runs UTC).
 		nextActionAt: rawNext ? new Date(rawNext) : new Date(Date.now() + 5 * 86_400_000),
 	});
 	await revalidate(getOutreachQuery.key);
