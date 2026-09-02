@@ -7,6 +7,7 @@ const links = [
 { href: "/admin/projects", label: "Projects" },
 	{ href: "/admin/companies", label: "Companies" },
 	{ href: "/admin/meetings", label: "Meetings" },
+	{ href: "/admin/outreach", label: "Outreach" },
 	{ href: "/admin/api-keys", label: "API Keys" },
 ];
 

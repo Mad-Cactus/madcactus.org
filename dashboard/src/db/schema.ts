@@ -11,6 +11,7 @@ import {
 	bigint,
 	pgView,
 	doublePrecision,
+	check,
 } from "drizzle-orm/pg-core";
 import { sql, eq } from "drizzle-orm";
 
@@ -56,6 +57,49 @@ export const invoiceStatus = pgEnum("invoice_status", [
 	"paid",
 	"void",
 ]);
+
+// ── Outreach pipeline (admin CRM-lite) ─────────────────────────────
+
+// Single source of truth for stage values — the column default, the check
+// constraint, and the UI advance buttons all derive from this array.
+export const OUTREACH_STAGES = [
+	"sent",
+	"watching",
+	"replied",
+	"meeting",
+	"won",
+	"shutdown",
+] as const;
+
+export type OutreachStage = (typeof OUTREACH_STAGES)[number];
+
+export const outreachProspects = pgTable(
+	"outreach_prospects",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		company: text("company").notNull(),
+		contactName: text("contact_name"),
+		email: text("email"),
+		stage: text("stage").notNull().default("sent"),
+		nextActionAt: timestamp("next_action_at", { withTimezone: true }),
+		nextActionNote: text("next_action_note"),
+		brainUrl: text("brain_url"),
+		videoUrl: text("video_url"),
+		notes: text("notes"),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date()),
+	},
+	(t) => [
+		// stage values come from the static const above — safe to inline raw
+		check(
+			"outreach_stage_check",
+			sql`${t.stage} in ${sql.raw(`(${OUTREACH_STAGES.map((s) => `'${s}'`).join(", ")})`)}`,
+			),
+		],
+	);
 
 // ponytail: doublePrecision (float8) instead of numeric. Float8 gives 15-digit
 // precision with native JS numbers — no string conversion needed. Real money
@@ -332,3 +376,4 @@ export type DeliverableStatus = Deliverable["status"];
 export type DocumentType = Document["type"];
 export type DocumentVisibility = Document["visibility"];
 export type InvoiceStatus = Invoice["status"];
+export type OutreachProspect = typeof outreachProspects.$inferSelect;
