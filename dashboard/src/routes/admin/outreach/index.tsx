@@ -40,6 +40,14 @@ function toInputValue(d: Date | null): string {
 	return `${x.getFullYear()}-${p(x.getMonth() + 1)}-${p(x.getDate())}T${p(x.getHours())}:${p(x.getMinutes())}`;
 }
 
+/** datetime-local submits wall clock; pin it to an instant (ISO+Z) in the
+ * browser's tz so the server (which may run UTC) stores what was meant. */
+function withInstantIso(fd: FormData): FormData {
+	const v = String(fd.get("next_action_at") || "");
+	fd.set("next_action_at", v ? new Date(v).toISOString() : "");
+	return fd;
+}
+
 function DigestSection(props: { brainUrl: string }) {
 	const digest = createAsync(() => getBrainDigestQuery(props.brainUrl), {
 		deferStream: true,
@@ -96,7 +104,7 @@ function ProspectCard(props: { prospect: OutreachProspect }) {
 	async function handleNextAction(e: Event) {
 		e.preventDefault();
 		setError("");
-		const res = (await setNextAction(new FormData(e.target as HTMLFormElement))) as { error?: string };
+		const res = (await setNextAction(withInstantIso(new FormData(e.target as HTMLFormElement)))) as { error?: string };
 		if (res.error) {
 			setError(res.error);
 			return;
@@ -196,7 +204,7 @@ export default function AdminOutreach() {
 		e.preventDefault();
 		setError("");
 		setMessage("");
-		const res = (await createProspect(new FormData(e.target as HTMLFormElement))) as { error?: string; success?: string };
+		const res = (await createProspect(withInstantIso(new FormData(e.target as HTMLFormElement)))) as { error?: string; success?: string };
 		if (res.error) {
 			setError(res.error);
 			return;
