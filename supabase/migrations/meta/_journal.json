@@ -64,6 +64,27 @@
       "when": 1788311450328,
       "tag": "0008_outreach",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788364236451,
+      "tag": "0009_colossal_slipstream",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1788366153415,
+      "tag": "0010_lyrical_blizzard",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1788375560133,
+      "tag": "0011_foamy_bloodstrike",
+      "breakpoints": true
     }
   ]
 }

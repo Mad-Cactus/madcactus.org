@@ -356,6 +356,232 @@ export const monthlyHoursByProject = pgView("monthly_hours_by_project").as(
 			),
 );
 
+// ── Redline (draft → human edits → lessons learning loop) ─────────
+// Postgres port of ~/GitHub/redline's SQLite schema. Same model: agents push
+// drafts (stamped with their chat_uuid), humans edit, finalize computes the
+// pair + diff, derivation derives lessons. Patterns are the machine-checkable
+// gate (lint); lessons are prose rules for agent context.
+
+export const redlineSurface = pgEnum("redline_surface", ["manual", "doc", "email"]);
+export const redlineAuthor = pgEnum("redline_author", ["agent", "human"]);
+export const redlineDraftStatus = pgEnum("redline_draft_status", ["open", "finalized", "deleted"]);
+export const redlinePatternType = pgEnum("redline_pattern_type", ["literal", "regex"]);
+export const redlineDirection = pgEnum("redline_direction", ["avoid", "prefer"]);
+export const redlineConfidence = pgEnum("redline_confidence", ["unconfirmed", "confirmed"]);
+export const redlineJobStatus = pgEnum("redline_job_status", ["pending", "processing", "done", "failed"]);
+
+export const redlineDrafts = pgTable(
+	"redline_drafts",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		title: text("title").notNull().default(""),
+		context: text("context"),
+		tags: text("tags"), // comma-separated
+		// pi session id of the writing agent — lets the derivation sidecar pull
+		// the exact transcript that produced the draft (the context problem)
+		chatUuid: text("chat_uuid"),
+		source: redlineAuthor("source").notNull().default("agent"),
+		status: redlineDraftStatus("status").notNull().default("open"),
+		// denormalized latest revision content — cheap reads for the inbox UI
+		currentContent: text("current_content").notNull(),
+		// plain uuid (not .references) — pairs.draft_id references drafts, so a
+		// typed FK here would be a circular definition
+		pairId: uuid("pair_id"),
+		surface: redlineSurface("surface").notNull().default("manual"),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date()),
+	},
+	(t) => [index("idx_redline_drafts_status").on(t.status)],
+);
+
+export const redlineRevisions = pgTable(
+	"redline_revisions",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		draftId: uuid("draft_id")
+			.notNull()
+			.references(() => redlineDrafts.id, { onDelete: "cascade" }),
+		content: text("content").notNull(),
+		author: redlineAuthor("author").notNull().default("agent"),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+	(t) => [index("idx_redline_revisions_draft").on(t.draftId)],
+);
+
+export const redlinePairs = pgTable(
+	"redline_pairs",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		draftId: uuid("draft_id"), // set when the pair came from a draft
+		surface: redlineSurface("surface").notNull().default("manual"),
+		context: text("context"),
+		tags: text("tags"),
+		chatUuid: text("chat_uuid"),
+		draftContent: text("draft_content").notNull(),
+		finalContent: text("final_content").notNull(),
+		diffText: text("diff_text").notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+	(t) => [index("idx_redline_pairs_created").on(t.createdAt)],
+);
+
+export const redlineLessons = pgTable(
+	"redline_lessons",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		pairId: uuid("pair_id").references(() => redlinePairs.id, { onDelete: "set null" }),
+		lesson: text("lesson").notNull(),
+		tags: text("tags"),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+	(t) => [index("idx_redline_lessons_pair").on(t.pairId)],
+);
+
+export const redlinePatterns = pgTable(
+	"redline_patterns",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		lessonId: uuid("lesson_id").references(() => redlineLessons.id, { onDelete: "set null" }),
+		rule: text("rule").notNull(),
+		pattern: text("pattern").notNull(),
+		patternType: redlinePatternType("pattern_type").notNull().default("literal"),
+		direction: redlineDirection("direction").notNull().default("avoid"),
+		category: text("category").notNull().default("style"),
+		beforeText: text("before_text"),
+		afterText: text("after_text"),
+		confidence: redlineConfidence("confidence").notNull().default("unconfirmed"),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+);
+
+export const redlineDerivationJobs = pgTable(
+	"redline_derivation_jobs",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		pairId: uuid("pair_id")
+			.notNull()
+			.references(() => redlinePairs.id, { onDelete: "cascade" })
+			.unique(), // idempotent — one job per pair
+		status: redlineJobStatus("status").notNull().default("pending"),
+		attempts: integer("attempts").notNull().default(0),
+		error: text("error"),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date()),
+	},
+);
+
+// ── Docs (CRDT markdown documents, redline-enabled) ───────────────
+
+export const docs = pgTable(
+	"docs",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		title: text("title").notNull().default("Untitled"),
+		// markdown projection of the Loro doc — canonical for search/export/lint
+		markdown: text("markdown").notNull().default(""),
+		// base64 Loro snapshot — CRDT merge layer (agent appends vs human edits)
+		loroSnapshot: text("loro_snapshot").notNull().default(""),
+		version: integer("version").notNull().default(0),
+		// last gated agent write — becomes the draft side of the finalize pair
+		lastAgentContent: text("last_agent_content"),
+		chatUuid: text("chat_uuid"),
+		// set = publicly viewable at /share/<token>
+		shareToken: text("share_token").unique(),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date()),
+	},
+);
+
+// ── Email (Gmail-backed inbox, redline-enabled) ────────────────────
+
+export const emailAccounts = pgTable("email_accounts", {
+	id: uuid("id").primaryKey().defaultRandom(),
+	email: text("email").notNull().unique(),
+	// Google OAuth refresh token. ponytail: plaintext in the single-tenant DB —
+	// the same DB already holds the Supabase service key via Fly secrets. Move
+	// to encrypted-at-rest if this ever goes multi-tenant.
+	refreshToken: text("refresh_token").notNull(),
+	scopes: text("scopes"),
+	// Gmail history API cursor for incremental sync
+	syncHistoryId: text("sync_history_id"),
+	lastSyncAt: timestamp("last_sync_at", { withTimezone: true }),
+	createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const emailThreads = pgTable(
+	"email_threads",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		accountId: uuid("account_id")
+			.notNull()
+			.references(() => emailAccounts.id, { onDelete: "cascade" }),
+		gmailThreadId: text("gmail_thread_id").notNull().unique(),
+		subject: text("subject").notNull().default("(no subject)"),
+		snippet: text("snippet"),
+		// last-message sender display ("Eric Brownell", "me")
+		fromName: text("from_name"),
+		fromEmail: text("from_email"),
+		unread: boolean("unread").notNull().default(false),
+		// macro's "e" = mark done — archived threads leave the inbox
+		archived: boolean("archived").notNull().default(false),
+		lastMessageAt: timestamp("last_message_at", { withTimezone: true }).notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+	(t) => [index("idx_email_threads_inbox").on(t.accountId, t.archived, t.lastMessageAt)],
+);
+
+export const emailMessages = pgTable(
+	"email_messages",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		threadId: uuid("thread_id")
+			.notNull()
+			.references(() => emailThreads.id, { onDelete: "cascade" }),
+		gmailId: text("gmail_id").notNull().unique(),
+		fromName: text("from_name"),
+		fromEmail: text("from_email"),
+		toEmails: text("to_emails"),
+		bodyText: text("body_text").notNull().default(""),
+		date: timestamp("date", { withTimezone: true }).notNull(),
+		isSent: boolean("is_sent").notNull().default(false),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+	(t) => [index("idx_email_messages_thread").on(t.threadId)],
+);
+
+export const emailOutbox = pgTable(
+	"email_outbox",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		// agent-created drafts ride the redline loop: send → finalize → pair
+		draftId: uuid("draft_id"), // plain ref — redline_drafts has no back-ref
+		threadId: uuid("thread_id"), // set = reply, null = new thread
+		toEmail: text("to_email").notNull(),
+		subject: text("subject").notNull(),
+		body: text("body").notNull(),
+		chatUuid: text("chat_uuid"),
+		status: text("status").notNull().default("draft"), // draft|sent|failed
+		gmailMessageId: text("gmail_message_id"),
+		pairId: uuid("pair_id"),
+		error: text("error"),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date()),
+	},
+	(t) => [index("idx_email_outbox_status").on(t.status)],
+);
+
 // ── Inferred types (replaces hand-maintained interfaces) ───────────
 
 export type Company = typeof companies.$inferSelect;
@@ -377,3 +603,14 @@ export type DocumentType = Document["type"];
 export type DocumentVisibility = Document["visibility"];
 export type InvoiceStatus = Invoice["status"];
 export type OutreachProspect = typeof outreachProspects.$inferSelect;
+export type Doc = typeof docs.$inferSelect;
+export type EmailAccount = typeof emailAccounts.$inferSelect;
+export type EmailThread = typeof emailThreads.$inferSelect;
+export type EmailMessage = typeof emailMessages.$inferSelect;
+export type EmailOutbox = typeof emailOutbox.$inferSelect;
+export type RedlineDraft = typeof redlineDrafts.$inferSelect;
+export type RedlineRevision = typeof redlineRevisions.$inferSelect;
+export type RedlinePair = typeof redlinePairs.$inferSelect;
+export type RedlineLesson = typeof redlineLessons.$inferSelect;
+export type RedlinePattern = typeof redlinePatterns.$inferSelect;
+export type RedlineDerivationJob = typeof redlineDerivationJobs.$inferSelect;
