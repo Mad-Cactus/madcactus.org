@@ -14,11 +14,14 @@ import {
 	deliverables,
 	deliverableUpdates,
 	apiKeys,
+	outreachProspects,
+	OUTREACH_STAGES,
 } from "~/db/schema";
 import type {
 	DocumentType,
 	InvoiceStatus,
 	DeliverableStatus,
+	OutreachStage,
 } from "~/db/schema";
 import { generateApiKey, hashKey, keyPrefix } from "~/lib/crypto";
 
@@ -683,3 +686,121 @@ export const revokeAdminApiKeyAction = action(async (formData: FormData) => {
 		return { error: e instanceof Error ? e.message : "Failed to revoke key." };
 	}
 }, "revokeAdminApiKey");
+
+// ── Outreach pipeline ───────────────────────────────────────────
+
+// Both lists in one pass: filtering by `now()` on the server keeps the
+// due-now list identical between SSR and hydration.
+export const getOutreachQuery = query(async () => {
+	"use server";
+	await requireAdmin();
+	const all = await db
+		.select()
+		.from(outreachProspects)
+		.orderBy(desc(outreachProspects.createdAt));
+	const now = new Date();
+	const due = all
+		.filter(
+			(p) =>
+				p.nextActionAt &&
+				p.nextActionAt <= now &&
+				p.stage !== "won" &&
+				p.stage !== "shutdown",
+		)
+		.sort(
+			(a, b) => a.nextActionAt!.getTime() - b.nextActionAt!.getTime(),
+		);
+	return { all, due };
+}, "admin-outreach");
+
+export const createOutreachAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const company = String(formData.get("company") || "").trim();
+	if (!company) return { error: "Company is required." };
+	const rawNext = String(formData.get("next_action_at") || "");
+	await db.insert(outreachProspects).values({
+		company,
+		contactName: String(formData.get("contact_name") || "").trim() || null,
+		email: String(formData.get("email") || "").trim() || null,
+		brainUrl: String(formData.get("brain_url") || "").trim() || null,
+		videoUrl: String(formData.get("video_url") || "").trim() || null,
+		stage: String(formData.get("stage") || "sent") as OutreachStage,
+		// datetime-local submits wall-clock time; Date parses it as local —
+		// single-admin app, so the server's TZ is the admin's TZ.
+		nextActionAt: rawNext ? new Date(rawNext) : new Date(Date.now() + 5 * 86_400_000),
+	});
+	await revalidate(getOutreachQuery.key);
+	return { success: `${company} added.` };
+}, "createOutreach");
+
+export const setOutreachStageAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const id = String(formData.get("id"));
+	const stage = String(formData.get("stage")) as OutreachStage;
+	if (!OUTREACH_STAGES.includes(stage)) return { error: "Unknown stage." };
+	await db
+		.update(outreachProspects)
+		.set({ stage })
+		.where(eq(outreachProspects.id, id));
+	await revalidate(getOutreachQuery.key);
+	return { success: `Stage → ${stage}.` };
+}, "setOutreachStage");
+
+export const setOutreachNextActionAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const id = String(formData.get("id"));
+	const raw = String(formData.get("next_action_at") || "");
+	await db
+		.update(outreachProspects)
+		.set({
+			nextActionAt: raw ? new Date(raw) : null,
+			nextActionNote: String(formData.get("next_action_note") || "").trim() || null,
+		})
+		.where(eq(outreachProspects.id, id));
+	await revalidate(getOutreachQuery.key);
+	return { success: "Next action saved." };
+}, "setOutreachNextAction");
+
+export interface BrainDigestItem {
+	kind: string;
+	headline: string;
+	occurredOn?: string;
+	citationUrl?: string;
+}
+
+// ponytail: fail-soft by design — the digest only drafts manual email
+// content, so any failure (network, non-200, slow >5s, bad JSON) degrades
+// to "brain unreachable" and never blocks the page. Timeout via
+// AbortSignal.timeout (Node 18+).
+export const getBrainDigestQuery = query(async (brainUrl: string) => {
+	"use server";
+	await requireAdmin();
+	try {
+		const res = await fetch(`${brainUrl.replace(/\/+$/, "")}/digest`, {
+			headers: { accept: "application/json" },
+			signal: AbortSignal.timeout(5_000),
+		});
+		if (!res.ok) return { error: "brain unreachable" as const };
+		const json: unknown = await res.json();
+		const raw = Array.isArray(json)
+			? json
+			: ((json as { items?: unknown[] })?.items ?? []);
+		const items = (raw as Record<string, unknown>[])
+			.slice(0, 3)
+			.map(
+				(i): BrainDigestItem => ({
+					kind: String(i.kind ?? "item"),
+					headline: String(i.headline ?? ""),
+					occurredOn: i.occurredOn ? String(i.occurredOn) : undefined,
+					citationUrl: i.citationUrl ? String(i.citationUrl) : undefined,
+				}),
+			)
+			.filter((i) => i.headline);
+		return { items };
+	} catch {
+		return { error: "brain unreachable" as const };
+	}
+}, "brain-digest");
