@@ -173,13 +173,15 @@ async function upsertMessage(account: EmailAccount, threadRowId: string, msg: Gm
 		.onConflictDoNothing({ target: emailMessages.gmailId });
 }
 
-/** Sync an account: pulls the latest 50 threads (full snapshot each time).
- *  historyId is stored for a future incremental history.list upgrade —
- *  ponytail: 50 threads × round-trip is fine at one-user volume. */
+/** Sync an account: pulls the latest 50 INBOX threads (full snapshot each
+ *  time). INBOX-only matters: an unfiltered pull re-inserts threads the user
+ *  spammed/trashed/archived locally, resurrecting them forever. historyId is
+ *  stored for a future incremental history.list upgrade — ponytail: 50
+ *  threads × round-trip is fine at one-user volume. */
 export async function syncAccount(account: EmailAccount): Promise<{ synced: number; full: boolean }> {
 	const list = await gmail<{ threads: GmailThreadRef[]; historyId?: string }>(
 		account,
-		"/threads?maxResults=50",
+		"/threads?labelIds=INBOX&maxResults=50",
 	);
 	let synced = 0;
 	for (const ref of list.threads ?? []) {

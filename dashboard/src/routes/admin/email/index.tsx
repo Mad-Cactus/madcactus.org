@@ -46,12 +46,18 @@ export default function AdminEmail() {
 		}
 	};
 
+	// set by threadOp when a row-removing op lands — the inbox effect then
+	// selects the thread above so triage continues from the same spot
+	let cursorToRestore: number | null = null;
+
 	const threadOp = async (id: string, op: string) => {
 		await fetch(`/api/email/threads/${id}`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ op }),
 		});
+		const removing = op === "archive" || op === "spam" || op === "delete";
+		if (removing) cursorToRestore = Math.max(selIdx() - 1, 0);
 		setSelected(null);
 		void revalidate("email-inbox"); // drop archived/marked rows from the list immediately
 	};
@@ -235,6 +241,16 @@ export default function AdminEmail() {
 		};
 		window.addEventListener("keydown", handler);
 		onCleanup(() => window.removeEventListener("keydown", handler));
+	});
+
+	createEffect(() => {
+		const threads = inbox()?.threads;
+		if (cursorToRestore === null || !threads?.length) return;
+		// the removed row's slot opened — land on the thread above it
+		const i = Math.min(cursorToRestore, threads.length - 1);
+		cursorToRestore = null;
+		const t = threads[i];
+		if (t) void loadThread(t, i);
 	});
 
 	createEffect(() => {
