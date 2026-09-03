@@ -7,8 +7,6 @@
 		"typecheck": "tsc --noEmit",
 		"prepare": "command -v git >/dev/null 2>&1 && git config core.hooksPath .githooks || true",
 		"start": "bun .output/server/index.mjs",
-		// tests are pure-function (postgres.js connects lazily, so the dummy URL
-		// never dials) — swap for a real DATABASE_URL only when a test hits the DB
 		"test": "DATABASE_URL=postgres://dummy@localhost:5/dummy bun test src/lib",
 		"preview": "vite preview",
 		"db:generate": "drizzle-kit generate",
