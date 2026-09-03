@@ -32,6 +32,14 @@ function fmtDate(d: Date | null): string {
 	});
 }
 
+/** 272 → "4m 32s" */
+function fmtDur(secs: number | null): string {
+	if (!secs) return "";
+	const m = Math.floor(secs / 60);
+	const s = secs % 60;
+	return m ? `${m}m ${s}s` : `${s}s`;
+}
+
 /** datetime-local value for an existing date (local wall clock). */
 function toInputValue(d: Date | null): string {
 	if (!d) return "";
@@ -135,7 +143,21 @@ function ProspectCard(props: { prospect: OutreachProspect }) {
 			<Show when={p().videoUrl || p().brainUrl}>
 				<div style={{ "font-size": "12px", margin: "6px 0" }}>
 					<Show when={p().videoUrl}>
-						<a href={p().videoUrl!} target="_blank" rel="noreferrer">video ↗</a>
+						<a href={p().videoUrl!} target="_blank" rel="noreferrer">video ↗</a>{" "}
+						<button
+							type="button"
+							class="btn btn-sm"
+							onClick={() => navigator.clipboard.writeText(`${location.origin}/v/${p().id}`)}
+						>
+							copy email link
+						</button>{" "}
+						<Show when={p().videoViewCount > 0} fallback={<span class="muted">unopened</span>}>
+							<span style={{ color: "var(--orange)" }}>
+								viewed {p().videoViewCount}x
+								<Show when={p().videoWatchSeconds > 0}> · {fmtDur(p().videoWatchSeconds)} watched</Show> · last{" "}
+								{fmtDate(p().videoLastViewedAt)}
+							</span>
+						</Show>
 					</Show>
 					<Show when={p().videoUrl && p().brainUrl}> · </Show>
 					<Show when={p().brainUrl}>

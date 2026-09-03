@@ -85,6 +85,11 @@ export const outreachProspects = pgTable(
 		nextActionNote: text("next_action_note"),
 		brainUrl: text("brain_url"),
 		videoUrl: text("video_url"),
+		// email link points at /v/:id → 302 here after logging the click
+		videoViewCount: integer("video_view_count").notNull().default(0),
+		videoFirstViewedAt: timestamp("video_first_viewed_at", { withTimezone: true }),
+		videoLastViewedAt: timestamp("video_last_viewed_at", { withTimezone: true }),
+		videoWatchSeconds: integer("video_watch_seconds").notNull().default(0),
 		notes: text("notes"),
 		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp("updated_at", { withTimezone: true })
