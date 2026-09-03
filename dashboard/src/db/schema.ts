@@ -90,6 +90,9 @@ export const outreachProspects = pgTable(
 		videoFirstViewedAt: timestamp("video_first_viewed_at", { withTimezone: true }),
 		videoLastViewedAt: timestamp("video_last_viewed_at", { withTimezone: true }),
 		videoWatchSeconds: integer("video_watch_seconds").notNull().default(0),
+		videoMaxPosition: integer("video_max_position").notNull().default(0),
+		videoDurationSeconds: integer("video_duration_seconds"),
+		videoCompleted: boolean("video_completed").notNull().default(false),
 		notes: text("notes"),
 		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp("updated_at", { withTimezone: true })

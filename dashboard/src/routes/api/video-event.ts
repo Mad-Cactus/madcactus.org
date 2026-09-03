@@ -5,9 +5,10 @@ import { outreachProspects } from "~/db/schema";
 
 // Beacon receiver for watch pages (/v/:id + public/v-watch.js).
 // open  → view count +1, first/last timestamps, sent → watching
-// watch → accumulate visible seconds (clamped; client is untrusted)
+// watch → real played seconds (native <video> events; client is untrusted)
+//         plus max position reached, duration, completion
 export async function POST(event: APIEvent) {
-	let body: { id?: string; type?: string; seconds?: number };
+	let body: { id?: string; type?: string; seconds?: number; position?: number; duration?: number; completed?: boolean };
 	try {
 		body = await event.request.json();
 	} catch {
@@ -32,12 +33,19 @@ export async function POST(event: APIEvent) {
 	}
 
 	if (body.type === "watch") {
+		// clamp every number — the client is untrusted
 		const seconds = Math.max(0, Math.min(Number(body.seconds) || 0, 7200));
-		if (seconds === 0) return new Response(null, { status: 204 });
+		const position = Math.max(0, Math.min(Math.round(Number(body.position) || 0), 86400));
+		const duration = Math.max(0, Math.min(Math.round(Number(body.duration) || 0), 86400));
+		const completed = body.completed === true;
+		if (seconds === 0 && position === 0 && !completed) return new Response(null, { status: 204 });
 		await db
 			.update(outreachProspects)
 			.set({
 				videoWatchSeconds: sql`least(${outreachProspects.videoWatchSeconds} + ${seconds}, 86400)`,
+				videoMaxPosition: sql`greatest(${outreachProspects.videoMaxPosition}, ${position})`,
+				videoDurationSeconds: sql`coalesce(${outreachProspects.videoDurationSeconds}, nullif(${duration}, 0))`,
+				videoCompleted: sql`${outreachProspects.videoCompleted} or ${completed}`,
 				videoLastViewedAt: sql`now()`,
 			})
 			.where(eq(outreachProspects.id, id));
