@@ -227,9 +227,13 @@ export async function syncAccount(account: EmailAccount): Promise<{ synced: numb
 	if (list.historyId) {
 		await db
 			.update(emailAccounts)
-			.set({ syncHistoryId: list.historyId, lastSyncAt: new Date() })
-			.where(eq(emailAccounts.id, account.id));
+			.set({ syncHistoryId: list.historyId });
 	}
+	// mark fresh even without a historyId — otherwise every read re-syncs
+	await db
+		.update(emailAccounts)
+		.set({ lastSyncAt: new Date() })
+		.where(eq(emailAccounts.id, account.id));
 	return { synced, full: !account.syncHistoryId };
 }
 

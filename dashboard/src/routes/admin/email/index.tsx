@@ -1,5 +1,5 @@
 import { Title } from "@solidjs/meta";
-import { createAsync, useAction, useSearchParams } from "@solidjs/router";
+import { createAsync, revalidate, useAction, useSearchParams } from "@solidjs/router";
 import { For, Show, createSignal, createEffect, onMount, onCleanup } from "solid-js";
 import Layout from "~/components/Layout";
 import {
@@ -155,6 +155,22 @@ export default function AdminEmail() {
 		// OAuth callback lands here with ?connected=1 — strip it so a later
 		// manual ?connected doesn't retrigger
 		if (searchParams.connected) window.location.replace("/admin/email");
+	});
+
+	// getInboxQuery syncs in the background (fire-and-forget) so this page must
+	// poll until the rows land — otherwise a fresh connect renders an empty inbox
+	// that stays empty until the next manual action.
+	onMount(() => {
+		let ticks = 0;
+		const timer = setInterval(() => {
+			const snap = inbox();
+			if (snap?.connected && snap.threads.length === 0 && ticks++ < 60) {
+				void revalidate("email-inbox");
+			} else {
+				clearInterval(timer);
+			}
+		}, 2500);
+		onCleanup(() => clearInterval(timer));
 	});
 
 	return (
