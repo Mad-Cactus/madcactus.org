@@ -1,23 +1,13 @@
 import { Title } from "@solidjs/meta";
 import { useParams } from "@solidjs/router";
 import { createResource, Match, Switch } from "solid-js";
-import { and, eq, isNotNull } from "drizzle-orm";
-import { db } from "~/db";
-import { outreachProspects } from "~/db/schema";
+import { getTrackedVideo } from "~/lib/watch-video";
 
 // Watch page for tracked outreach video links: the email points at /v/:id.
 // Read-only render — the open + watch-time are logged by public/v-watch.js
 // beaconing POST /api/video-event, so hydration re-runs can't double-count.
 // ponytail: prospect UUID is the token; swap for a random track_token if
 // links ever get shared beyond one email.
-async function getTrackedVideo(id: string) {
-	const rows = await db
-		.select({ id: outreachProspects.id, company: outreachProspects.company, videoUrl: outreachProspects.videoUrl })
-		.from(outreachProspects)
-		.where(and(eq(outreachProspects.id, id), isNotNull(outreachProspects.videoUrl)))
-		.limit(1);
-	return rows[0] ?? null;
-}
 
 /** cap.so share/embed URL → embeddable player URL; null for other hosts. */
 function capEmbedUrl(url: string): string | null {
@@ -46,7 +36,6 @@ export default function WatchVideo() {
 									<iframe
 										src={embed()}
 										allow="autoplay; fullscreen"
-										allowfullscreen
 										style={{ display: "block", width: "100%", height: "100vh", border: "0" }}
 									/>
 								)}
