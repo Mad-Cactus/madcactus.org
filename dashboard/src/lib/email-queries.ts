@@ -96,6 +96,7 @@ export type SendResult =
  * (draftId set), sending finalizes the redline draft → pair → derivation.
  */
 export async function sendOutboxDraft(outboxId: string, bodyOverride?: string): Promise<SendResult> {
+	"use server"; // file also exports client-imported query()/action() stubs — keep db chain out of the client bundle
 	const [row] = await db.select().from(emailOutbox).where(eq(emailOutbox.id, outboxId));
 	if (!row) return { ok: false, error: "draft not found" };
 	if (row.status === "sent") return { ok: false, error: "already sent" };
@@ -162,6 +163,7 @@ export async function createEmailDraft(input: {
 	threadId?: string;
 	context?: string;
 }): Promise<{ blocked: true; violations: Awaited<ReturnType<typeof lintDraft>> } | { blocked: false; outboxId: string; draftId: string }> {
+	"use server";
 	const violations = await lintDraft(input.body);
 	if (shouldBlock(violations)) return { blocked: true, violations };
 
