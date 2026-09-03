@@ -1,6 +1,6 @@
 import type { APIEvent } from "@solidjs/start/server";
 import { getAuthedClient } from "~/lib/session";
-import { getPrimaryAccount, setThreadArchived, setThreadUnread, threadWithMessages } from "~/lib/gmail";
+import { getPrimaryAccount, setThreadArchived, setThreadUnread, setThreadSpam, threadWithMessages, trashThread } from "~/lib/gmail";
 
 /**
  * GET /api/email/threads/:id → { thread, messages } for the reading pane.
@@ -19,7 +19,7 @@ export const GET = async (event: APIEvent) => {
 };
 
 /**
- * POST /api/email/threads/:id  { op: "archive" | "unarchive" | "read" | "unread" }
+ * POST /api/email/threads/:id  { op: "archive" | "unarchive" | "read" | "unread" | "spam" | "delete" }
  * Mirrors macro's e / shift+e / u / shift+u.
  */
 export const POST = async (event: APIEvent) => {
@@ -41,6 +41,12 @@ export const POST = async (event: APIEvent) => {
 				break;
 			case "read":
 				await setThreadUnread(account, event.params.id, false);
+				break;
+			case "spam":
+				await setThreadSpam(account, event.params.id);
+				break;
+			case "delete":
+				await trashThread(account, event.params.id);
 				break;
 			case "unread":
 				await setThreadUnread(account, event.params.id, true);

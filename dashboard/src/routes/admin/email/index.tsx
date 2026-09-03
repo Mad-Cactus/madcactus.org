@@ -23,6 +23,8 @@ export default function AdminEmail() {
 	const [q, setQ] = createSignal("");
 	const [selected, setSelected] = createSignal<ThreadFull | null>(null);
 	const [selIdx, setSelIdx] = createSignal(0);
+	// confirmation modal for destructive macros (spam / delete / unsubscribe)
+	const [pending, setPending] = createSignal<{ title: string; body: string; confirm: string; danger: boolean; run: () => Promise<void> } | null>(null);
 	const [compose, setCompose] = createSignal<{ to: string; subject: string; body: string; threadId?: string } | null>(null);
 	const [editBody, setEditBody] = createSignal<Record<string, string>>({});
 	const [sendStatus, setSendStatus] = createSignal("");
@@ -82,6 +84,64 @@ export default function AdminEmail() {
 		});
 	};
 
+	const confirmPending = async () => {
+		const p = pending();
+		setPending(null);
+		if (p) await p.run();
+	};
+
+	const askSpam = () => {
+		const s = selected();
+		if (!s) return;
+		setPending({
+			title: "Report spam?",
+			body: `Mark "${s.thread.subject}" from ${s.thread.fromEmail} as spam and drop it from your inbox.`,
+			confirm: "Report spam",
+			danger: true,
+			run: () => threadOp(s.thread.id, "spam"),
+		});
+	};
+
+	const askDelete = () => {
+		const s = selected();
+		if (!s) return;
+		setPending({
+			title: "Delete thread?",
+			body: `Move "${s.thread.subject}" from ${s.thread.fromEmail} to trash (recoverable in Gmail).`,
+			confirm: "Delete",
+			danger: true,
+			run: () => threadOp(s.thread.id, "delete"),
+		});
+	};
+
+	const askUnsub = async () => {
+		const s = selected();
+		if (!s) return;
+		setSendStatus("looking for unsubscribe info…");
+		const res = await fetch(`/api/email/threads/${s.thread.id}/unsubscribe`);
+		const info = (await res.json()) as { target: string; type: "http" | "mailto"; oneClick: boolean; subject?: string } | null;
+		if (!info) {
+			setSendStatus("No unsubscribe info found in this thread.");
+			setTimeout(() => setSendStatus(""), 5000);
+			return;
+		}
+		const what = info.type === "http"
+			? `One-click unsubscribe from ${new URL(info.target).host}${info.oneClick ? "" : " (plain POST)"} — the thread gets archived.`
+			: `This sends an unsubscribe email to ${info.target} — the thread gets archived.`;
+		setPending({
+			title: "Unsubscribe?",
+			body: what,
+			confirm: "Unsubscribe",
+			danger: false,
+			run: async () => {
+				const r = await fetch(`/api/email/threads/${s.thread.id}/unsubscribe`, { method: "POST" });
+				const j = (await r.json()) as { ok?: boolean; via?: string; error?: string };
+				setSendStatus(j.ok ? (j.via === "one-click" ? "Unsubscribed (one-click). Thread archived." : "Unsubscribe email sent. Thread archived.") : `unsubscribe failed: ${j.error}`);
+				setTimeout(() => setSendStatus(""), 6000);
+			},
+		});
+	};
+
 	const manualCompose = async () => {
 		const c = compose();
 		if (!c?.to || !c.body) return;
@@ -103,6 +163,19 @@ export default function AdminEmail() {
 			const typing = ["INPUT", "TEXTAREA"].includes(target.tagName) || target.isContentEditable;
 			if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") return; // palette handles
 			if (typing) return;
+			// confirm modal is up: it owns the keyboard — Enter runs, Escape
+			// cancels (keeping the selection), everything else is swallowed.
+			// Must sit above the global "/" and Escape branches.
+			if (pending()) {
+				if (e.key === "Enter") {
+					e.preventDefault();
+					void confirmPending();
+				} else if (e.key === "Escape") {
+					e.preventDefault();
+					setPending(null);
+				}
+				return;
+			}
 			const threads = inbox()?.threads ?? [];
 			if (e.key === "/") {
 				e.preventDefault();
@@ -135,6 +208,12 @@ export default function AdminEmail() {
 			} else if (e.key === "u" && selected()) {
 				await threadOp(selected()!.thread.id, "unread");
 				setSelected(null);
+			} else if (e.key === "!" && selected()) {
+				askSpam();
+			} else if (e.key === "#" && selected()) {
+				askDelete();
+			} else if (e.key === "x" && selected()) {
+				void askUnsub();
 			} else if (e.key === "r" && selected()) {
 				const last = selected()!.messages.filter((m) => !m.isSent).at(-1);
 				setCompose({
@@ -199,7 +278,7 @@ export default function AdminEmail() {
 				</Show>
 			</div>
 			<p class="page-subtitle">
-				j/k move · e done · u unread · r reply · f forward · c compose · / search — agent drafts below are
+				j/k move · e done · u unread · r reply · f forward · ! spam · # delete · x unsub · c compose · / search — agent drafts below are
 				voice-linted before sending
 			</p>
 
@@ -303,10 +382,37 @@ export default function AdminEmail() {
 						<div style={{ display: "flex", gap: "8px", "margin-top": "8px" }}>
 							<button type="button" class="btn btn-sm" onClick={() => threadOp(selected()!.thread.id, "archive")}>Done (e)</button>
 							<button type="button" class="btn btn-sm" onClick={() => threadOp(selected()!.thread.id, "unread")}>Unread (u)</button>
+							<button type="button" class="btn btn-sm" onClick={askUnsub}>Unsub (x)</button>
+							<button type="button" class="btn btn-sm" style={{ "border-color": "#a33", color: "#a33" }} onClick={askSpam}>Spam (!)</button>
+							<button type="button" class="btn btn-sm" style={{ "border-color": "#a33", color: "#a33" }} onClick={askDelete}>Delete (#)</button>
 						</div>
 					</div>
 				</Show>
 			</div>
+
+			{/* destructive-action confirm modal (spam / delete / unsubscribe) */}
+			<Show when={pending()}>
+				<div
+					style={{ position: "fixed", inset: "0", background: "rgba(0, 0, 0, 0.35)", "z-index": 60, display: "grid", "place-items": "center" }}
+					onClick={() => setPending(null)}
+				>
+					<div class="card" style={{ width: "460px", "max-width": "90vw", padding: "24px", background: "var(--bg-card)", "border-top-color": pending()!.danger ? "#a33" : "var(--text)" }} onClick={(e) => e.stopPropagation()}>
+						<h2 style={{ "font-size": "17px", margin: "0 0 8px" }}>{pending()!.title}</h2>
+						<p class="muted" style={{ "font-size": "14px", "line-height": "1.5", margin: 0, "overflow-wrap": "anywhere" }}>{pending()!.body}</p>
+						<div style={{ display: "flex", gap: "8px", "justify-content": "flex-end", "margin-top": "16px" }}>
+							<button type="button" class="btn btn-sm" onClick={() => setPending(null)}>Cancel (esc)</button>
+							<button
+								type="button"
+								class="btn btn-sm"
+								style={pending()!.danger ? { "border-color": "#a33", color: "#a33" } : { "border-color": "var(--gold)", color: "var(--gold)" }}
+								onClick={() => void confirmPending()}
+							>
+								{pending()!.confirm} (⏎)
+							</button>
+						</div>
+					</div>
+				</div>
+			</Show>
 
 			{/* compose/reply overlay */}
 			<Show when={compose()}>
