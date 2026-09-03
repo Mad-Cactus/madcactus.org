@@ -23,6 +23,7 @@
         "autoprefixer": "^10.5.4",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
+        "cmdk-solid": "^1.2.0",
         "cva": "1.0.0-beta.8",
         "diff": "^9.0.0",
         "drizzle-orm": "^0.45.2",
@@ -484,6 +485,8 @@
     "clone": ["clone@2.1.2", "", {}, "sha512-3Pe/CF1Nn94hyhIYpjtiLhdCoEoz0DqQ+988E9gmeEdQZlojxnOb74wctFyuwWQHzqyf9X7C7MG8juUpqBJT8w=="],
 
     "clsx": ["clsx@2.1.1", "", {}, "sha512-eYm0QWBtUrBWZWG0d386OGAw16Z995PiOVo2B7bjWSbHedGl5e0ZWaq65kOGgUSNesEIDkB9ISbTg/JK9dhCZA=="],
+
+    "cmdk-solid": ["cmdk-solid@1.2.0", "", { "peerDependencies": { "@kobalte/core": ">=0.12.4 <1", "solid-js": "^1.8.0" } }, "sha512-eOao2VrS+AF0oCgzsCgHJ25ZSoY7Sa6lU9U4Tb6dcPJ1NpZG7twbdTG04+g21KzKQWhF1F8M1Fr3qPJv9hLBqw=="],
 
     "comma-separated-tokens": ["comma-separated-tokens@2.0.3", "", {}, "sha512-Fu4hJdvzeylCfQPp9SGWidpzrMs7tTrlu6Vb8XGaRGck8QSNZJJp538Wrb60Lax4fPwR64ViY468OIUTbRlGZg=="],
 

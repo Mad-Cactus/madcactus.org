@@ -422,6 +422,68 @@
   margin-top: 12px;
 }
 
+/* ── Command palette (shadcn Command via cmdk-solid) ── */
+[cmdk-overlay] {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.25);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 120px 16px 0;
+}
+
+[cmdk-dialog] {
+  width: 520px;
+  max-width: 100%;
+  background: var(--bg-card);
+  border-top: 1px solid var(--text);
+  border-bottom: 1px solid var(--text);
+  overflow: hidden;
+  outline: none;
+}
+
+[cmdk-input] {
+  width: 100%;
+  padding: 14px 16px;
+  border: none;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  background: transparent;
+  font-family: inherit;
+  font-size: 15px;
+  color: inherit;
+  outline: none;
+}
+
+[cmdk-list] {
+  margin: 0;
+  padding: 0 0 6px;
+  list-style: none;
+  max-height: 330px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+[cmdk-empty] {
+  padding: 14px 16px;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+[cmdk-item] {
+  padding: 10px 16px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+}
+
+[cmdk-item][data-selected="true"] {
+  background: rgba(188, 156, 92, 0.12);
+}
+
 /* ── Buttons ── */
 .btn {
   display: inline-flex;

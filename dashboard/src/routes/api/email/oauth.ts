@@ -60,6 +60,9 @@ export const GET = async (event: APIEvent) => {
 		}
 		return to("/admin/email?connected=1");
 	} catch (e) {
-		return new Response(`Gmail connect failed: ${e instanceof Error ? e.message : e}`, { status: 500 });
+		// back to the app with the reason, instead of a raw 500 text page
+		const msg = (e instanceof Error ? e.message : String(e)).slice(0, 300);
+		console.error("gmail oauth failed:", msg);
+		return to(`/admin/email?connect=failed:${encodeURIComponent(msg)}`);
 	}
 };
