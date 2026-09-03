@@ -22,15 +22,19 @@ export default function AdminEmail() {
 
 	const [q, setQ] = createSignal("");
 	const [selected, setSelected] = createSignal<ThreadFull | null>(null);
+	const [selIdx, setSelIdx] = createSignal(0);
 	const [compose, setCompose] = createSignal<{ to: string; subject: string; body: string; threadId?: string } | null>(null);
 	const [editBody, setEditBody] = createSignal<Record<string, string>>({});
 	const [sendStatus, setSendStatus] = createSignal("");
 	const [connecting, setConnecting] = createSignal(false);
 
-	const loadThread = async (t: EmailThread) => {
+	const loadThread = async (t: EmailThread, i?: number) => {
 		const res = await fetch(`/api/email/threads/${t.id}`);
 		const data = (await res.json()) as ThreadFull;
+		if (i !== undefined) setSelIdx(i);
 		setSelected(data);
+		const row = document.querySelectorAll("[data-thread-row]")[i ?? selIdx()];
+		row?.scrollIntoView({ block: "nearest" });
 		if (t.unread) {
 			await fetch(`/api/email/threads/${t.id}`, {
 				method: "POST",
@@ -47,6 +51,7 @@ export default function AdminEmail() {
 			body: JSON.stringify({ op }),
 		});
 		setSelected(null);
+		void revalidate("email-inbox"); // drop archived/marked rows from the list immediately
 	};
 
 	const sendDraft = async (outboxId: string) => {
@@ -91,7 +96,6 @@ export default function AdminEmail() {
 	};
 
 	// ── hotkeys ──
-	let listIndex = () => 0;
 	let searchEl: HTMLInputElement | undefined;
 	onMount(() => {
 		const handler = async (e: KeyboardEvent) => {
@@ -111,16 +115,19 @@ export default function AdminEmail() {
 				return;
 			}
 			if (compose()) return;
+			// j/k move a visible selection; nothing selected yet → j starts at the
+			// top row instead of skipping it
+			const cur = selected() ? selIdx() : -1;
 			if (e.key === "j" || e.key === "ArrowDown") {
 				e.preventDefault();
-				listIndex = () => Math.min(listIndex() + 1, threads.length - 1);
-				const t = threads[listIndex()];
-				if (t) await loadThread(t);
+				const i = Math.min(cur + 1, threads.length - 1);
+				const t = threads[i];
+				if (t) await loadThread(t, i);
 			} else if (e.key === "k" || e.key === "ArrowUp") {
 				e.preventDefault();
-				listIndex = () => Math.max(listIndex() - 1, 0);
-				const t = threads[listIndex()];
-				if (t) await loadThread(t);
+				const i = Math.max(cur - 1, 0);
+				const t = threads[i];
+				if (t) await loadThread(t, i);
 			} else if (e.key === "e" && selected()) {
 				await threadOp(selected()!.thread.id, "archive");
 			} else if (e.key === "E" && selected()) {
@@ -249,11 +256,20 @@ export default function AdminEmail() {
 				<div>
 					<Show when={inbox()?.threads?.length} fallback={<div class="muted">{inbox()?.connected ? "Inbox zero." : "Connect Gmail to load your inbox."}</div>}>
 						<For each={inbox()?.threads}>
-							{(t) => (
+							{(t, i) => (
 								<div
+									data-thread-row=""
 									class="card"
-									style={{ padding: "12px 16px", "margin-bottom": "8px", cursor: "pointer", opacity: t.unread ? 1 : 0.75 }}
-									onClick={() => loadThread(t)}
+									style={{
+										padding: "12px 16px",
+										"margin-bottom": "8px",
+										cursor: "pointer",
+										opacity: t.unread ? 1 : 0.75,
+										// selected-row tint matches the palette's selection color
+										background: selected()?.thread.id === t.id ? "rgba(188, 156, 92, 0.12)" : undefined,
+										transition: "background 120ms",
+									}}
+									onClick={() => loadThread(t, i())}
 								>
 									<div style={{ display: "flex", gap: "10px", "align-items": "baseline" }}>
 										<Show when={t.unread}><span style={{ color: "#bc9c5c" }}>●</span></Show>
