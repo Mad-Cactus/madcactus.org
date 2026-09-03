@@ -25,6 +25,7 @@ export default function AdminEmail() {
 	const [compose, setCompose] = createSignal<{ to: string; subject: string; body: string; threadId?: string } | null>(null);
 	const [editBody, setEditBody] = createSignal<Record<string, string>>({});
 	const [sendStatus, setSendStatus] = createSignal("");
+	const [connecting, setConnecting] = createSignal(false);
 
 	const loadThread = async (t: EmailThread) => {
 		const res = await fetch(`/api/email/threads/${t.id}`);
@@ -169,13 +170,24 @@ export default function AdminEmail() {
 				<div style={{ flex: 1 }} />
 				<Show when={sendStatus()}><span class="muted" style={{ "font-size": "13px" }}>{sendStatus()}</span></Show>
 				<Show when={!status()} fallback={<button type="button" class="btn btn-sm" onClick={() => sync()}>Sync</button>}>
-					<a class="btn btn-sm" href="/api/email/oauth">Connect Gmail</a>
+					<a class="btn btn-sm" aria-busy={connecting()} href="/api/email/oauth" onClick={() => setConnecting(true)}>
+						{connecting() ? "Connecting…" : "Connect Gmail"}
+					</a>
 				</Show>
 			</div>
 			<p class="page-subtitle">
 				j/k move · e done · u unread · r reply · f forward · c compose · / search — agent drafts below are
 				voice-linted before sending
 			</p>
+
+			<Show when={searchParams.connect}>
+				<div
+					class="card"
+					style={{ padding: "10px 16px", "margin-bottom": "12px", border: "1px solid rgba(180,60,50,0.5)", background: "rgba(180,60,50,0.06)", "font-size": "14px" }}
+				>
+					Gmail connect failed: {String(searchParams.connect).replace(/^failed:/, "")}
+				</div>
+			</Show>
 
 			{/* Agent outbox drafts */}
 			<Show when={inbox()?.drafts?.length}>

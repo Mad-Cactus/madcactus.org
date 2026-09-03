@@ -5,7 +5,8 @@ import CommandPalette from "~/components/CommandPalette";
 
 const links = [
 	{ href: "/admin", label: "Dashboard" },
-{ href: "/admin/projects", label: "Projects" },
+	{ href: "/admin/email", label: "Email" },
+	{ href: "/admin/projects", label: "Projects" },
 	{ href: "/admin/companies", label: "Companies" },
 	{ href: "/admin/meetings", label: "Meetings" },
 	{ href: "/admin/outreach", label: "Outreach" },

@@ -1,8 +1,16 @@
 // Command palette (⌘K) + g-leader navigation, macro-style.
-// ⌘K: fuzzy action list — navigation, new doc, compose, sync.
+// Built on the shadcn Command parts (cmdk-solid); filtering, arrow-key
+// selection and Enter handling come from cmdk — this file is behavior only.
 // g <key>: g e email · g d docs · g a admin · g m meetings · g o outreach
 import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
 import { useNavigate } from "@solidjs/router";
+import {
+	CommandDialog,
+	CommandEmpty,
+	CommandInput,
+	CommandItem,
+	CommandList,
+} from "~/components/ui/command";
 
 type Cmd = { label: string; hint?: string; run: () => void };
 
@@ -10,8 +18,7 @@ export default function CommandPalette() {
 	const navigate = useNavigate();
 	const [open, setOpen] = createSignal(false);
 	const [gArmed, setGArmed] = createSignal(false);
-	const [filter, setFilter] = createSignal("");
-	const [index, setIndex] = createSignal(0);
+	const [search, setSearch] = createSignal("");
 
 	const cmds = (): Cmd[] => {
 		const go = (href: string, label: string): Cmd => ({ label, hint: href, run: () => navigate(href) });
@@ -38,16 +45,18 @@ export default function CommandPalette() {
 			},
 			{ label: "Compose email", hint: "email · c", run: () => navigate("/admin/email?compose=1") },
 			{ label: "Sync email", hint: "email", run: () => void fetch("/api/email/sync", { method: "POST" }) },
-		].filter((c): c is Cmd => !!c);
+		];
 	};
-
-	const visible = () =>
-		cmds().filter((c) => c.label.toLowerCase().includes(filter().toLowerCase()));
 
 	const run = (c: Cmd) => {
 		setOpen(false);
-		setFilter("");
+		setSearch("");
 		void c.run();
+	};
+
+	const toggle = () => {
+		setOpen(!open());
+		setSearch("");
 	};
 
 	onMount(() => {
@@ -58,25 +67,10 @@ export default function CommandPalette() {
 
 			if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
 				e.preventDefault();
-				setOpen(!open());
-				setFilter("");
-				setIndex(0);
+				toggle();
 				return;
 			}
-			if (open()) {
-				if (e.key === "Escape") setOpen(false);
-				else if (e.key === "ArrowDown") {
-					e.preventDefault();
-					setIndex(Math.min(index() + 1, visible().length - 1));
-				} else if (e.key === "ArrowUp") {
-					e.preventDefault();
-					setIndex(Math.max(index() - 1, 0));
-				} else if (e.key === "Enter") {
-					const c = visible()[index()];
-					if (c) run(c);
-				}
-				return;
-			}
+			if (open()) return; // cmdk handles arrows/enter/escape while open
 			if (typing) return;
 			// g-leader
 			if (e.key === "g" && !gArmed()) {
@@ -111,39 +105,28 @@ export default function CommandPalette() {
 	});
 
 	return (
-		<Show when={open()}>
-			<div
-				style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.25)", "z-index": 100, display: "flex", "justify-content": "center", "align-items": "flex-start", padding: "120px 16px 0" }}
-				onClick={() => setOpen(false)}
-			>
-				<div class="card" style={{ width: "520px", "max-width": "100%", padding: 0, background: "var(--bg-card)" }} onClick={(e) => e.stopPropagation()}>
-					<input
-						autofocus
-						placeholder="Type a command…"
-						value={filter()}
-						onInput={(e) => {
-							setFilter(e.currentTarget.value);
-							setIndex(0);
-						}}
-						style={{ width: "100%", padding: "14px 16px", border: "none", "border-bottom": "1px solid rgba(0,0,0,0.1)", background: "transparent", "font-size": "15px", outline: "none" }}
-					/>
-					<For each={visible()}>
-						{(c, i) => (
-							<div
-								style={{ padding: "10px 16px", cursor: "pointer", display: "flex", "justify-content": "space-between", background: i() === index() ? "rgba(188,156,92,0.12)" : "transparent" }}
-								onMouseEnter={() => setIndex(i())}
-								onClick={() => run(c)}
-							>
-								<span style={{ "font-size": "14px" }}>{c.label}</span>
-								<Show when={c.hint}><span class="muted" style={{ "font-size": "12px" }}>{c.hint}</span></Show>
-							</div>
-						)}
-					</For>
-					<Show when={visible().length === 0}>
-						<div class="muted" style={{ padding: "14px 16px", "font-size": "14px" }}>No matches.</div>
-					</Show>
-				</div>
-			</div>
-		</Show>
+		<CommandDialog
+			open={open()}
+			onOpenChange={(o: boolean) => {
+				setOpen(o);
+				if (o) setSearch("");
+			}}
+			label="Command menu"
+		>
+			<CommandInput value={search()} onValueChange={setSearch} placeholder="Type a command…" />
+			<CommandList>
+				<CommandEmpty>No matches.</CommandEmpty>
+				<For each={cmds()}>
+					{(c) => (
+						<CommandItem value={c.label} keywords={c.hint ? [c.hint] : undefined} onSelect={() => run(c)}>
+							<span>{c.label}</span>
+							<Show when={c.hint}>
+								<span class="muted" style={{ "font-size": "12px" }}>{c.hint}</span>
+							</Show>
+						</CommandItem>
+					)}
+				</For>
+			</CommandList>
+		</CommandDialog>
 	);
 }

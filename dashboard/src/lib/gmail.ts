@@ -14,11 +14,16 @@ export const GMAIL_SCOPES = [
 	"https://www.googleapis.com/auth/gmail.modify", // archive/unread changes
 ];
 
+// fly secrets / .env values sometimes carry trailing whitespace → Google's
+// cryptic "invalid_client"; trim defensively.
+const clientId = () => (process.env.GMAIL_CLIENT_ID ?? "").trim();
+const clientSecret = () => (process.env.GMAIL_CLIENT_SECRET ?? "").trim();
+
 export function oauthUrl(redirectUri: string, state = ""): string {
-	const clientId = process.env.GMAIL_CLIENT_ID;
-	if (!clientId) throw new Error("GMAIL_CLIENT_ID not set — see dashboard/.env.example");
+	const id = clientId();
+	if (!id) throw new Error("GMAIL_CLIENT_ID not set — see dashboard/.env.example");
 	const params = new URLSearchParams({
-		client_id: clientId,
+		client_id: id,
 		redirect_uri: redirectUri,
 		response_type: "code",
 		scope: GMAIL_SCOPES.join(" "),
@@ -36,8 +41,8 @@ export async function exchangeCode(code: string, redirectUri: string) {
 		headers: { "Content-Type": "application/x-www-form-urlencoded" },
 		body: new URLSearchParams({
 			code,
-			client_id: process.env.GMAIL_CLIENT_ID ?? "",
-			client_secret: process.env.GMAIL_CLIENT_SECRET ?? "",
+			client_id: clientId(),
+			client_secret: clientSecret(),
 			redirect_uri: redirectUri,
 			grant_type: "authorization_code",
 		}),
@@ -64,8 +69,8 @@ export async function accessTokenForRefresh(refreshToken: string): Promise<strin
 		headers: { "Content-Type": "application/x-www-form-urlencoded" },
 		body: new URLSearchParams({
 			refresh_token: refreshToken,
-			client_id: process.env.GMAIL_CLIENT_ID ?? "",
-			client_secret: process.env.GMAIL_CLIENT_SECRET ?? "",
+			client_id: clientId(),
+			client_secret: clientSecret(),
 			grant_type: "refresh_token",
 		}),
 	});
