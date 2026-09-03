@@ -32,6 +32,28 @@ function fmtDate(d: Date | null): string {
 	});
 }
 
+/** 272 → "4m 32s" */
+function fmtDur(secs: number | null): string {
+	if (!secs) return "";
+	const m = Math.floor(secs / 60);
+	const s = secs % 60;
+	return m ? `${m}m ${s}s` : `${s}s`;
+}
+
+/** "viewed 2x · 78% · 3m 41s played · last …" — null while unopened. */
+function videoSummary(p: OutreachProspect): string | null {
+	if (p.videoViewCount === 0) return null;
+	const parts = [`viewed ${p.videoViewCount}x`];
+	if (p.videoCompleted) parts.push("finished");
+	else if (p.videoDurationSeconds) {
+		const pct = Math.min(100, Math.round((p.videoMaxPosition / p.videoDurationSeconds) * 100));
+		if (pct > 0) parts.push(`${pct}%`);
+	}
+	if (p.videoWatchSeconds > 0) parts.push(`${fmtDur(p.videoWatchSeconds)} played`);
+	parts.push(`last ${fmtDate(p.videoLastViewedAt)}`);
+	return parts.join(" · ");
+}
+
 /** datetime-local value for an existing date (local wall clock). */
 function toInputValue(d: Date | null): string {
 	if (!d) return "";
@@ -135,7 +157,17 @@ function ProspectCard(props: { prospect: OutreachProspect }) {
 			<Show when={p().videoUrl || p().brainUrl}>
 				<div style={{ "font-size": "12px", margin: "6px 0" }}>
 					<Show when={p().videoUrl}>
-						<a href={p().videoUrl!} target="_blank" rel="noreferrer">video ↗</a>
+						<a href={p().videoUrl!} target="_blank" rel="noreferrer">video ↗</a>{" "}
+						<button
+							type="button"
+							class="btn btn-sm"
+							onClick={() => navigator.clipboard.writeText(`${location.origin}/v/${p().id}`)}
+						>
+							copy email link
+						</button>{" "}
+						<Show when={videoSummary(p())} fallback={<span class="muted">unopened</span>}>
+							<span style={{ color: "var(--orange)" }}>{videoSummary(p())}</span>
+						</Show>
 					</Show>
 					<Show when={p().videoUrl && p().brainUrl}> · </Show>
 					<Show when={p().brainUrl}>
