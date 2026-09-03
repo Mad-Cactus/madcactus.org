@@ -24,7 +24,7 @@ import {
 	search,
 	showPair,
 } from "~/lib/redline";
-import { agentWrite, finalizeDoc, getDoc, listDocs } from "~/lib/docs";
+import { agentWrite, createDoc, finalizeDoc, getDoc, listDocs } from "~/lib/docs";
 import { createEmailDraft } from "~/lib/email-queries";
 
 /**
@@ -288,6 +288,19 @@ const TOOLS = [
 	},
 	// ── Docs (CRDT markdown) ──
 	{
+		name: "create_doc",
+		description:
+			"Create a markdown doc and return its id. doc ids are UUIDs — use this before gated_write_doc when list_docs is empty.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				title: { type: "string" },
+				markdown: { type: "string", description: "Optional initial body." },
+			},
+			required: ["title"],
+		},
+	},
+	{
 		name: "list_docs",
 		description: "List markdown docs (id, title, version, updatedAt).",
 		inputSchema: { type: "object", properties: {} },
@@ -507,6 +520,11 @@ export const POST = async (event: APIEvent) => {
 						);
 						result = { ok: true };
 						break;
+					case "create_doc": {
+						const d = await createDoc(String(a.title), a.markdown ? String(a.markdown) : "");
+						result = { id: d.id, title: d.title, version: d.version };
+						break;
+					}
 					case "list_docs":
 						result = (await listDocs()).map((d) => ({
 							id: d.id,
