@@ -2,7 +2,7 @@
 	"name": "dashboard",
 	"type": "module",
 	"scripts": {
-		"dev": "vite dev",
+		"dev": "vite dev --port 3000",
 		"build": "tsc --noEmit && vite build",
 		"typecheck": "tsc --noEmit",
 		"prepare": "command -v git >/dev/null 2>&1 && git config core.hooksPath .githooks || true",
