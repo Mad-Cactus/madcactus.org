@@ -11,6 +11,7 @@ export default function AdminDocEditor() {
 	const [markdown, setMarkdown] = createSignal("");
 	const [status, setStatus] = createSignal("");
 	const [shareUrl, setShareUrl] = createSignal("");
+	let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
 	// seed once when the doc resource resolves
 	onMount(() => {
@@ -48,7 +49,17 @@ export default function AdminDocEditor() {
 			<Title>{doc()?.title ?? "Doc"} — Mad Cactus</Title>
 			<Show when={doc()}>
 				<div style={{ display: "flex", "align-items": "baseline", gap: "16px" }}>
-					<h1 class="page-title">{doc()!.title}</h1>
+					<input
+						class="page-title-input"
+						value={doc()!.title}
+						title="Click to rename"
+						onChange={(e) => {
+							const v = e.currentTarget.value.trim() || "Untitled";
+							if (v !== doc()!.title) void post("rename", { title: v });
+							else e.currentTarget.value = doc()!.title;
+						}}
+						onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+					/>
 					<span class="muted" style={{ "font-size": "13px" }}>{status() || `v${doc()!.version}`}</span>
 					<div style={{ flex: 1 }} />
 					<button type="button" class="btn btn-sm" onClick={async () => {
@@ -82,7 +93,16 @@ export default function AdminDocEditor() {
 				</Show>
 				<LexicalDocEditor
 					markdown={markdown()}
-					onMarkdownChange={setMarkdown}
+					onMarkdownChange={(md) => {
+						// skip the seed-conversion echo (same md) — it would bump the
+						// version on every open
+						if (md === markdown()) return;
+						setMarkdown(md);
+						// autosave to the DB, not just local state — a refresh must not
+						// lose the doc
+						clearTimeout(saveTimer);
+						saveTimer = setTimeout(() => void save(md), 1200);
+					}}
 					onSave={(md) => save(md)}
 				/>
 			</Show>

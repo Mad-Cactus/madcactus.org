@@ -3,11 +3,15 @@
 // Loads markdown, autosaves markdown: $convertFrom/ToMarkdownString.
 // Shortcuts mirror macro's DefaultShortcuts: ⌘⇧X strikethrough, ⌘E inline
 // code, ⌘⇧H highlight, plus ⌘S save.
-import { onCleanup, onMount } from "solid-js";
+import { onCleanup, onMount, createEffect } from "solid-js";
 import {
 	createEditor,
 	FORMAT_TEXT_COMMAND,
 	KEY_DOWN_COMMAND,
+	BEFORE_INPUT_COMMAND,
+	COMMAND_PRIORITY_HIGH,
+	$getSelection,
+	$isRangeSelection,
 } from "lexical";
 import {
 	$convertFromMarkdownString,
@@ -46,10 +50,9 @@ export default function LexicalDocEditor(props: {
 			onError: (e) => console.error(e),
 		});
 		ed.setRootElement(host);
-
-		ed.update(() => {
-			$convertFromMarkdownString(props.markdown, TRANSFORMERS);
-		});
+		// the JSX host must not carry contenteditable=false — Lexical manages the
+		// attribute itself, and a stale "false" leaves the doc uneditable
+		ed.setEditable(!props.readOnly);
 
 		const currentMd = () => {
 			let md = "";
@@ -59,12 +62,43 @@ export default function LexicalDocEditor(props: {
 			return md;
 		};
 
+		// seed + react to markdown prop changes; skip when the change came from
+		// our own typing (md equals what's already in the editor) so we never
+		// clobber the user's in-flight edits
+		createEffect(() => {
+			const md = props.markdown;
+			if (md === currentMd()) return;
+			ed.update(() => {
+				$convertFromMarkdownString(md, TRANSFORMERS);
+			});
+		});
+
 		// Autosave ~1.2s after typing stops (same cadence as the redline app).
 		let timer: ReturnType<typeof setTimeout> | undefined;
 		const offUpdate = ed.registerUpdateListener(() => {
 			clearTimeout(timer);
 			timer = setTimeout(() => props.onMarkdownChange(currentMd()), 1200);
 		});
+
+		// Lexical's built-in beforeinput handler preventDefaults the browser's
+		// insertText and then drops it in this app's environment (verified live:
+		// event arrives, state never changes, no error). Handling inserts ourselves
+		// at HIGH priority — before the built-in EDITOR-priority handler — makes
+		// typing work. Everything else (paste, delete, composition) falls through.
+		const offBeforeInput = ed.registerCommand(
+			BEFORE_INPUT_COMMAND,
+			(event: InputEvent) => {
+				if (event.inputType !== "insertText" || !event.data) return false;
+				const data = event.data;
+				event.preventDefault();
+				ed.update(() => {
+					const sel = $getSelection();
+					if ($isRangeSelection(sel)) sel.insertText(data);
+				});
+				return true;
+			},
+			COMMAND_PRIORITY_HIGH,
+		);
 
 		// Macro-style format shortcuts + ⌘S save.
 		const offKeys = ed.registerCommand(
@@ -100,6 +134,7 @@ export default function LexicalDocEditor(props: {
 			clearTimeout(timer);
 			offUpdate();
 			offKeys();
+			offBeforeInput();
 			ed.setRootElement(null);
 		});
 	});
@@ -109,7 +144,14 @@ export default function LexicalDocEditor(props: {
 			ref={host}
 			class="doc-editor"
 			classList={{ readonly: !!props.readOnly }}
-			contenteditable={false}
+			// Lexical toggles contenteditable itself only on setEditable() CHANGES —
+			// the app owns the initial attribute, and a missing/false one leaves the
+			// doc permanently uneditable
+			contenteditable={!props.readOnly}
+			// Grammarly's beforeinput hijack silently eats every keystroke under
+			// Lexical (event arrives, defaultPrevented, no text lands)
+			data-gramm="false"
+			data-gramm_editor="false"
 		/>
 	);
 }

@@ -1,6 +1,6 @@
 import type { APIEvent } from "@solidjs/start/server";
 import { getAuthedClient } from "~/lib/session";
-import { createDoc, getDoc, saveDocMarkdown, toggleShare, finalizeDoc } from "~/lib/docs";
+import { renameDoc, createDoc, getDoc, saveDocMarkdown, toggleShare, finalizeDoc } from "~/lib/docs";
 
 /**
  * Docs item API — admin-session guarded.
@@ -34,8 +34,9 @@ export const PUT = async (event: APIEvent) => {
 
 export const POST = async (event: APIEvent) => {
 	if (!(await requireAdmin())) return json({ error: "Unauthorized" }, 401);
-	const body = (await event.request.json().catch(() => ({}))) as { op?: string; enabled?: boolean };
+	const body = (await event.request.json().catch(() => ({}))) as { op?: string; enabled?: boolean; title?: string };
 	try {
+		if (body.op === "rename") return json({ ok: await renameDoc(event.params.id, String(body.title ?? "").trim() || "Untitled") });
 		if (body.op === "finalize") return json({ pairId: await finalizeDoc(event.params.id) });
 		if (body.op === "share") return json({ shareToken: await toggleShare(event.params.id, body.enabled !== false) });
 		return json({ error: "Unknown op" }, 400);

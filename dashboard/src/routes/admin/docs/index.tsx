@@ -14,6 +14,7 @@ export default function AdminDocs() {
 			<div style={{ display: "flex", "align-items": "baseline", gap: "16px" }}>
 				<h1 class="page-title">Docs</h1>
 				<form
+					style={{ display: "flex", gap: "8px", "align-items": "center" }}
 					onSubmit={(e) => {
 						e.preventDefault();
 						const fd = new FormData(e.currentTarget);

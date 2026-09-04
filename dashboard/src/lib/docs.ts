@@ -89,6 +89,10 @@ export async function saveDocMarkdown(id: string, markdown: string, author: "hum
 		.where(eq(docs.id, id));
 }
 
+export async function renameDoc(id: string, title: string) {
+	await db.update(docs).set({ title }).where(eq(docs.id, id));
+}
+
 export async function toggleShare(id: string, enabled: boolean): Promise<string | null> {
 	const token = enabled ? randomBytes(12).toString("hex") : null;
 	await db.update(docs).set({ shareToken: token }).where(eq(docs.id, id));

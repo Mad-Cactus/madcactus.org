@@ -175,6 +175,26 @@
   margin-bottom: 4px;
 }
 
+.page-title-input {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: 32px;
+  letter-spacing: -0.5px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px dashed transparent;
+  padding: 0;
+  color: inherit;
+  width: 100%;
+  max-width: 640px;
+}
+
+.page-title-input:hover,
+.page-title-input:focus {
+  border-bottom-color: rgba(188, 156, 92, 0.5);
+  outline: none;
+}
+
 .page-subtitle {
   font-family: var(--font-sans);
   font-size: 13px;
