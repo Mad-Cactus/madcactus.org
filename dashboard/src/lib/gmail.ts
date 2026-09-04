@@ -1,8 +1,8 @@
 // Gmail client — OAuth token flow, incremental sync (history API), full sync,
 // body extraction, MIME sending. One account (Collin's), kept deliberately thin.
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "~/db";
-import { emailAccounts, emailMessages, emailThreads, type EmailAccount } from "~/db/schema";
+import { emailAccounts, emailMessages, emailThreads, type EmailAccount, type EmailThread } from "~/db/schema";
 
 const GOOGLE_AUTH = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN = "https://oauth2.googleapis.com/token";
@@ -153,6 +153,7 @@ type GmailMessage = {
 	threadId: string;
 	labelIds: string[];
 	internalDate: string;
+	snippet?: string;
 	payload: GmailPayload;
 };
 
@@ -173,66 +174,123 @@ async function upsertMessage(account: EmailAccount, threadRowId: string, msg: Gm
 		.onConflictDoNothing({ target: emailMessages.gmailId });
 }
 
-/** Sync an account: pulls the latest 50 INBOX threads (full snapshot each
- *  time). INBOX-only matters: an unfiltered pull re-inserts threads the user
- *  spammed/trashed/archived locally, resurrecting them forever. historyId is
- *  stored for a future incremental history.list upgrade — ponytail: 50
- *  threads × round-trip is fine at one-user volume. */
-export async function syncAccount(account: EmailAccount): Promise<{ synced: number; full: boolean }> {
-	const list = await gmail<{ threads: GmailThreadRef[]; historyId?: string }>(
-		account,
-		"/threads?labelIds=INBOX&maxResults=50",
-	);
-	let synced = 0;
-	for (const ref of list.threads ?? []) {
-		const full = await gmail<{ id: string; messages: GmailMessage[]; historyId: string }>(
-			account,
-			`/threads/${ref.id}?format=full`,
-		);
-		const messages = full.messages ?? [];
-		if (messages.length === 0) continue;
-		const last = messages[messages.length - 1];
-		const from = addr(header(last.payload, "From"));
-		const subject = header(last.payload, "Subject") || "(no subject)";
-		const unread = last.labelIds?.includes("UNREAD") ?? false;
-		const lastDate = new Date(Number(last.internalDate));
+async function fetchFullThread(account: EmailAccount, id: string) {
+	return gmail<{ id: string; messages: GmailMessage[]; historyId: string }>(account, `/threads/${id}?format=full`);
+}
 
-		const [threadRow] = await db
-			.insert(emailThreads)
-			.values({
-				accountId: account.id,
-				gmailThreadId: full.id,
+/** Upsert one full thread (+ its messages). `archived` defaults to "does any
+ *  message still carry INBOX" — Gmail's own truth, used for threads fetched
+ *  outside a sync (search hits); sync passes it explicitly from the id lists. */
+async function upsertThread(
+	account: EmailAccount,
+	full: Awaited<ReturnType<typeof fetchFullThread>>,
+	archived?: boolean,
+) {
+	const messages = full.messages ?? [];
+	if (messages.length === 0) return null;
+	const last = messages[messages.length - 1];
+	const from = addr(header(last.payload, "From"));
+	const subject = header(last.payload, "Subject") || "(no subject)";
+	const unread = last.labelIds?.includes("UNREAD") ?? false;
+	const lastDate = new Date(Number(last.internalDate));
+
+	const [threadRow] = await db
+		.insert(emailThreads)
+		.values({
+			accountId: account.id,
+			gmailThreadId: full.id,
+			subject,
+			snippet: last.snippet ?? "",
+			fromName: from.name ?? from.email,
+			fromEmail: from.email,
+			unread,
+			archived: archived ?? !messages.some((m) => m.labelIds?.includes("INBOX")),
+			lastMessageAt: lastDate,
+		})
+		.onConflictDoUpdate({
+			target: emailThreads.gmailThreadId,
+			set: {
 				subject,
-				snippet: ref.snippet ?? "",
+				snippet: last.snippet ?? "",
 				fromName: from.name ?? from.email,
 				fromEmail: from.email,
 				unread,
+				archived: archived ?? !messages.some((m) => m.labelIds?.includes("INBOX")),
 				lastMessageAt: lastDate,
-			})
-			.onConflictDoUpdate({
-				target: emailThreads.gmailThreadId,
-				set: {
-					subject,
-					snippet: ref.snippet ?? "",
-					fromName: from.name ?? from.email,
-					fromEmail: from.email,
-					unread,
-					lastMessageAt: lastDate,
-				},
-			})
-			.returning();
+			},
+		})
+		.returning();
 
-		for (const msg of messages) {
-			await upsertMessage(account, threadRow.id, msg);
-			synced++;
+	for (const msg of messages) await upsertMessage(account, threadRow.id, msg);
+	return threadRow;
+}
+
+/** Fetch full threads for gmail ids not yet local, capped per call so the
+ *  first-ever sync backfills over several background syncs instead of one
+ *  API-storming request. Returns how many were fetched. */
+async function fetchMissingThreads(account: EmailAccount, ids: string[], max: number): Promise<number> {
+	if (ids.length === 0) return 0;
+	const known = await db
+		.select({ gmailThreadId: emailThreads.gmailThreadId })
+		.from(emailThreads)
+		.where(inArray(emailThreads.gmailThreadId, ids));
+	const knownSet = new Set(known.map((r) => r.gmailThreadId));
+	let fetched = 0;
+	for (const id of ids) {
+		if (fetched >= max) break;
+		if (knownSet.has(id)) continue;
+		await upsertThread(account, await fetchFullThread(account, id));
+		fetched++;
+	}
+	return fetched;
+}
+
+/** List every thread id carrying a label (paginated). ponytail: capped at
+ *  2000 — one user's mailbox; raise the cap if it ever fills up. */
+async function listThreadIds(account: EmailAccount, label: "INBOX" | "SENT", cap = 2000): Promise<string[]> {
+	const ids: string[] = [];
+	let pageToken: string | undefined;
+	do {
+		const page = await gmail<{ threads?: { id: string }[]; nextPageToken?: string }>(
+			account,
+			`/threads?labelIds=${label}&maxResults=500${pageToken ? `&pageToken=${pageToken}` : ""}`,
+		);
+		for (const t of page.threads ?? []) ids.push(t.id);
+		pageToken = page.nextPageToken;
+	} while (pageToken && ids.length < cap);
+	return ids;
+}
+
+/** Sync: mirror Gmail's INBOX + SENT id lists into the local corpus. Unknown
+ *  threads get fetched (capped per run), the 50 most recent inbox threads are
+ *  re-fetched for freshness (unread/snippet/replies), and `archived` is
+ *  mirrored from INBOX membership in bulk for everything else. ponytail: full
+ *  id-list diff each sync instead of the history API — once the corpus is
+ *  local a sync costs a few cheap list calls; history.list can come later. */
+export async function syncAccount(account: EmailAccount): Promise<{ synced: number; full: boolean }> {
+	const [inboxIds, sentIds] = await Promise.all([listThreadIds(account, "INBOX"), listThreadIds(account, "SENT")]);
+	const inboxSet = new Set(inboxIds);
+	const allIds = [...new Set([...inboxIds, ...sentIds])];
+
+	let synced = await fetchMissingThreads(account, allIds, 100);
+
+	for (const id of inboxIds.slice(0, 50)) {
+		const row = await upsertThread(account, await fetchFullThread(account, id), false);
+		if (row) synced++;
+	}
+
+	const setArchived = async (ids: string[], archived: boolean) => {
+		for (let i = 0; i < ids.length; i += 500) {
+			await db
+				.update(emailThreads)
+				.set({ archived })
+				.where(and(eq(emailThreads.accountId, account.id), inArray(emailThreads.gmailThreadId, ids.slice(i, i + 500))));
 		}
-	}
-	if (list.historyId) {
-		await db
-			.update(emailAccounts)
-			.set({ syncHistoryId: list.historyId });
-	}
-	// mark fresh even without a historyId — otherwise every read re-syncs
+	};
+	await setArchived(inboxIds, false);
+	await setArchived(allIds.filter((id) => !inboxSet.has(id)), true);
+
+	// mark fresh — otherwise every read re-syncs
 	await db
 		.update(emailAccounts)
 		.set({ lastSyncAt: new Date() })
@@ -400,34 +458,30 @@ export async function trashThread(account: EmailAccount, threadRowId: string) {
 	await removeLocalThread(account, threadRowId);
 }
 
-/** Inbox list (or search via Gmail q passthrough). */
-export async function listInbox(account: EmailAccount, opts: { q?: string; includeArchived?: boolean } = {}) {
+/** Inbox list — everything Gmail still counts as INBOX (`archived` mirrors
+ *  that after each sync). Search runs through Gmail's index, so it covers the
+ *  whole mailbox (sent included); matches never synced are fetched full first
+ *  so results always have bodies. */
+export async function listInbox(account: EmailAccount, opts: { q?: string } = {}) {
 	if (opts.q) {
-		// search live via Gmail, then reconcile rows (best of both: fast, fresh)
-		const results = await gmail<{ threads: GmailThreadRef[] }>(
+		const results = await gmail<{ threads?: GmailThreadRef[] }>(
 			account,
-			`/threads?q=${encodeURIComponent(opts.q)}&maxResults=25`,
+			`/threads?q=${encodeURIComponent(opts.q)}&maxResults=50`,
 		);
 		const ids = (results.threads ?? []).map((t) => t.id);
 		if (ids.length === 0) return [];
-		const rows = await db
+		await fetchMissingThreads(account, ids, 25);
+		return db
 			.select()
 			.from(emailThreads)
 			.where(inArray(emailThreads.gmailThreadId, ids))
 			.orderBy(desc(emailThreads.lastMessageAt));
-		// fire-and-forget sync of searched threads so bodies exist
-		void syncAccount(account).catch(() => {});
-		return rows;
 	}
-	const where = opts.includeArchived
-		? eq(emailThreads.accountId, account.id)
-		: and(eq(emailThreads.accountId, account.id), eq(emailThreads.archived, false));
 	return db
 		.select()
 		.from(emailThreads)
-		.where(where)
-		.orderBy(desc(emailThreads.lastMessageAt))
-		.limit(50);
+		.where(and(eq(emailThreads.accountId, account.id), eq(emailThreads.archived, false)))
+		.orderBy(desc(emailThreads.lastMessageAt));
 }
 
 export async function threadWithMessages(account: EmailAccount, threadRowId: string) {
@@ -444,15 +498,22 @@ export async function threadWithMessages(account: EmailAccount, threadRowId: str
 	return { thread, messages };
 }
 
-/** Count helpers for the UI header. */
-export async function inboxCounts(account: EmailAccount) {
-	const [{ unread }] = await db
-		.select({ unread: sql<number>`count(*)::int` })
+/** Sent view: every thread with at least one message I sent, newest send
+ *  first, carrying the recipient of its latest sent message. */
+export async function listSent(account: EmailAccount) {
+	const rows = await db
+		.select({ thread: emailThreads, msg: emailMessages })
 		.from(emailThreads)
-		.where(and(eq(emailThreads.accountId, account.id), eq(emailThreads.unread, true), eq(emailThreads.archived, false)));
-	const [{ total }] = await db
-		.select({ total: sql<number>`count(*)::int` })
-		.from(emailThreads)
-		.where(and(eq(emailThreads.accountId, account.id), eq(emailThreads.archived, false)));
-	return { unread, total };
+		.innerJoin(emailMessages, and(eq(emailMessages.threadId, emailThreads.id), eq(emailMessages.isSent, true)))
+		.where(eq(emailThreads.accountId, account.id))
+		.orderBy(desc(emailMessages.date));
+	// rows are date-desc → first sight of a thread is its latest sent message
+	const seen = new Set<string>();
+	const out: { thread: EmailThread; to: string | null; sentAt: Date }[] = [];
+	for (const r of rows) {
+		if (seen.has(r.thread.id)) continue;
+		seen.add(r.thread.id);
+		out.push({ thread: r.thread, to: r.msg.toEmails, sentAt: r.msg.date });
+	}
+	return out;
 }

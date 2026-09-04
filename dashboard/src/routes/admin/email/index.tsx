@@ -16,9 +16,9 @@ type ThreadFull = { thread: EmailThread; messages: EmailMessage[] };
 
 export default function AdminEmail() {
 	const status = createAsync(() => getEmailStatusQuery(), { deferStream: true });
-	const inbox = createAsync(() => getInboxQuery(), { deferStream: true });
-	const sync = useAction(syncEmailAction);
 	const [searchParams] = useSearchParams();
+	const inbox = createAsync(() => getInboxQuery(searchParams.q ? { q: String(searchParams.q) } : {}), { deferStream: true });
+	const sync = useAction(syncEmailAction);
 
 	const [q, setQ] = createSignal("");
 	const [selected, setSelected] = createSignal<ThreadFull | null>(null);
@@ -26,6 +26,8 @@ export default function AdminEmail() {
 	// confirmation modal for destructive macros (spam / delete / unsubscribe)
 	const [pending, setPending] = createSignal<{ title: string; body: string; confirm: string; danger: boolean; run: () => Promise<void> } | null>(null);
 	const [compose, setCompose] = createSignal<{ to: string; subject: string; body: string; threadId?: string } | null>(null);
+	// client-side windowing over the full local corpus — no server pagination
+	const [visibleCount, setVisibleCount] = createSignal(50);
 	const [editBody, setEditBody] = createSignal<Record<string, string>>({});
 	const [sendStatus, setSendStatus] = createSignal("");
 	const [connecting, setConnecting] = createSignal(false);
@@ -77,6 +79,7 @@ export default function AdminEmail() {
 		if (r.ok) {
 			setSendStatus(r.pairId ? `sent — lesson pair ${r.pairId.slice(0, 8)} queued` : "sent");
 			setTimeout(() => setSendStatus(""), 5000);
+			void revalidate("email-inbox"); // move the row from drafts to Sent immediately
 		} else {
 			setSendStatus(`failed: ${r.error}`);
 		}
@@ -201,12 +204,18 @@ export default function AdminEmail() {
 				e.preventDefault();
 				const i = Math.min(cur + 1, threads.length - 1);
 				const t = threads[i];
-				if (t) await loadThread(t, i);
+				if (t) {
+					if (i >= visibleCount()) setVisibleCount(i + 100);
+					await loadThread(t, i);
+				}
 			} else if (e.key === "k" || e.key === "ArrowUp") {
 				e.preventDefault();
 				const i = Math.max(cur - 1, 0);
 				const t = threads[i];
-				if (t) await loadThread(t, i);
+				if (t) {
+					if (i >= visibleCount()) setVisibleCount(i + 100);
+					await loadThread(t, i);
+				}
 			} else if (e.key === "e" && selected()) {
 				await threadOp(selected()!.thread.id, "archive");
 			} else if (e.key === "E" && selected()) {
@@ -341,6 +350,7 @@ export default function AdminEmail() {
 					onInput={(e) => setQ(e.currentTarget.value)}
 					onKeyDown={(e) => {
 						if (e.key === "Enter") window.location.href = `/admin/email?q=${encodeURIComponent(q())}`;
+						if (e.key === "Escape") window.location.replace("/admin/email");
 					}}
 					style={{ width: "100%", padding: "10px 14px", background: "var(--bg-card)", border: "1px solid rgba(0,0,0,0.12)", "font-size": "14px" }}
 				/>
@@ -349,8 +359,8 @@ export default function AdminEmail() {
 			<div style={{ display: "grid", "grid-template-columns": selected() ? "1fr 1.4fr" : "1fr", gap: "16px" }}>
 				{/* list */}
 				<div>
-					<Show when={inbox()?.threads?.length} fallback={<div class="muted">{inbox()?.connected ? "Inbox zero." : "Connect Gmail to load your inbox."}</div>}>
-						<For each={inbox()?.threads}>
+					<Show when={inbox()?.threads?.length} fallback={<div class="muted">{inbox()?.connected ? (searchParams.q ? "No matches." : "Inbox zero.") : "Connect Gmail to load your inbox."}</div>}>
+						<For each={inbox()?.threads.slice(0, visibleCount())}>
 							{(t, i) => (
 								<div
 									data-thread-row=""
@@ -377,6 +387,11 @@ export default function AdminEmail() {
 								</div>
 							)}
 						</For>
+						<Show when={(inbox()?.threads.length ?? 0) > visibleCount()}>
+							<button type="button" class="btn btn-sm" style={{ "margin-top": "8px" }} onClick={() => setVisibleCount((c) => c + 100)}>
+								Load older mail ({inbox()!.threads.length - visibleCount()} more)…
+							</button>
+						</Show>
 					</Show>
 				</div>
 
@@ -405,6 +420,40 @@ export default function AdminEmail() {
 					</div>
 				</Show>
 			</div>
+
+			{/* Sent — every thread with mail I sent (dashboard sends land here via
+			    the local insert + SENT sync; Gmail-UI sends arrive on next sync) */}
+			<Show when={inbox()?.sent?.length}>
+				<h2 style={{ "font-size": "16px", margin: "24px 0 8px" }}>Sent</h2>
+				<For each={inbox()!.sent.slice(0, visibleCount())}>
+					{(s) => (
+						<div
+							class="card"
+							style={{
+								padding: "12px 16px",
+								"margin-bottom": "8px",
+								cursor: "pointer",
+								opacity: 0.85,
+								background: selected()?.thread.id === s.thread.id ? "rgba(188, 156, 92, 0.12)" : undefined,
+							}}
+							onClick={() => loadThread(s.thread)}
+						>
+							<div style={{ display: "flex", gap: "10px", "align-items": "baseline" }}>
+								<strong style={{ "font-size": "14px", flex: 1 }}>{s.thread.subject}</strong>
+								<span class="muted" style={{ "font-size": "12px" }}>{new Date(s.sentAt).toLocaleDateString()}</span>
+							</div>
+							<div class="muted" style={{ "font-size": "13px", "margin-top": "4px" }}>
+								to {s.to ?? "(unknown)"} — {s.thread.snippet?.slice(0, 90)}
+							</div>
+						</div>
+					)}
+				</For>
+				<Show when={inbox()!.sent.length > visibleCount()}>
+					<button type="button" class="btn btn-sm" style={{ "margin-top": "4px" }} onClick={() => setVisibleCount((c) => c + 100)}>
+						Load older sent mail ({inbox()!.sent.length - visibleCount()} more)…
+					</button>
+				</Show>
+			</Show>
 
 			{/* destructive-action confirm modal (spam / delete / unsubscribe) */}
 			<Show when={pending()}>
