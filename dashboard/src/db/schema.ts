@@ -13,6 +13,9 @@ import {
 	pgView,
 	doublePrecision,
 	check,
+	jsonb,
+	real,
+	date,
 } from "drizzle-orm/pg-core";
 import { sql, eq } from "drizzle-orm";
 
@@ -416,35 +419,228 @@ export const textVersions = pgTable(
 	(t) => [uniqueIndex("text_versions_entity_ver_idx").on(t.entity, t.entityId, t.version)],
 );
 
-// ── Company brain (generated memory — Macro-style unified memory) ──
+// ── Brain (gbrain-style distilled knowledge, native tables) ────────
+// Ported from garrytan/gbrain's Postgres model: pages hold distilled
+// knowledge, chunks make it retrievable, facts are atomic claims with
+// supersession chains (never deleted — audit trail), takes are consolidated
+// conclusions, open_loops track commitments. Tight coupling: provenance
+// columns (source_table/source_id) point INTO workspace tables instead of
+// gbrain's sources; company_id ties pages/loops to real clients.
 
-export const memories = pgTable(
-	"memories",
+export const brainEntityKind = pgEnum("brain_entity_kind", ["company", "person", "project", "topic"]);
+export const brainFactKind = pgEnum("brain_fact_kind", ["event", "preference", "commitment", "belief", "fact", "idea"]);
+export const brainVisibility = pgEnum("brain_visibility", ["private", "world"]);
+export const brainNotability = pgEnum("brain_notability", ["high", "medium", "low"]);
+export const brainLoopType = pgEnum("brain_loop_type", [
+	"commitment_owed_by_me",
+	"commitment_owed_to_me",
+	"unanswered_inbound",
+	"unanswered_outbound",
+	"decision_pending",
+]);
+export const brainLoopStatus = pgEnum("brain_loop_status", ["open", "done", "dropped", "stale"]);
+export const brainLoopDetector = pgEnum("brain_loop_detector", ["deterministic_thread", "llm_extract", "manual"]);
+export const brainTakeKind = pgEnum("brain_take_kind", ["fact", "take", "bet", "hypothesis"]);
+export const brainJobStatus = pgEnum("brain_job_status", ["pending", "running", "done", "failed"]);
+
+export const brainPages = pgTable(
+	"brain_pages",
 	{
 		id: uuid("id").primaryKey().defaultRandom(),
-		// 'company' = whole firm; 'client' = scoped to one company
-		scope: text("scope", { enum: ["company", "client"] }).notNull(),
-		companyId: uuid("company_id").references(() => companies.id, { onDelete: "cascade" }),
-		// the generated ~1000-3000 word memory blob, prepended to agent prompts
-		content: text("content").notNull(),
-		// 'generating' while a refresh is in flight; content stays servable
-		status: text("status", { enum: ["ready", "generating", "failed"] })
+		// unique citation key, kebab-case — [source:slug] style
+		slug: text("slug").notNull().unique(),
+		// 'entity' (company/person/project/topic card) | 'take' | 'summary' | 'note'
+		type: text("type").notNull().default("entity"),
+		entityKind: brainEntityKind("entity_kind"),
+		// tight coupling: entity pages for clients point at the CRM row
+		companyId: uuid("company_id").references(() => companies.id, { onDelete: "set null" }),
+		title: text("title").notNull(),
+		// distilled body — synthesized from facts/takes by the enrich phase
+		compiledTruth: text("compiled_truth").notNull().default(""),
+		timelineText: text("timeline_text").notNull().default(""),
+		frontmatter: jsonb("frontmatter").notNull().default({}),
+		contentHash: text("content_hash"),
+		// deterministic 0..1 salience (recency + loop pressure + notability),
+		// recomputed by the cycle — ranks search results
+		emotionalWeight: real("emotional_weight").notNull().default(0),
+		deletedAt: timestamp("deleted_at", { withTimezone: true }),
+		lastRetrievedAt: timestamp("last_retrieved_at", { withTimezone: true }),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
 			.notNull()
-			.default("generating"),
-		model: text("model"),
-		lastError: text("last_error"),
-		generatedAt: timestamp("generated_at", { withTimezone: true }).notNull().defaultNow(),
+			.defaultNow()
+			.$onUpdate(() => new Date()),
+	},
+	(t) => [index("idx_brain_pages_company").on(t.companyId), index("idx_brain_pages_type").on(t.type)],
+);
+
+export const brainChunks = pgTable(
+	"brain_chunks",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		pageId: uuid("page_id")
+			.notNull()
+			.references(() => brainPages.id, { onDelete: "cascade" }),
+		chunkIndex: integer("chunk_index").notNull(),
+		chunkText: text("chunk_text").notNull(),
+		tokenCount: integer("token_count"),
+		// v1 searches via to_tsvector expression index (see migration 0015);
+		// embedding vector(1536) lands later on Supabase pgvector
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+	(t) => [index("idx_brain_chunks_page").on(t.pageId)],
+);
+
+export const brainFacts = pgTable(
+	"brain_facts",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		entitySlug: text("entity_slug").notNull(),
+		fact: text("fact").notNull(),
+		kind: brainFactKind("kind").notNull().default("fact"),
+		visibility: brainVisibility("visibility").notNull().default("private"),
+		notability: brainNotability("notability").notNull().default("medium"),
+		context: text("context"),
+		validFrom: timestamp("valid_from", { withTimezone: true }).notNull().defaultNow(),
+		validUntil: timestamp("valid_until", { withTimezone: true }),
+		expiredAt: timestamp("expired_at", { withTimezone: true }),
+		// supersession chain: newer fact points at the one it replaces
+		supersededBy: uuid("superseded_by"),
+		consolidatedAt: timestamp("consolidated_at", { withTimezone: true }),
+		consolidatedInto: uuid("consolidated_into"),
+		// provenance INTO workspace tables: 'email_messages' | 'text_versions' |
+		// 'documents' | 'manual'
+		sourceTable: text("source_table").notNull(),
+		sourceId: uuid("source_id"),
+		confidence: real("confidence").notNull().default(1),
+		// md5(lower(trim(fact))) — deterministic dedup key per entity
+		factHash: text("fact_hash").notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 	},
 	(t) => [
-		// one live memory per (scope, client) — coalesce so the NULL company_id
-		// of company-scope rows still collides
-		uniqueIndex("memories_scope_company_uq").on(
-			t.scope,
-			sql`coalesce(${t.companyId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
-		),
-		index("idx_memories_company").on(t.companyId),
+		index("idx_brain_facts_entity").on(t.entitySlug),
+		uniqueIndex("brain_facts_entity_hash_uq").on(t.entitySlug, t.factHash),
 	],
 );
+
+export const brainTakes = pgTable(
+	"brain_takes",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		pageId: uuid("page_id")
+			.notNull()
+			.references(() => brainPages.id, { onDelete: "cascade" }),
+		rowNum: integer("row_num").notNull(),
+		claim: text("claim").notNull(),
+		kind: brainTakeKind("kind").notNull().default("take"),
+		holder: text("holder").notNull().default("madcactus"),
+		// 0..1 conviction
+		weight: real("weight").notNull().default(0.5),
+		active: boolean("active").notNull().default(true),
+		supersededBy: uuid("superseded_by"),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date()),
+	},
+	(t) => [uniqueIndex("brain_takes_page_row_uq").on(t.pageId, t.rowNum)],
+);
+
+export const brainLinks = pgTable(
+	"brain_links",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		fromPageId: uuid("from_page_id")
+			.notNull()
+			.references(() => brainPages.id, { onDelete: "cascade" }),
+		toPageId: uuid("to_page_id")
+			.notNull()
+			.references(() => brainPages.id, { onDelete: "cascade" }),
+		linkType: text("link_type").notNull().default(""),
+		context: text("context").notNull().default(""),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+	(t) => [uniqueIndex("brain_links_from_to_type_uq").on(t.fromPageId, t.toPageId, t.linkType)],
+);
+
+export const brainTimeline = pgTable(
+	"brain_timeline",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		pageId: uuid("page_id")
+			.notNull()
+			.references(() => brainPages.id, { onDelete: "cascade" }),
+		date: date("date").notNull(),
+		source: text("source").notNull().default(""),
+		summary: text("summary").notNull(),
+		detail: text("detail").notNull().default(""),
+		// provenance: 'email_threads' | 'email_messages' | 'documents' | 'text_versions'
+		sourceTable: text("source_table"),
+		sourceId: uuid("source_id"),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+	(t) => [index("idx_brain_timeline_page").on(t.pageId, t.date)],
+);
+
+export const brainOpenLoops = pgTable(
+	"brain_open_loops",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		dedupKey: text("dedup_key").notNull().unique(),
+		loopType: brainLoopType("loop_type").notNull(),
+		companyId: uuid("company_id").references(() => companies.id, { onDelete: "set null" }),
+		counterpartySlug: text("counterparty_slug"),
+		counterpartyEmail: text("counterparty_email"),
+		summary: text("summary").notNull(),
+		evidence: jsonb("evidence").notNull().default([]),
+		threadId: uuid("thread_id").references(() => emailThreads.id, { onDelete: "set null" }),
+		pageSlug: text("page_slug"),
+		dueAt: timestamp("due_at", { withTimezone: true }),
+		status: brainLoopStatus("status").notNull().default("open"),
+		detector: brainLoopDetector("detector").notNull().default("deterministic_thread"),
+		confidence: real("confidence").notNull().default(1),
+		openedAt: timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(),
+		lastActivityAt: timestamp("last_activity_at", { withTimezone: true }).notNull().defaultNow(),
+		closedAt: timestamp("closed_at", { withTimezone: true }),
+		closedBy: text("closed_by"),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date()),
+	},
+);
+
+export const brainJobs = pgTable(
+	"brain_jobs",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		// 'extract_facts' | 'consolidate' | 'enrich' | 'detect_loops' | 'sync_entities'
+		phase: text("phase").notNull(),
+		scope: text("scope"),
+		status: brainJobStatus("status").notNull().default("pending"),
+		payload: jsonb("payload").notNull().default({}),
+		attempts: integer("attempts").notNull().default(0),
+		error: text("error"),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date()),
+	},
+	(t) => [index("idx_brain_jobs_phase_status").on(t.phase, t.status)],
+);
+
+// cycle cursors + key/value state (mirrors gbrain's config + ingest_log)
+export const brainState = pgTable("brain_state", {
+	key: text("key").primaryKey(),
+	value: jsonb("value").notNull().default({}),
+	updatedAt: timestamp("updated_at", { withTimezone: true })
+		.notNull()
+		.defaultNow()
+		.$onUpdate(() => new Date()),
+});
 
 // ── Email (Gmail-backed inbox) ────────────────────
 

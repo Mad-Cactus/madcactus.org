@@ -1,14 +1,11 @@
 import type { APIEvent } from "@solidjs/start/server";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 import { hashKey } from "~/lib/crypto";
 import { db } from "~/db";
 import { apiKeys, companies } from "~/db/schema";
-import {
-	getMemory,
-	searchWorkspace,
-	searchBrain,
-	recentActivity,
-} from "~/lib/brain/memory";
+import { brainQuery, entityFacts } from "~/lib/brain/search";
+import { searchWorkspace, recentActivity } from "~/lib/brain/workspace-search";
+import { maybeRunCycle, runCycle } from "~/lib/brain/distill";
 import { agentWrite, createDoc, getDoc, getDocVersionDiff, listDocVersions, listDocs } from "~/lib/docs";
 
 /**
@@ -68,30 +65,23 @@ async function resolveClient(name: string) {
 	return company ?? null;
 }
 
-function memoryResult(m: { memory: string | null; generatedAt: Date | null }, scope: string) {
-	return {
-		memory: m.memory,
-		generated_at: m.generatedAt,
-		scope,
-		note: m.memory
-			? "Refreshed in the background nightly. For recent specifics (message bodies, amounts, dates), call search_workspace or search_brain."
-			: "No memory generated yet — a background generation just started; call again in a minute. Use search_workspace meanwhile.",
-	};
-}
-
 // ── Tool definitions ───────────────────────────────────────────────
 
 const TOOLS = [
 	{
-		name: "get_company_memory",
+		name: "query",
 		description:
-			"CALL THIS FIRST in every session. Returns the generated company memory — who Mad Cactus is, active clients, projects, priorities, and domain context. Prefer this over re-deriving context from search.",
-		inputSchema: { type: "object", properties: {} },
+			"CALL THIS FIRST in every session. Search the company brain: distilled entity pages, facts, conclusions, and open loops (who owes what, unanswered threads). Prefer this over re-deriving context from raw records.",
+		inputSchema: {
+			type: "object",
+			properties: { query: { type: "string" } },
+			required: ["query"],
+		},
 	},
 	{
-		name: "get_client_memory",
+		name: "get_entity",
 		description:
-			"Returns the generated memory for one client engagement — relationship history, project state, people, and open threads. Use for any client-specific question.",
+			"Full brain dossier for one client/company: distilled brief, durable facts, conclusions, open loops, and recent timeline. Use for any client-specific question.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -101,19 +91,21 @@ const TOOLS = [
 		},
 	},
 	{
+		name: "list_open_loops",
+		description:
+			"Open commitments and unanswered threads across all clients — what is waiting on whom.",
+		inputSchema: { type: "object", properties: {} },
+	},
+	{
+		name: "run_brain_cycle",
+		description:
+			"Force a brain refresh cycle: sync entities, detect loops, extract new facts, consolidate takes. Normally runs automatically every 24h.",
+		inputSchema: { type: "object", properties: {} },
+	},
+	{
 		name: "search_workspace",
 		description:
 			"Full-text search across synced email, documents, and projects. Use after the memory tools for recent specifics.",
-		inputSchema: {
-			type: "object",
-			properties: { query: { type: "string" } },
-			required: ["query"],
-		},
-	},
-	{
-		name: "search_brain",
-		description:
-			"Search the long-term knowledge brain (gbrain) — meetings, sessions, connector data. Use for background knowledge and history that predates the workspace DB.",
 		inputSchema: {
 			type: "object",
 			properties: { query: { type: "string" } },
@@ -130,7 +122,7 @@ const TOOLS = [
 	},
 	{
 		name: "list_clients",
-		description: "List all client companies (for resolving get_client_memory arguments).",
+		description: "List all client companies (for resolving get_entity arguments).",
 		inputSchema: { type: "object", properties: {} },
 	},
 	// ── Docs ──
@@ -277,23 +269,49 @@ export async function POST(event: APIEvent) {
 			try {
 				let result: unknown;
 				switch (toolName) {
-					case "get_company_memory":
-						result = memoryResult(await getMemory("company"), "company");
+					case "query":
+						await maybeRunCycle();
+						result = await brainQuery(String(toolArgs.query ?? ""));
 						break;
-					case "get_client_memory": {
+					case "get_entity": {
+						await maybeRunCycle();
 						const company = await resolveClient(String(toolArgs.client ?? ""));
 						if (!company) {
 							result = { error: `no client matching "${toolArgs.client}" — call list_clients` };
 							break;
 						}
-						result = memoryResult(await getMemory("client", company.id), `client:${company.name}`);
+						const slug = company.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+						const { brainPages, brainTakes } = await import("~/db/schema");
+						const [page] = await db.select().from(brainPages).where(eq(brainPages.slug, slug)).limit(1);
+						const facts = await entityFacts(slug);
+						const takes = page
+							? await db.select({ claim: brainTakes.claim, weight: brainTakes.weight }).from(brainTakes).where(eq(brainTakes.pageId, page.id))
+							: [];
+						result = {
+							entity: company.name,
+							slug,
+							brief: page?.compiledTruth ?? null,
+							takes,
+							facts: facts.map((f) => ({ fact: f.fact, kind: f.kind, notability: f.notability, confidence: f.confidence })),
+							hint: "Use query for full-text brain search, search_workspace for raw records.",
+						};
 						break;
 					}
+					case "list_open_loops": {
+						const { brainOpenLoops } = await import("~/db/schema");
+						result = await db
+							.select()
+							.from(brainOpenLoops)
+							.where(eq(brainOpenLoops.status, "open"))
+							.orderBy(desc(brainOpenLoops.openedAt))
+							.limit(50);
+						break;
+					}
+					case "run_brain_cycle":
+						result = await runCycle();
+						break;
 					case "search_workspace":
 						result = await searchWorkspace(String(toolArgs.query ?? ""));
-						break;
-					case "search_brain":
-						result = await searchBrain(String(toolArgs.query ?? ""));
 						break;
 					case "get_recent_activity":
 						result = await recentActivity(Number(toolArgs.days) || 14);
