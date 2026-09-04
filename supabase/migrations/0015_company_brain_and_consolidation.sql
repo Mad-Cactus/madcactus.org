@@ -1,14 +1,4 @@
-CREATE TYPE "public"."doc_author" AS ENUM('agent', 'human');--> statement-breakpoint
 CREATE TYPE "public"."doc_status" AS ENUM('draft', 'final');--> statement-breakpoint
-CREATE TABLE "doc_versions" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"doc_id" uuid NOT NULL,
-	"content" text NOT NULL,
-	"author" "doc_author" DEFAULT 'human' NOT NULL,
-	"chat_uuid" text,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL
-);
---> statement-breakpoint
 CREATE TABLE "memories" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"scope" text NOT NULL,
@@ -20,16 +10,29 @@ CREATE TABLE "memories" (
 	"generated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "text_versions" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"entity" text NOT NULL,
+	"entity_id" uuid NOT NULL,
+	"version" integer NOT NULL,
+	"author" text DEFAULT 'human' NOT NULL,
+	"content" text DEFAULT '' NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 ALTER TABLE "docs" ADD COLUMN "status" "doc_status" DEFAULT 'final' NOT NULL;--> statement-breakpoint
-ALTER TABLE "doc_versions" ADD CONSTRAINT "doc_versions_doc_id_docs_id_fk" FOREIGN KEY ("doc_id") REFERENCES "public"."docs"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "email_outbox" ADD COLUMN "loro_snapshot" text DEFAULT '' NOT NULL;--> statement-breakpoint
+ALTER TABLE "email_outbox" ADD COLUMN "version" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
 ALTER TABLE "memories" ADD CONSTRAINT "memories_company_id_companies_id_fk" FOREIGN KEY ("company_id") REFERENCES "public"."companies"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-CREATE INDEX "idx_doc_versions_doc" ON "doc_versions" USING btree ("doc_id","created_at");--> statement-breakpoint
 CREATE UNIQUE INDEX "memories_scope_company_uq" ON "memories" USING btree ("scope",coalesce("company_id", '00000000-0000-0000-0000-000000000000'::uuid));--> statement-breakpoint
 CREATE INDEX "idx_memories_company" ON "memories" USING btree ("company_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "text_versions_entity_ver_idx" ON "text_versions" USING btree ("entity","entity_id","version");--> statement-breakpoint
 -- ── Data migration: preserve the voice-learning corpus as a doc ──
--- The redline tables hold 114 derived lessons + 62 lint patterns from real
--- agent-draft → human-edit diffs. They move into a "Voice lessons" doc so the
--- brain's generation loop and search keep using them after the tables die.
+-- The redline tables hold derived lessons + lint patterns from real
+-- agent-draft → human-edit diffs. They move into a "Voice lessons" doc so
+-- the brain's generation loop and search keep using them after the tables
+-- die. The text_versions backfill (below) seeds the diff history too.
 INSERT INTO "docs" ("title", "markdown", "status")
 SELECT
 	'Voice lessons',
@@ -54,21 +57,29 @@ SELECT
 	FROM redline_patterns), ''),
 	'final'
 WHERE NOT EXISTS (SELECT 1 FROM "docs" WHERE "title" = 'Voice lessons');--> statement-breakpoint
--- Backfill: every doc that has no version row gets one (author=agent — these
--- bodies came from agent writes; humans refined them in the editor).
-INSERT INTO "doc_versions" ("doc_id", "content", "author", "chat_uuid")
-SELECT d."id", d."markdown", 'agent', d."chat_uuid"
+-- Seed text_versions: every doc and every non-empty outbox draft gets its
+-- current body as version 1, so diffs have a base to diff against.
+INSERT INTO "text_versions" ("entity", "entity_id", "version", "author", "content")
+SELECT 'doc', d."id", 1, 'agent', d."markdown"
 FROM "docs" d
-WHERE NOT EXISTS (SELECT 1 FROM "doc_versions" dv WHERE dv."doc_id" = d."id");--> statement-breakpoint
-ALTER TABLE "docs" DROP COLUMN "last_agent_content";--> statement-breakpoint
-ALTER TABLE "email_outbox" DROP COLUMN "draft_id";--> statement-breakpoint
-ALTER TABLE "email_outbox" DROP COLUMN "pair_id";--> statement-breakpoint
+WHERE d."markdown" <> '' AND NOT EXISTS (
+	SELECT 1 FROM "text_versions" tv WHERE tv."entity" = 'doc' AND tv."entity_id" = d."id"
+);--> statement-breakpoint
+INSERT INTO "text_versions" ("entity", "entity_id", "version", "author", "content")
+SELECT 'email_draft', o."id", 1, 'agent', o."body"
+FROM "email_outbox" o
+WHERE o."status" = 'draft' AND o."body" <> '' AND NOT EXISTS (
+	SELECT 1 FROM "text_versions" tv WHERE tv."entity" = 'email_draft' AND tv."entity_id" = o."id"
+);--> statement-breakpoint
 DROP TABLE "redline_derivation_jobs" CASCADE;--> statement-breakpoint
 DROP TABLE "redline_drafts" CASCADE;--> statement-breakpoint
 DROP TABLE "redline_lessons" CASCADE;--> statement-breakpoint
 DROP TABLE "redline_pairs" CASCADE;--> statement-breakpoint
 DROP TABLE "redline_patterns" CASCADE;--> statement-breakpoint
 DROP TABLE "redline_revisions" CASCADE;--> statement-breakpoint
+ALTER TABLE "docs" DROP COLUMN "last_agent_content";--> statement-breakpoint
+ALTER TABLE "email_outbox" DROP COLUMN "draft_id";--> statement-breakpoint
+ALTER TABLE "email_outbox" DROP COLUMN "pair_id";--> statement-breakpoint
 DROP TYPE "public"."redline_author";--> statement-breakpoint
 DROP TYPE "public"."redline_confidence";--> statement-breakpoint
 DROP TYPE "public"."redline_direction";--> statement-breakpoint

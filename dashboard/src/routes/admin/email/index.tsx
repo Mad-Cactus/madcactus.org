@@ -9,6 +9,9 @@ import {
 } from "~/lib/email-queries";
 import type { EmailThread, EmailMessage, EmailOutbox } from "~/db/schema";
 
+type DraftVersionRow = { id: string; version: number; author: string; createdAt: string; updatedAt: string };
+type DraftDiffPart = { added?: boolean; removed?: boolean; value: string };
+
 // Hotkeys mirror macro: j/k move + open, e archive, shift+e unarchive,
 // u unread, r reply, f forward, c compose, / search, Esc close.
 
@@ -16,9 +19,9 @@ type ThreadFull = { thread: EmailThread; messages: EmailMessage[] };
 
 export default function AdminEmail() {
 	const status = createAsync(() => getEmailStatusQuery(), { deferStream: true });
-	const inbox = createAsync(() => getInboxQuery(), { deferStream: true });
-	const sync = useAction(syncEmailAction);
 	const [searchParams] = useSearchParams();
+	const inbox = createAsync(() => getInboxQuery(searchParams.q ? { q: String(searchParams.q) } : {}), { deferStream: true });
+	const sync = useAction(syncEmailAction);
 
 	const [q, setQ] = createSignal("");
 	const [selected, setSelected] = createSignal<ThreadFull | null>(null);
@@ -26,9 +29,18 @@ export default function AdminEmail() {
 	// confirmation modal for destructive macros (spam / delete / unsubscribe)
 	const [pending, setPending] = createSignal<{ title: string; body: string; confirm: string; danger: boolean; run: () => Promise<void> } | null>(null);
 	const [compose, setCompose] = createSignal<{ to: string; subject: string; body: string; threadId?: string } | null>(null);
+	// client-side windowing over the full local corpus — no server pagination
+	const [visibleCount, setVisibleCount] = createSignal(50);
 	const [editBody, setEditBody] = createSignal<Record<string, string>>({});
 	const [sendStatus, setSendStatus] = createSignal("");
 	const [connecting, setConnecting] = createSignal(false);
+	// folder tabs: inbox | drafts | sent
+	const [folder, setFolder] = createSignal<"inbox" | "drafts" | "sent">("inbox");
+	// per-draft CRDT history (Drafts tab)
+	const [openDraftHistory, setOpenDraftHistory] = createSignal<string | null>(null);
+	const [draftVersions, setDraftVersions] = createSignal<Record<string, DraftVersionRow[]>>({});
+	const [draftDiff, setDraftDiff] = createSignal<{ id: string; parts: DraftDiffPart[] | null } | null>(null);
+	const draftSaveTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 
 	const loadThread = async (t: EmailThread, i?: number) => {
 		const res = await fetch(`/api/email/threads/${t.id}`);
@@ -64,15 +76,16 @@ export default function AdminEmail() {
 
 	const sendDraft = async (outboxId: string) => {
 		setSendStatus("sending…");
-		const res = await fetch(`/api/email/drafts/${outboxId}/send`, {
+		const res = await fetch(`/api/email/drafts/${outboxId}`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ body: editBody()[outboxId] }),
+			body: JSON.stringify({ op: "send", body: editBody()[outboxId] }),
 		});
 		const r = await res.json();
 		if (r.ok) {
 			setSendStatus("sent");
 			setTimeout(() => setSendStatus(""), 5000);
+			void revalidate("email-inbox"); // move the row from drafts to Sent immediately
 		} else {
 			setSendStatus(`failed: ${r.error}`);
 		}
@@ -84,6 +97,42 @@ export default function AdminEmail() {
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ op: "discard" }),
 		});
+		void revalidate("email-inbox");
+	};
+
+	// draft body autosave — debounced PUT, CRDT-tracked server-side (hunks into
+	// the Loro snapshot, coalesced version rows)
+	const editDraft = (outboxId: string, body: string) => {
+		setEditBody({ ...editBody(), [outboxId]: body });
+		clearTimeout(draftSaveTimers[outboxId]);
+		draftSaveTimers[outboxId] = setTimeout(async () => {
+			const res = await fetch(`/api/email/drafts/${outboxId}`, {
+				method: "PUT",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ body }),
+			});
+			if (res.ok && openDraftHistory() === outboxId) {
+				const r = await fetch(`/api/email/drafts/${outboxId}?versions=1`);
+				if (r.ok) setDraftVersions({ ...draftVersions(), [outboxId]: ((await r.json()) as { versions: DraftVersionRow[] }).versions });
+			}
+		}, 1000);
+	};
+
+	const toggleDraftHistory = async (outboxId: string) => {
+		if (openDraftHistory() === outboxId) {
+			setOpenDraftHistory(null);
+			return;
+		}
+		setOpenDraftHistory(outboxId);
+		setDraftDiff(null);
+		const r = await fetch(`/api/email/drafts/${outboxId}?versions=1`);
+		if (r.ok) setDraftVersions({ ...draftVersions(), [outboxId]: ((await r.json()) as { versions: DraftVersionRow[] }).versions });
+	};
+
+	const showDraftDiff = async (outboxId: string, version: number) => {
+		setDraftDiff({ id: outboxId, parts: null });
+		const r = await fetch(`/api/email/drafts/${outboxId}?diff=${version}`);
+		if (r.ok) setDraftDiff({ id: outboxId, parts: ((await r.json()) as { parts: DraftDiffPart[] }).parts });
 	};
 
 	const confirmPending = async () => {
@@ -190,6 +239,8 @@ export default function AdminEmail() {
 				return;
 			}
 			if (compose()) return;
+			// thread hotkeys only make sense in the inbox tab
+			if (folder() !== "inbox") return;
 			// j/k move a visible selection; nothing selected yet → j starts at the
 			// top row instead of skipping it
 			const cur = selected() ? selIdx() : -1;
@@ -197,12 +248,18 @@ export default function AdminEmail() {
 				e.preventDefault();
 				const i = Math.min(cur + 1, threads.length - 1);
 				const t = threads[i];
-				if (t) await loadThread(t, i);
+				if (t) {
+					if (i >= visibleCount()) setVisibleCount(i + 100);
+					await loadThread(t, i);
+				}
 			} else if (e.key === "k" || e.key === "ArrowUp") {
 				e.preventDefault();
 				const i = Math.max(cur - 1, 0);
 				const t = threads[i];
-				if (t) await loadThread(t, i);
+				if (t) {
+					if (i >= visibleCount()) setVisibleCount(i + 100);
+					await loadThread(t, i);
+				}
 			} else if (e.key === "e" && selected()) {
 				await threadOp(selected()!.thread.id, "archive");
 			} else if (e.key === "E" && selected()) {
@@ -290,8 +347,8 @@ export default function AdminEmail() {
 				</Show>
 			</div>
 			<p class="page-subtitle">
-				j/k move · e done · u unread · r reply · f forward · ! spam · # delete · x unsub · c compose · / search — agent drafts below are
-				voice-linted before sending
+				j/k move · e done · u unread · r reply · f forward · ! spam · # delete · x unsub · c compose · / search — drafts are
+				voice-linted before sending; every edit is CRDT-tracked
 			</p>
 
 			<Show when={searchParams.connect}>
@@ -303,30 +360,77 @@ export default function AdminEmail() {
 				</div>
 			</Show>
 
-			{/* Agent outbox drafts */}
-			<Show when={inbox()?.drafts?.length}>
-				<h2 style={{ "font-size": "16px", margin: "16px 0 8px" }}>Agent drafts</h2>
-				<For each={inbox()!.drafts}>
-					{(d) => (
-						<div class="card" style={{ padding: "16px 20px", "margin-bottom": "10px", border: "1px solid rgba(188,156,92,0.5)" }}>
-							<div style={{ display: "flex", gap: "12px", "align-items": "baseline" }}>
-								<strong style={{ "font-size": "14px" }}>{d.subject}</strong>
-								<span class="muted" style={{ "font-size": "13px" }}>to {d.toEmail}</span>
-								<div style={{ flex: 1 }} />
-								<button type="button" class="btn btn-primary btn-sm" onClick={() => sendDraft(d.id)}>Send</button>
-								<button type="button" class="btn btn-sm" onClick={() => discardDraft(d.id)}>Discard</button>
+			{/* folder tabs */}
+			<div class="folder-tabs">
+				<button type="button" classList={{ active: folder() === "inbox" }} onClick={() => setFolder("inbox")}>
+					Inbox<Show when={inbox()?.threads?.length}> · {inbox()!.threads.length}</Show>
+				</button>
+				<button type="button" classList={{ active: folder() === "drafts" }} onClick={() => setFolder("drafts")}>
+					Drafts<Show when={inbox()?.drafts?.length}> · {inbox()!.drafts.length}</Show>
+				</button>
+				<button type="button" classList={{ active: folder() === "sent" }} onClick={() => setFolder("sent")}>
+					Sent
+				</button>
+			</div>
+
+			{/* Drafts tab — agent + composed drafts, edit → send; every edit
+			    lands as a CRDT-tracked version (History shows what changed) */}
+			<Show when={folder() === "drafts"}>
+				<Show when={inbox()?.drafts?.length} fallback={<div class="muted">No open drafts. Agents push drafts via create_email_draft; compose with c in the Inbox.</div>}>
+					<For each={inbox()!.drafts}>
+						{(d) => (
+							<div class="card" style={{ padding: "16px 20px", "margin-bottom": "10px", border: "1px solid rgba(188,156,92,0.5)" }}>
+								<div style={{ display: "flex", gap: "12px", "align-items": "baseline" }}>
+									<strong style={{ "font-size": "14px" }}>{d.subject}</strong>
+									<span class="muted" style={{ "font-size": "13px" }}>to {d.toEmail} · v{d.version}</span>
+									<div style={{ flex: 1 }} />
+									<button type="button" class="btn btn-sm" classList={{ active: openDraftHistory() === d.id }} onClick={() => void toggleDraftHistory(d.id)}>
+										History
+									</button>
+									<button type="button" class="btn btn-primary btn-sm" onClick={() => sendDraft(d.id)}>Send</button>
+									<button type="button" class="btn btn-sm" onClick={() => discardDraft(d.id)}>Discard</button>
+								</div>
+								<textarea
+									value={editBody()[d.id] ?? d.body}
+									onInput={(e) => editDraft(d.id, e.currentTarget.value)}
+									rows={6}
+									style={{ width: "100%", "margin-top": "10px", "font-family": "inherit", "font-size": "14px" }}
+								/>
+								<Show when={openDraftHistory() === d.id}>
+									<div class="doc-history" style={{ position: "static", width: "100%", "max-height": "none", "margin-top": "12px" }}>
+										<Show when={draftVersions()[d.id]?.length} fallback={<p class="muted">No tracked versions yet.</p>}>
+											<For each={draftVersions()[d.id]}>
+												{(v) => (
+													<button type="button" class="doc-history-row" onClick={() => void showDraftDiff(d.id, v.version)}>
+														<span class="doc-history-ver">v{v.version}</span>
+														<span class="doc-history-author" classList={{ agent: v.author === "agent" }}>{v.author}</span>
+														<span class="muted">{new Date(v.updatedAt).toLocaleString()}</span>
+													</button>
+												)}
+											</For>
+											<Show when={draftDiff()?.id === d.id}>
+												<div class="doc-diff">
+													<Show when={draftDiff()?.parts} fallback={<p class="muted">Loading…</p>}>
+														{(parts) => (
+															<For each={parts()}>
+																{(p) =>
+																	p.added ? <ins>{p.value}</ins> : p.removed ? <del>{p.value}</del> : <span>{p.value}</span>
+																}
+															</For>
+														)}
+													</Show>
+												</div>
+											</Show>
+										</Show>
+									</div>
+								</Show>
 							</div>
-							<textarea
-								value={editBody()[d.id] ?? d.body}
-								onInput={(e) => setEditBody({ ...editBody(), [d.id]: e.currentTarget.value })}
-								rows={6}
-								style={{ width: "100%", "margin-top": "10px", "font-family": "inherit", "font-size": "14px" }}
-							/>
-						</div>
-					)}
-				</For>
+						)}
+					</For>
+				</Show>
 			</Show>
 
+			<Show when={folder() !== "drafts"}>
 			{/* search */}
 			<div style={{ margin: "12px 0" }}>
 				<input
@@ -337,6 +441,7 @@ export default function AdminEmail() {
 					onInput={(e) => setQ(e.currentTarget.value)}
 					onKeyDown={(e) => {
 						if (e.key === "Enter") window.location.href = `/admin/email?q=${encodeURIComponent(q())}`;
+						if (e.key === "Escape") window.location.replace("/admin/email");
 					}}
 					style={{ width: "100%", padding: "10px 14px", background: "var(--bg-card)", border: "1px solid rgba(0,0,0,0.12)", "font-size": "14px" }}
 				/>
@@ -345,8 +450,9 @@ export default function AdminEmail() {
 			<div style={{ display: "grid", "grid-template-columns": selected() ? "1fr 1.4fr" : "1fr", gap: "16px" }}>
 				{/* list */}
 				<div>
-					<Show when={inbox()?.threads?.length} fallback={<div class="muted">{inbox()?.connected ? "Inbox zero." : "Connect Gmail to load your inbox."}</div>}>
-						<For each={inbox()?.threads}>
+					<Show when={folder() === "inbox"}>
+					<Show when={inbox()?.threads?.length} fallback={<div class="muted">{inbox()?.connected ? (searchParams.q ? "No matches." : "Inbox zero.") : "Connect Gmail to load your inbox."}</div>}>
+						<For each={inbox()?.threads.slice(0, visibleCount())}>
 							{(t, i) => (
 								<div
 									data-thread-row=""
@@ -373,6 +479,46 @@ export default function AdminEmail() {
 								</div>
 							)}
 						</For>
+						<Show when={(inbox()?.threads.length ?? 0) > visibleCount()}>
+							<button type="button" class="btn btn-sm" style={{ "margin-top": "8px" }} onClick={() => setVisibleCount((c) => c + 100)}>
+								Load older mail ({inbox()!.threads.length - visibleCount()} more)…
+							</button>
+						</Show>
+					</Show>
+					</Show>
+					<Show when={folder() === "sent"}>
+					{/* Sent — every thread with mail I sent (dashboard sends land here
+					    via the local insert + SENT sync; Gmail-UI sends on next sync) */}
+					<Show when={inbox()?.sent?.length} fallback={<div class="muted">Nothing sent yet.</div>}>
+						<For each={inbox()!.sent.slice(0, visibleCount())}>
+							{(s) => (
+								<div
+									class="card"
+									style={{
+										padding: "12px 16px",
+										"margin-bottom": "8px",
+										cursor: "pointer",
+										opacity: 0.85,
+										background: selected()?.thread.id === s.thread.id ? "rgba(188, 156, 92, 0.12)" : undefined,
+									}}
+									onClick={() => loadThread(s.thread)}
+								>
+									<div style={{ display: "flex", gap: "10px", "align-items": "baseline" }}>
+										<strong style={{ "font-size": "14px", flex: 1 }}>{s.thread.subject}</strong>
+										<span class="muted" style={{ "font-size": "12px" }}>{new Date(s.sentAt).toLocaleDateString()}</span>
+									</div>
+									<div class="muted" style={{ "font-size": "13px", "margin-top": "4px" }}>
+										to {s.to ?? "(unknown)"} — {s.thread.snippet?.slice(0, 90)}
+									</div>
+								</div>
+							)}
+						</For>
+						<Show when={inbox()!.sent.length > visibleCount()}>
+							<button type="button" class="btn btn-sm" style={{ "margin-top": "4px" }} onClick={() => setVisibleCount((c) => c + 100)}>
+								Load older sent mail ({inbox()!.sent.length - visibleCount()} more)…
+							</button>
+						</Show>
+					</Show>
 					</Show>
 				</div>
 
@@ -401,6 +547,7 @@ export default function AdminEmail() {
 					</div>
 				</Show>
 			</div>
+			</Show>
 
 			{/* destructive-action confirm modal (spam / delete / unsubscribe) */}
 			<Show when={pending()}>

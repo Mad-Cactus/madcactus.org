@@ -9,7 +9,7 @@ import {
 	searchBrain,
 	recentActivity,
 } from "~/lib/brain/memory";
-import { agentWrite, createDoc, getDoc, getDocVersions, getVersionDiff, listDocs } from "~/lib/docs";
+import { agentWrite, createDoc, getDoc, getDocVersionDiff, listDocVersions, listDocs } from "~/lib/docs";
 
 /**
  * MCP Server — Mad Cactus Company Brain (internal agents)
@@ -181,7 +181,7 @@ const TOOLS = [
 	{
 		name: "list_doc_versions",
 		description:
-			"Version history of a doc (author agent|human, timestamps) — how humans edited what agents wrote.",
+			"Version history of a doc (version number, author agent|human, timestamps) — how humans edited what agents wrote.",
 		inputSchema: {
 			type: "object",
 			properties: { doc_id: { type: "string" } },
@@ -191,14 +191,14 @@ const TOOLS = [
 	{
 		name: "get_doc_diff",
 		description:
-			"Unified diff of one doc version against the previous version — exactly what the human changed in an agent write.",
+			"Word-level diff of one doc version vs the previous — exactly what the human changed in an agent write. Returns {parts:[{value, added?, removed?}]}.",
 		inputSchema: {
 			type: "object",
 			properties: {
 				doc_id: { type: "string" },
-				version_id: { type: "string", description: "doc version id from list_doc_versions" },
+				version: { type: "number", description: "version number from list_doc_versions" },
 			},
-			required: ["doc_id", "version_id"],
+			required: ["doc_id", "version"],
 		},
 	},
 	// ── Email ──
@@ -335,20 +335,12 @@ export async function POST(event: APIEvent) {
 							mode: toolArgs.mode === "replace" ? "replace" : "append",
 						});
 						break;
-					case "list_doc_versions": {
-						const versions = await getDocVersions(String(toolArgs.doc_id ?? ""));
-						result = versions.map((v) => ({
-							id: v.id,
-							author: v.author,
-							chat_uuid: v.chatUuid,
-							length: v.content.length,
-							createdAt: v.createdAt,
-						}));
+					case "list_doc_versions":
+						result = { versions: await listDocVersions(String(toolArgs.doc_id ?? "")) };
 						break;
-					}
 					case "get_doc_diff": {
-						const diff = await getVersionDiff(String(toolArgs.doc_id ?? ""), String(toolArgs.version_id ?? ""));
-						result = diff === null ? { error: "version not found" } : { diff };
+						const diff = await getDocVersionDiff(String(toolArgs.doc_id ?? ""), Number(toolArgs.version));
+						result = diff === null ? { error: "version not found" } : diff;
 						break;
 					}
 					case "list_emails": {

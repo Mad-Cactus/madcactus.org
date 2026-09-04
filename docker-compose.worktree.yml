@@ -1,0 +1,23 @@
+# Per-worktree dev database.
+#
+# Each worktree gets its own isolated Postgres: the compose project name is the
+# worktree directory name, so volumes and networks never collide across
+# worktrees — only the host port needs to be unique.
+#
+#   WORKTREE_DB_PORT=5435 docker compose -f docker-compose.worktree.yml up -d
+#
+# Then point dashboard/.env DATABASE_URL at localhost:<port>. The shared
+# docker-compose.yml (:5434) instance is untouched.
+services:
+  db:
+    image: postgres:17-alpine
+    ports:
+      - "${WORKTREE_DB_PORT:-5435}:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: madcactus
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+volumes:
+  pgdata:

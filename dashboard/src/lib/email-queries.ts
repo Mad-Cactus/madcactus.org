@@ -1,16 +1,19 @@
 import { query, action, redirect } from "@solidjs/router";
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "~/db";
-import { emailOutbox, emailThreads } from "~/db/schema";
+import { emailMessages, emailOutbox, emailThreads } from "~/db/schema";
 import { getAuthedClient } from "~/lib/session";import {
 	getPrimaryAccount,
 	listInbox,
+	listSent,
 	setThreadArchived,
 	setThreadUnread,
 	syncAccount,
 	threadWithMessages,
 	sendGmail,
 } from "~/lib/gmail";
+import { trackText } from "~/lib/crdt-text";
+
 async function requireAdmin() {
 	const supabase = await getAuthedClient();
 	if (!supabase) throw redirect("/admin/login");
@@ -32,11 +35,11 @@ export const getEmailStatusQuery = query(async () => {
 /** Account ids with a sync currently running (see getInboxQuery). */
 const syncingAccounts = new Set<string>();
 
-export const getInboxQuery = query(async (opts: { q?: string; archived?: boolean } = {}) => {
+export const getInboxQuery = query(async (opts: { q?: string } = {}) => {
 	"use server";
 	await requireAdmin();
 	const account = await getPrimaryAccount();
-	if (!account) return { connected: false as const, threads: [], drafts: [] };
+	if (!account) return { connected: false as const, threads: [], drafts: [], sent: [] };
 	// sync on read if stale >2min — no background worker at this volume.
 	// Fire-and-forget: awaiting it here blocks SSR for the whole first sync
 	// (50 threads × round-trips) and renders a white page. The email route
@@ -49,13 +52,14 @@ export const getInboxQuery = query(async (opts: { q?: string; archived?: boolean
 			.catch(() => {})
 			.finally(() => syncingAccounts.delete(account.id));
 	}
-	const threads = await listInbox(account, { q: opts.q, includeArchived: opts.archived });
+	const threads = await listInbox(account, { q: opts.q });
 	const drafts = await db
 		.select()
 		.from(emailOutbox)
 		.where(eq(emailOutbox.status, "draft"))
 		.orderBy(desc(emailOutbox.createdAt));
-	return { connected: true as const, threads, drafts };
+	const sent = await listSent(account);
+	return { connected: true as const, threads, drafts, sent };
 }, "email-inbox");
 
 export const getThreadQuery = query(async (id: string) => {
@@ -99,8 +103,9 @@ export type SendResult =
 	| { ok: false; error: string };
 
 /**
- * Send an outbox draft. Agent drafts land here via createEmailDraft; the human
- * edits (or not) and sends.
+ * Send an outbox draft: the body is LINTED against voice patterns first —
+ * avoid-violations BLOCK the send (the gate). If the draft came from an agent
+ * Agent drafts land here via createEmailDraft; the human edits (or not).
  */
 export async function sendOutboxDraft(outboxId: string, bodyOverride?: string): Promise<SendResult> {
 	"use server"; // file also exports client-imported query()/action() stubs — keep db chain out of the client bundle
@@ -131,10 +136,36 @@ export async function sendOutboxDraft(outboxId: string, bodyOverride?: string): 
 			body,
 			inReplyToGmailId,
 		});
+		// the sent body lands as its own tracked version (human author)
+		const tracked = await trackText("email_draft", row.id, row.loroSnapshot, "human", body);
 		await db
 			.update(emailOutbox)
-			.set({ status: "sent", body, gmailMessageId })
+			.set({
+				status: "sent",
+				body,
+				gmailMessageId,
+				...(tracked ? { loroSnapshot: tracked.loroSnapshot, version: tracked.version } : {}),
+			})
 			.where(eq(emailOutbox.id, outboxId));
+		// record the sent message locally — replies keep their thread current
+		// without waiting for a sync (new composes land via the SENT sync)
+		if (row.threadId) {
+			await db
+				.insert(emailMessages)
+				.values({
+					threadId: row.threadId,
+					gmailId: gmailMessageId,
+					toEmails: row.toEmail,
+					bodyText: body,
+					date: new Date(),
+					isSent: true,
+				})
+				.onConflictDoNothing({ target: emailMessages.gmailId });
+			await db
+				.update(emailThreads)
+				.set({ lastMessageAt: new Date() })
+				.where(eq(emailThreads.id, row.threadId));
+		}
 		return { ok: true, gmailMessageId };
 	} catch (e) {
 		const error = e instanceof Error ? e.message : String(e);
@@ -151,7 +182,8 @@ export const sendDraftAction = action(async (formData: FormData) => {
 
 /**
  * Agent ingest (brain MCP create_email_draft): store an outbox row; the human
- * reviews/edits/sends in the UI.
+ * reviews/edits/sends in the UI. v1 of the draft's tracked history = the
+ * agent's original body.
  */
 export async function createEmailDraft(input: {
 	to: string;
@@ -161,7 +193,6 @@ export async function createEmailDraft(input: {
 	threadId?: string;
 	context?: string;
 }): Promise<{ outboxId: string }> {
-	"use server";
 	const [outbox] = await db
 		.insert(emailOutbox)
 		.values({
@@ -172,5 +203,34 @@ export async function createEmailDraft(input: {
 			chatUuid: input.chatUuid,
 		})
 		.returning();
+	// v1 of the draft's tracked history = the agent's original body
+	const tracked = await trackText("email_draft", outbox.id, "", "agent", input.body);
+	if (tracked) {
+		await db
+			.update(emailOutbox)
+			.set({ loroSnapshot: tracked.loroSnapshot, version: tracked.version })
+			.where(eq(emailOutbox.id, outbox.id));
+	}
 	return { outboxId: outbox.id };
+}
+
+/**
+ * Persist a human edit to a draft body (Drafts tab autosave / PUT endpoint).
+ * CRDT-tracked like docs: hunk-diffed into the Loro snapshot + version row.
+ * Returns the new version number (unchanged if body identical).
+ */
+export async function saveDraftBody(
+	outboxId: string,
+	body: string,
+	author: "human" | "agent" = "human",
+): Promise<number | null> {
+	const [row] = await db.select().from(emailOutbox).where(eq(emailOutbox.id, outboxId));
+	if (!row) return null;
+	const tracked = await trackText("email_draft", outboxId, row.loroSnapshot, author, body);
+	if (!tracked) return row.version;
+	await db
+		.update(emailOutbox)
+		.set({ body, loroSnapshot: tracked.loroSnapshot, version: tracked.version })
+		.where(eq(emailOutbox.id, outboxId));
+	return tracked.version;
 }

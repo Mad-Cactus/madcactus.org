@@ -891,6 +891,81 @@ input:not(.form-group input):not(.doc-title):focus {
 	border-bottom-color: rgba(188, 156, 92, 0.5);
 	outline: none;
 }
+/* email folder tabs (inbox | drafts | sent) */
+.folder-tabs { display: flex; gap: 2px; margin: 14px 0 12px; border-bottom: 1px solid rgba(0, 0, 0, 0.12); }
+.folder-tabs button {
+	background: transparent;
+	border: none;
+	border-bottom: 2px solid transparent;
+	margin-bottom: -1px;
+	padding: 8px 18px;
+	font: inherit;
+	font-size: 14px;
+	color: var(--text-muted);
+	cursor: pointer;
+}
+.folder-tabs button:hover { color: var(--text); }
+.folder-tabs button.active { color: var(--text); font-weight: 600; border-bottom-color: var(--gold, #bc9c5c); }
+
+/* right-side version history panel */
+.doc-shell { display: flex; align-items: flex-start; gap: 36px; }
+.doc-main { flex: 1; min-width: 0; }
+.doc-history {
+	width: 300px;
+	flex-shrink: 0;
+	position: sticky;
+	top: 40px;
+	max-height: calc(100vh - 80px);
+	overflow-y: auto;
+	border-left: 1px solid rgba(0, 0, 0, 0.15);
+	padding-left: 20px;
+	font-size: 13px;
+}
+.doc-history-head {
+	font-family: var(--font-serif);
+	font-size: 16px;
+	font-weight: 700;
+	margin-bottom: 10px;
+}
+.doc-history-row {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	width: 100%;
+	background: transparent;
+	border: none;
+	border-bottom: 1px solid rgba(0, 0, 0, 0.07);
+	padding: 7px 4px;
+	font: inherit;
+	color: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+.doc-history-row:hover { background: rgba(0, 0, 0, 0.04); }
+.doc-history-row.active { background: rgba(188, 156, 92, 0.15); }
+.doc-history-ver { font-weight: 600; }
+.doc-history-author {
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: 0.4px;
+	color: var(--text-muted);
+}
+.doc-history-author.agent { color: var(--gold, #bc9c5c); }
+.doc-history-row .muted { margin-left: auto; font-size: 11px; white-space: nowrap; }
+.doc-diff {
+	margin-top: 14px;
+	white-space: pre-wrap;
+	word-break: break-word;
+	line-height: 1.55;
+	max-height: 55vh;
+	overflow-y: auto;
+	border: 1px solid rgba(0, 0, 0, 0.1);
+	padding: 10px 12px;
+	background: var(--bg-card);
+}
+.doc-diff ins { background: rgba(46, 125, 50, 0.18); text-decoration: none; }
+.doc-diff del { background: rgba(198, 40, 40, 0.15); color: #7a2018; }
+
 .doc-editor {
 	border: none;
 	background: transparent;
