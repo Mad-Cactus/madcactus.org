@@ -26,7 +26,7 @@ export default function AdminDocs() {
 					<button type="submit" class="btn btn-primary btn-sm">Create</button>
 				</form>
 			</div>
-			<p class="page-subtitle">CRDT markdown docs — agents write gated, your edits teach</p>
+			<p class="page-subtitle">Markdown docs with full version history — agents write, your edits teach</p>
 
 			<Suspense fallback={<div class="muted">Loading…</div>}>
 				<Show when={docs()?.length} fallback={<div class="muted">No docs yet.</div>}>
@@ -36,6 +36,7 @@ export default function AdminDocs() {
 								<div style={{ "font-size": "15px", "font-weight": 500, color: "var(--text)" }}>{d.title}</div>
 								<div class="muted" style={{ "font-size": "13px", "margin-top": "4px" }}>
 									{new Date(d.updatedAt).toLocaleString()} · v{d.version}
+									<Show when={d.status === "draft"}> · <span style={{ color: "var(--accent, #a855f7)" }}>agent write awaiting review</span></Show>
 									<Show when={d.shareToken}> · shared</Show>
 								</div>
 							</A>

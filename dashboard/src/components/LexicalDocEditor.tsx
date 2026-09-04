@@ -150,7 +150,7 @@ export default function LexicalDocEditor(props: {
 			});
 		});
 
-		// Autosave ~1.2s after typing stops (same cadence as the redline app).
+		// Autosave ~1.2s after typing stops.
 		let timer: ReturnType<typeof setTimeout> | undefined;
 		const offUpdate = ed.registerUpdateListener(() => {
 			syncToolbar();

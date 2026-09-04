@@ -1,20 +1,75 @@
-// Docs — CRDT markdown documents with redline wired in.
+// Docs — CRDT markdown documents with full version history.
 //
 // Merge layer: a Loro doc holding one LoroText with the markdown. Human saves
 // arrive as full markdown; we convert old→new into Loro deltas so a concurrent
 // agent append merges instead of clobbering (char-level CRDT, same lib macro
-// uses). The markdown column is the projection: search, export, lint, pairs.
+// uses). The markdown column is the projection: search, export, share.
+//
+// History layer: every save appends a doc_versions row (author agent|human).
+// Diffs compute on read — no pair tables. status='draft' means "has an agent
+// write awaiting human review"; any human save (or Mark final) flips it back.
 //
 // ponytail: single-text Loro doc + diff-hunk deltas replaces macro's 2.8k-line
 // @loro-mirror/core tree mirror — our docs are one text, not a nested Lexical
 // tree on the server. If docs ever become multi-writer trees, vendor
 // ~/GitHub/macro/packages/loro-mirror and store serialized editor state.
-import { desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
+import { diffWordsWithSpace, createPatch } from "diff";
 import { LoroDoc, type LoroText } from "loro-crdt";
 import { randomBytes } from "crypto";
 import { db } from "~/db";
-import { docs, type Doc } from "~/db/schema";
-import { addPair, lintDraft, shouldBlock, type Violation } from "~/lib/redline";
+import { docVersions, docs, type Doc, type DocVersion } from "~/db/schema";
+
+// ── Diffing ────────────────────────────────────────────────────────
+
+export type WordPart = { value: string; added?: boolean; removed?: boolean };
+
+/** GitHub-style word-level parts (UI highlighting). */
+export function wordDiff(oldStr: string, newStr: string): WordPart[] {
+	return diffWordsWithSpace(oldStr, newStr);
+}
+
+/** Plain unified diff text between two versions. */
+export function unifiedDiff(oldStr: string, newStr: string): string {
+	return createPatch("content", oldStr, newStr, "before", "after");
+}
+
+// ── Version policy ─────────────────────────────────────────────────
+
+const COALESCE_WINDOW_MS = 10 * 60_000;
+
+/**
+ * Consecutive saves by the same author within the window are one editing
+ * session — update the tip version instead of appending, so history stays
+ * at session granularity, not keystroke granularity.
+ */
+export function shouldCoalesceVersion(
+	last: { author: string; createdAt: Date } | undefined,
+	author: "agent" | "human",
+	now = new Date(),
+): boolean {
+	return (
+		!!last &&
+		last.author === author &&
+		now.getTime() - last.createdAt.getTime() < COALESCE_WINDOW_MS
+	);
+}
+
+/** The unreviewed agent write: latest agent version newer than the latest human version. */
+export function pickPendingAgentVersion<T extends { author: string; createdAt: Date }>(
+	versions: T[],
+): T | null {
+	// versions ascending by createdAt (getDocVersions order)
+	const humanAt = versions.reduce<number>(
+		(m, v) => (v.author === "human" ? Math.max(m, v.createdAt.getTime()) : m),
+		-Infinity,
+	);
+	for (let i = versions.length - 1; i >= 0; i--) {
+		const v = versions[i];
+		if (v.author === "agent" && v.createdAt.getTime() > humanAt) return v;
+	}
+	return null;
+}
 
 // ── Loro layer ─────────────────────────────────────────────────────
 
@@ -45,16 +100,28 @@ function applyMarkdown(text: LoroText, next: string) {
 
 // ── Queries ────────────────────────────────────────────────────────
 
-export async function createDoc(title: string, markdown = ""): Promise<Doc> {
+export async function createDoc(
+	title: string,
+	markdown = "",
+	opts: { status?: "draft" | "final"; author?: "agent" | "human"; chatUuid?: string } = {},
+): Promise<Doc> {
 	const { doc, text } = loroFromSnapshot(null);
 	if (markdown) {
 		text.insert(0, markdown);
 		doc.commit();
 	}
+	const author = opts.author ?? "human";
 	const [row] = await db
 		.insert(docs)
-		.values({ title, markdown, loroSnapshot: snapshotB64(doc) })
+		.values({
+			title,
+			markdown,
+			loroSnapshot: snapshotB64(doc),
+			status: opts.status ?? "final",
+			...(opts.chatUuid ? { chatUuid: opts.chatUuid } : {}),
+		})
 		.returning();
+	await db.insert(docVersions).values({ docId: row.id, content: markdown, author, chatUuid: opts.chatUuid });
 	return row;
 }
 
@@ -72,25 +139,54 @@ export async function getDoc(id: string): Promise<Doc | null> {
 	return row ?? null;
 }
 
-export async function saveDocMarkdown(id: string, markdown: string, author: "human" | "agent" = "human") {
+export async function saveDocMarkdown(
+	id: string,
+	markdown: string,
+	author: "agent" | "human" = "human",
+	chatUuid?: string,
+) {
 	const row = await getDoc(id);
 	if (!row) throw new Error(`doc not found: ${id}`);
 	const { doc, text } = loroFromSnapshot(row.loroSnapshot);
 	applyMarkdown(text, markdown);
 	doc.commit();
+
+	const now = new Date();
+	const [lastVersion] = await db
+		.select({ id: docVersions.id, author: docVersions.author, createdAt: docVersions.createdAt })
+		.from(docVersions)
+		.where(eq(docVersions.docId, id))
+		.orderBy(desc(docVersions.createdAt))
+		.limit(1);
+
 	await db
 		.update(docs)
 		.set({
 			markdown,
 			loroSnapshot: snapshotB64(doc),
 			version: row.version + 1,
-			...(author === "human" ? { lastAgentContent: row.lastAgentContent } : {}),
+			// human touch = reviewed; agent write re-opens review
+			status: author === "human" ? "final" : "draft",
 		})
 		.where(eq(docs.id, id));
+
+	if (shouldCoalesceVersion(lastVersion, author, now)) {
+		await db
+			.update(docVersions)
+			.set({ content: markdown, ...(chatUuid ? { chatUuid } : {}) })
+			.where(eq(docVersions.id, lastVersion.id));
+	} else {
+		await db.insert(docVersions).values({ docId: id, content: markdown, author, chatUuid });
+	}
+	return { version: row.version + 1 };
 }
 
 export async function renameDoc(id: string, title: string) {
 	await db.update(docs).set({ title }).where(eq(docs.id, id));
+}
+
+export async function setDocStatus(id: string, status: "draft" | "final") {
+	await db.update(docs).set({ status }).where(eq(docs.id, id));
 }
 
 export async function toggleShare(id: string, enabled: boolean): Promise<string | null> {
@@ -99,29 +195,29 @@ export async function toggleShare(id: string, enabled: boolean): Promise<string 
 	return token;
 }
 
-// ── Redline integration ────────────────────────────────────────────
+export async function getDocVersions(docId: string): Promise<DocVersion[]> {
+	return db
+		.select()
+		.from(docVersions)
+		.where(eq(docVersions.docId, docId))
+		.orderBy(asc(docVersions.createdAt));
+}
 
-export type AgentWriteResult =
-	| { blocked: true; violations: Violation[] }
-	| { blocked: false; docId: string; version: number };
+/** Unified diff of one version against the version immediately before it. */
+export async function getVersionDiff(docId: string, versionId: string): Promise<string | null> {
+	const versions = await getDocVersions(docId);
+	const idx = versions.findIndex((v) => v.id === versionId);
+	if (idx === -1) return null;
+	return unifiedDiff(idx > 0 ? versions[idx - 1].content : "", versions[idx].content);
+}
 
-/**
- * gated_write for docs: lint against voice patterns first; avoid-violations
- * BLOCK (same contract as gbrain's gated_write in macro). On success, the
- * content is appended to the Loro doc and stamped as the agent's version for
- * the finalize pair.
- */
+/** Agent write: append (default) or replace, attributed + versioned, re-opens review. */
 export async function agentWrite(input: {
 	docId: string;
 	content: string;
 	chatUuid: string;
 	mode?: "append" | "replace";
-	force?: boolean;
-}): Promise<AgentWriteResult> {
-	const violations = await lintDraft(input.content);
-	if (shouldBlock(violations) && !input.force) {
-		return { blocked: true, violations };
-	}
+}): Promise<{ docId: string; version: number }> {
 	const row = await getDoc(input.docId);
 	if (!row) throw new Error(`doc not found: ${input.docId}`);
 
@@ -130,30 +226,6 @@ export async function agentWrite(input: {
 			? input.content
 			: (row.markdown ? row.markdown.replace(/\n*$/, "\n\n") : "") + input.content + "\n";
 
-	await saveDocMarkdown(input.docId, next, "agent");
-	await db
-		.update(docs)
-		.set({ lastAgentContent: input.content, chatUuid: input.chatUuid })
-		.where(eq(docs.id, input.docId));
-	return { blocked: false, docId: input.docId, version: row.version + 1 };
-}
-
-/**
- * Finalize: last agent write = draft, current markdown = final, diff computed,
- * pair stored, derivation job enqueued. Docs finalize via button; emails on send.
- */
-export async function finalizeDoc(id: string): Promise<string> {
-	const row = await getDoc(id);
-	if (!row) throw new Error(`doc not found: ${id}`);
-	if (!row.lastAgentContent) throw new Error("doc has no agent write to pair against");
-	const pairId = await addPair({
-		draftContent: row.lastAgentContent,
-		finalContent: row.markdown,
-		context: `doc: ${row.title}`,
-		tags: "doc",
-		chatUuid: row.chatUuid ?? undefined,
-		surface: "doc",
-	});
-	await db.update(docs).set({ lastAgentContent: null }).where(eq(docs.id, id));
-	return pairId.id;
+	const { version } = await saveDocMarkdown(input.docId, next, "agent", input.chatUuid);
+	return { docId: input.docId, version };
 }

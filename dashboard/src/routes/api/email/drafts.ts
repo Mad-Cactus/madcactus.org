@@ -13,7 +13,7 @@ export const GET = async () => {
 	return new Response(JSON.stringify(rows), { headers: { "Content-Type": "application/json" } });
 };
 
-/** POST /api/email/drafts — manual compose (no redline pair: nothing to learn). */
+/** POST /api/email/drafts — manual compose. */
 export const POST = async (event: APIEvent) => {
 	if (!(await getAuthedClient())) {
 		return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });

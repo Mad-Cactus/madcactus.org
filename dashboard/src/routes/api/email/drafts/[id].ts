@@ -8,7 +8,7 @@ import { sendOutboxDraft } from "~/lib/email-queries";
 /**
  * /api/email/drafts/:id
  * PUT  { body?, subject?, to? }          → update draft
- * POST { op: "send", body? }             → lint-gated send (agent drafts → pair)
+ * POST { op: "send", body? }             → send (or discard)
  * POST { op: "discard" }                 → delete
  */
 function json(body: unknown, status = 200) {

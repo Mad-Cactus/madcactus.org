@@ -1,6 +1,6 @@
 import { Title } from "@solidjs/meta";
 import { useParams, createAsync } from "@solidjs/router";
-import { Show, createSignal, onMount } from "solid-js";
+import { For, Show, createSignal, onMount } from "solid-js";
 import Layout from "~/components/Layout";
 import LexicalDocEditor from "~/components/LexicalDocEditor";
 import { getDocQuery } from "~/lib/docs-queries";
@@ -67,12 +67,12 @@ const Doc = (props: { id: string; doc: NonNullable<Awaited<ReturnType<typeof get
 				}}>
 					Export .md
 				</button>
-				<button type="button" class="btn btn-primary btn-sm" onClick={async () => {
+				<button type="button" class="btn btn-sm" onClick={async () => {
 					await save(props.id, markdown());
 					const r = await post(props.id, { op: "finalize" });
-					setStatus(r.pairId ? `finalized → pair ${r.pairId.slice(0, 8)}` : r.error);
+					setStatus(r.ok ? "marked final" : r.error);
 				}}>
-					Finalize
+					Mark final
 				</button>
 			</div>
 			<Show when={shareUrl()}>
@@ -112,7 +112,60 @@ const Doc = (props: { id: string; doc: NonNullable<Awaited<ReturnType<typeof get
 				}}
 				onSave={(md) => save(props.id, md)}
 			/>
+			<DocHistory id={props.id} />
 		</>
+	);
+};
+
+type VersionRow = { id: string; author: string; chatUuid: string | null; length: number; createdAt: string };
+
+/** Version history + per-version unified diff (agent vs human edits). */
+const DocHistory = (props: { id: string }) => {
+	const [versions, setVersions] = createSignal<VersionRow[]>([]);
+	const [diff, setDiff] = createSignal("");
+	const [open, setOpen] = createSignal(false);
+
+	const load = async () => {
+		const r = await fetch(`/api/docs/${props.id}/versions`);
+		if (r.ok) setVersions((await r.json()).versions);
+	};
+	onMount(() => void load());
+
+	const showDiff = async (v: VersionRow) => {
+		const r = await fetch(`/api/docs/${props.id}/versions?diff=${v.id}`);
+		if (r.ok) {
+			setDiff((await r.json()).diff);
+			setOpen(true);
+		}
+	};
+
+	return (
+		<div class="card" style={{ "margin-top": "16px", padding: "14px 18px" }}>
+			<div style={{ display: "flex", "align-items": "baseline", gap: "10px" }}>
+				<strong style={{ "font-size": "13px" }}>History</strong>
+				<span class="muted" style={{ "font-size": "12px" }}>{versions().length} versions</span>
+				<div style={{ flex: 1 }} />
+				<button type="button" class="btn btn-sm" onClick={() => setOpen(!open())}>
+					{open() ? "Hide" : "Show"}
+				</button>
+			</div>
+			<Show when={open()}>
+				<For each={versions().slice().reverse()}>
+					{(v) => (
+						<div style={{ display: "flex", gap: "10px", "align-items": "baseline", "margin-top": "6px", "font-size": "13px" }}>
+							<span style={{ width: "52px", color: v.author === "agent" ? "var(--accent, #a855f7)" : "var(--muted)" }}>
+								{v.author}
+							</span>
+							<span class="muted">{new Date(v.createdAt).toLocaleString()} · {v.length} chars</span>
+							<button type="button" class="btn btn-sm" onClick={() => void showDiff(v)}>diff</button>
+						</div>
+					)}
+				</For>
+				<Show when={diff()}>
+					<pre class="muted" style={{ "font-size": "12px", "white-space": "pre-wrap", "margin-top": "10px", background: "var(--bg-alt, #f6f6f6)", padding: "10px", "border-radius": "6px" }}>{diff()}</pre>
+				</Show>
+			</Show>
+		</div>
 	);
 };
 
