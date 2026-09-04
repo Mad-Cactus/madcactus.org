@@ -1,6 +1,6 @@
 import { Title } from "@solidjs/meta";
 import { createAsync, useAction } from "@solidjs/router";
-import { For, Show, Suspense, createSignal } from "solid-js";
+import { For, Show, Suspense, createSignal, createMemo } from "solid-js";
 import Layout from "~/components/Layout";
 import { getUserQuery } from "~/lib/queries";
 import {
@@ -11,7 +11,7 @@ import {
 	getBrainDigestQuery,
 	type BrainDigestItem,
 } from "~/lib/admin-queries";
-import { OUTREACH_STAGES, type OutreachProspect } from "~/db/schema";
+import { OUTREACH_STAGES, type OutreachProspect, type OutreachStage } from "~/db/schema";
 
 const STAGE_COLOR: Record<string, string> = {
 	sent: "var(--text-subtle)",
@@ -70,6 +70,16 @@ function withInstantIso(fd: FormData): FormData {
 	return fd;
 }
 
+/** Due first, then by next action (no date sinks to bottom), then newest. */
+function sortCards(a: OutreachProspect, b: OutreachProspect, dueIds: Set<string>): number {
+	const d = Number(dueIds.has(b.id)) - Number(dueIds.has(a.id));
+	if (d) return d;
+	const an = a.nextActionAt?.getTime() ?? Infinity;
+	const bn = b.nextActionAt?.getTime() ?? Infinity;
+	if (an !== bn) return an - bn;
+	return b.createdAt.getTime() - a.createdAt.getTime();
+}
+
 function DigestSection(props: { brainUrl: string }) {
 	const digest = createAsync(() => getBrainDigestQuery(props.brainUrl), {
 		deferStream: true,
@@ -107,26 +117,36 @@ function DigestSection(props: { brainUrl: string }) {
 	);
 }
 
-function ProspectCard(props: { prospect: OutreachProspect }) {
+function BoardCard(props: { prospect: OutreachProspect; due: boolean }) {
 	const p = () => props.prospect;
 	const setStage = useAction(setOutreachStageAction);
 	const setNextAction = useAction(setOutreachNextActionAction);
 	const [editing, setEditing] = createSignal(false);
 	const [error, setError] = createSignal("");
+	const [dragging, setDragging] = createSignal(false);
 
-	async function handleStage(stage: string) {
-		setError("");
-		const fd = new FormData();
-		fd.set("id", p().id);
-		fd.set("stage", stage);
-		const res = (await setStage(fd)) as { error?: string };
-		if (res.error) setError(res.error);
+	function startDrag(e: DragEvent) {
+		e.dataTransfer?.setData("text/plain", p().id);
+		if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+		setDragging(true);
 	}
 
-	async function handleNextAction(e: Event) {
+	async function handleSave(e: Event) {
 		e.preventDefault();
 		setError("");
-		const res = (await setNextAction(withInstantIso(new FormData(e.target as HTMLFormElement)))) as { error?: string };
+		const fd = new FormData(e.target as HTMLFormElement);
+		const stage = String(fd.get("stage"));
+		if (stage !== p().stage) {
+			const sfd = new FormData();
+			sfd.set("id", p().id);
+			sfd.set("stage", stage);
+			const r = (await setStage(sfd)) as { error?: string };
+			if (r.error) {
+				setError(r.error);
+				return;
+			}
+		}
+		const res = (await setNextAction(withInstantIso(fd))) as { error?: string };
 		if (res.error) {
 			setError(res.error);
 			return;
@@ -134,28 +154,37 @@ function ProspectCard(props: { prospect: OutreachProspect }) {
 		setEditing(false);
 	}
 
-	const otherStages = OUTREACH_STAGES.filter((s) => s !== p().stage);
-
 	return (
-		<div class="card" style={{ padding: "14px 20px" }}>
-			<div style={{ display: "flex", "align-items": "baseline", gap: "10px", "flex-wrap": "wrap" }}>
-				<span style={{ "font-weight": "600", "font-size": "14px" }}>{p().company}</span>
-				<Show when={p().contactName}>
-					<span class="muted" style={{ "font-size": "13px" }}>{p().contactName}</span>
+		<div
+			class="board-card"
+			classList={{ dragging: dragging() }}
+			draggable
+			onDragStart={startDrag}
+			onDragEnd={() => setDragging(false)}
+		>
+			<div style={{ display: "flex", "align-items": "baseline", gap: "6px" }}>
+				<span style={{ "font-weight": "600", "font-size": "13px" }}>{p().company}</span>
+				<Show when={props.due}>
+					<span class="badge" style={{ color: "var(--orange)", "margin-left": "auto", "white-space": "nowrap" }}>due</span>
 				</Show>
-				<Show when={p().email}>
-					<a href={`mailto:${p().email}`} class="muted" style={{ "font-size": "12px" }}>{p().email}</a>
-				</Show>
-				<span class="badge" style={{ color: STAGE_COLOR[p().stage], "margin-left": "auto" }}>{p().stage}</span>
 			</div>
+			<Show when={p().contactName || p().email}>
+				<div class="muted" style={{ "font-size": "12px" }}>
+					<Show when={p().contactName}>{p().contactName}</Show>
+					<Show when={p().contactName && p().email}> · </Show>
+					<Show when={p().email}>
+						<a href={`mailto:${p().email}`} class="muted">{p().email}</a>
+					</Show>
+				</div>
+			</Show>
 
-			<div class="muted" style={{ "font-size": "12px", margin: "6px 0" }}>
-				Next action: {fmtDate(p().nextActionAt)}
+			<div class="muted" style={{ "font-size": "12px", margin: "5px 0", color: props.due ? "var(--orange)" : undefined }}>
+				→ {fmtDate(p().nextActionAt)}
 				<Show when={p().nextActionNote}> — {p().nextActionNote}</Show>
 			</div>
 
 			<Show when={p().videoUrl || p().brainUrl}>
-				<div style={{ "font-size": "12px", margin: "6px 0" }}>
+				<div style={{ "font-size": "12px", margin: "5px 0" }}>
 					<Show when={p().videoUrl}>
 						<a href={p().videoUrl!} target="_blank" rel="noreferrer">video ↗</a>{" "}
 						<button
@@ -164,12 +193,11 @@ function ProspectCard(props: { prospect: OutreachProspect }) {
 							onClick={() => navigator.clipboard.writeText(`${location.origin}/v/${p().id}`)}
 						>
 							copy email link
-						</button>{" "}
-						<Show when={videoSummary(p())} fallback={<span class="muted">unopened</span>}>
-							<span style={{ color: "var(--orange)" }}>{videoSummary(p())}</span>
+						</button>
+						<Show when={videoSummary(p())}>
+							<div style={{ color: "var(--orange)" }}>{videoSummary(p())}</div>
 						</Show>
 					</Show>
-					<Show when={p().videoUrl && p().brainUrl}> · </Show>
 					<Show when={p().brainUrl}>
 						<a href={p().brainUrl!} target="_blank" rel="noreferrer">brain ↗</a>
 					</Show>
@@ -181,24 +209,12 @@ function ProspectCard(props: { prospect: OutreachProspect }) {
 			</Show>
 
 			<Show when={p().notes}>
-				<p class="muted" style={{ "font-size": "12px", margin: "6px 0" }}>{p().notes}</p>
+				<p class="muted" style={{ "font-size": "12px", margin: "5px 0" }}>{p().notes}</p>
 			</Show>
 
-			<div style={{ display: "flex", gap: "6px", "flex-wrap": "wrap", "margin-top": "10px", "align-items": "center" }}>
-				<For each={otherStages}>
-					{(s) => (
-						<button
-							type="button"
-							class="btn btn-sm"
-							style={{ color: STAGE_COLOR[s], "border-color": STAGE_COLOR[s] }}
-							onClick={() => handleStage(s)}
-						>
-							→ {s}
-						</button>
-					)}
-				</For>
+			<div style={{ "margin-top": "8px" }}>
 				<button type="button" class="btn btn-sm" onClick={() => setEditing(!editing())}>
-					{editing() ? "Cancel" : "Edit next action"}
+					{editing() ? "Cancel" : "Edit"}
 				</button>
 			</div>
 
@@ -206,17 +222,15 @@ function ProspectCard(props: { prospect: OutreachProspect }) {
 				<p class="login-error">{error()}</p>
 			</Show>
 
+			{/* stage select covers touch + keyboard — HTML5 drag doesn't fire there */}
 			<Show when={editing()}>
-				<form onSubmit={handleNextAction} style={{ display: "flex", gap: "8px", "margin-top": "10px", "flex-wrap": "wrap" }}>
+				<form onSubmit={handleSave} style={{ display: "grid", gap: "8px", "margin-top": "8px" }}>
 					<input type="hidden" name="id" value={p().id} />
+					<select name="stage" value={p().stage}>
+						<For each={OUTREACH_STAGES}>{(s) => <option value={s}>{s}</option>}</For>
+					</select>
 					<input type="datetime-local" name="next_action_at" value={toInputValue(p().nextActionAt)} />
-					<input
-						type="text"
-						name="next_action_note"
-						placeholder="Next action note"
-						value={p().nextActionNote ?? ""}
-						style={{ flex: "1", "min-width": "180px" }}
-					/>
+					<input type="text" name="next_action_note" placeholder="Next action note" value={p().nextActionNote ?? ""} />
 					<button type="submit" class="btn btn-primary btn-sm">Save</button>
 				</form>
 			</Show>
@@ -224,9 +238,100 @@ function ProspectCard(props: { prospect: OutreachProspect }) {
 	);
 }
 
+function Board() {
+	const outreach = createAsync(() => getOutreachQuery(), { deferStream: true });
+	const setStage = useAction(setOutreachStageAction);
+	const [draggedId, setDraggedId] = createSignal<string | undefined>();
+	const [hoverStage, setHoverStage] = createSignal<string | undefined>();
+	const [error, setError] = createSignal("");
+	// ponytail: optimistic stage override stays in place after a successful
+	// drop (the refetched query matches it anyway); only cleared on error.
+	const [overrides, setOverrides] = createSignal<Record<string, string>>({});
+
+	const dueIds = createMemo(() => new Set((outreach()?.due ?? []).map((p) => p.id)));
+
+	const columns = createMemo(() => {
+		const all = outreach()?.all ?? [];
+		return OUTREACH_STAGES.map((stage) => {
+			const cards = all
+				.filter((p) => (overrides()[p.id] ?? p.stage) === stage)
+				.sort((a, b) => sortCards(a, b, dueIds()));
+			return { stage, cards };
+		});
+	});
+
+	async function handleDrop(e: DragEvent, stage: OutreachStage) {
+		e.preventDefault();
+		setHoverStage(undefined);
+		const id = draggedId() ?? e.dataTransfer?.getData("text/plain");
+		setDraggedId(undefined);
+		if (!id) return;
+		const p = outreach()?.all.find((x) => x.id === id);
+		if (!p || p.stage === stage) return;
+		setError("");
+		setOverrides((o) => ({ ...o, [id]: stage }));
+		const fd = new FormData();
+		fd.set("id", id);
+		fd.set("stage", stage);
+		const res = (await setStage(fd)) as { error?: string };
+		if (res.error) {
+			setOverrides((o) => {
+				const n = { ...o };
+				delete n[id];
+				return n;
+			});
+			setError(res.error);
+		}
+	}
+
+	return (
+		<div>
+			<Show when={error()}>
+				<p class="login-error">{error()}</p>
+			</Show>
+			<Suspense fallback={<p class="muted">Loading…</p>}>
+				<Show when={outreach()?.all.length} fallback={<p class="muted">No prospects yet — add one above.</p>}>
+					<div class="board">
+						<For each={columns()}>
+							{(col) => (
+								<div
+									class="board-col"
+									classList={{ "drag-over": hoverStage() === col.stage }}
+									onDragOver={(e) => {
+										e.preventDefault();
+										if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+										setHoverStage(col.stage);
+									}}
+									onDragLeave={(e) => {
+										if (!e.currentTarget.contains(e.relatedTarget as Node)) setHoverStage(undefined);
+									}}
+									onDrop={(e) => handleDrop(e, col.stage)}
+								>
+									<div class="board-col-head">
+										<span class="dot" style={{ background: STAGE_COLOR[col.stage] }} />
+										{col.stage}
+										<span class="board-col-count">{col.cards.length}</span>
+									</div>
+									<div class="board-cards">
+										<For each={col.cards}>
+											{(p) => <BoardCard prospect={p} due={dueIds().has(p.id)} />}
+										</For>
+										<Show when={!col.cards.length}>
+											<p class="muted" style={{ "font-size": "12px", margin: "0" }}>drop here</p>
+										</Show>
+									</div>
+								</div>
+							)}
+						</For>
+					</div>
+				</Show>
+			</Suspense>
+		</div>
+	);
+}
+
 export default function AdminOutreach() {
 	const user = createAsync(() => getUserQuery(), { deferStream: true });
-	const outreach = createAsync(() => getOutreachQuery(), { deferStream: true });
 	const createProspect = useAction(createOutreachAction);
 
 	const [error, setError] = createSignal("");
@@ -249,7 +354,7 @@ export default function AdminOutreach() {
 		<Layout user={user()}>
 			<Title>Outreach — Mad Cactus</Title>
 			<h1 class="page-title">Outreach Pipeline</h1>
-			<p class="page-subtitle">Manual follow-ups for company-brain outreach. No email is sent from here.</p>
+			<p class="page-subtitle">Drag cards between stages. Manual follow-ups for company-brain outreach — no email is sent from here.</p>
 
 			<details style={{ "margin-bottom": "24px" }}>
 				<summary style={{ cursor: "pointer", "font-weight": "600" }}>Add prospect</summary>
@@ -280,27 +385,7 @@ export default function AdminOutreach() {
 				<p class="muted">{message()}</p>
 			</Show>
 
-			<Suspense fallback={<p class="muted">Loading…</p>}>
-				<h2 style={{ "font-size": "16px" }}>Due now</h2>
-				<Show
-					when={outreach()?.due.length}
-					fallback={<p class="muted">Nothing due — every prospect has a future next action (or is closed).</p>}
-				>
-					<div style={{ display: "flex", "flex-direction": "column", gap: "10px", "margin-bottom": "28px" }}>
-						<For each={outreach()!.due}>{(p) => <ProspectCard prospect={p} />}</For>
-					</div>
-				</Show>
-
-				<h2 style={{ "font-size": "16px" }}>All prospects</h2>
-				<Show
-					when={outreach()?.all.length}
-					fallback={<p class="muted">No prospects yet.</p>}
-				>
-					<div style={{ display: "flex", "flex-direction": "column", gap: "10px" }}>
-						<For each={outreach()!.all}>{(p) => <ProspectCard prospect={p} />}</For>
-					</div>
-				</Show>
-			</Suspense>
+			<Board />
 		</Layout>
 	);
 }

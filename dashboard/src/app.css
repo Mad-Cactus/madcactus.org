@@ -442,6 +442,69 @@
   margin-top: 12px;
 }
 
+/* ── Outreach kanban board ── */
+.board {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  overflow-x: auto;
+  padding-bottom: 12px;
+}
+
+.board-col {
+  flex: 0 0 260px;
+  background: rgba(127, 127, 127, 0.06);
+  border-radius: 8px;
+  padding: 10px;
+  min-height: 160px;
+}
+
+.board-col.drag-over {
+  outline: 2px dashed var(--orange);
+  outline-offset: -2px;
+}
+
+.board-col-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+
+.board-col-count {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.board-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.board-card {
+  background: var(--bg-card);
+  border: 1px solid rgba(127, 127, 127, 0.25);
+  border-radius: 6px;
+  padding: 10px 12px;
+  cursor: grab;
+}
+
+.board-card.dragging {
+  opacity: 0.5;
+}
+
 /* ── Command palette (shadcn Command via cmdk-solid) ── */
 [cmdk-overlay] {
   position: fixed;
