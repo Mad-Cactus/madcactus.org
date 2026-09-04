@@ -1,15 +1,29 @@
 import { Title } from "@solidjs/meta";
 import { useParams, createAsync } from "@solidjs/router";
-import { Show, createSignal, onMount } from "solid-js";
+import { For, Show, createSignal, onMount } from "solid-js";
 import Layout from "~/components/Layout";
 import LexicalDocEditor from "~/components/LexicalDocEditor";
 import { getDocQuery } from "~/lib/docs-queries";
+
+type VersionRow = {
+	id: string;
+	version: number;
+	author: string;
+	createdAt: string;
+	updatedAt: string;
+};
+type DiffPart = { added?: boolean; removed?: boolean; value: string };
 
 const Doc = (props: { id: string; doc: NonNullable<Awaited<ReturnType<typeof getDocQuery>>> }) => {
 	const doc = () => props.doc;
 	const [markdown, setMarkdown] = createSignal("");
 	const [status, setStatus] = createSignal("");
 	const [shareUrl, setShareUrl] = createSignal("");
+	const [verNum, setVerNum] = createSignal(doc().version);
+	const [showHistory, setShowHistory] = createSignal(false);
+	const [versions, setVersions] = createSignal<VersionRow[]>([]);
+	const [sel, setSel] = createSignal<number | null>(null);
+	const [diff, setDiff] = createSignal<DiffPart[] | null>(null);
 	let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
 	// seed once when the doc resource resolves
@@ -24,6 +38,24 @@ const Doc = (props: { id: string; doc: NonNullable<Awaited<ReturnType<typeof get
 		}, 50);
 	});
 
+	const loadVersions = async () => {
+		const r = await fetch(`/api/docs/${props.id}?versions=1`);
+		if (r.ok) setVersions(((await r.json()) as { versions: VersionRow[] }).versions);
+	};
+
+	const openVersion = async (v: number) => {
+		setSel(v);
+		setDiff(null);
+		const r = await fetch(`/api/docs/${props.id}?diff=${v}`);
+		if (r.ok) setDiff(((await r.json()) as { parts: DiffPart[] }).parts);
+	};
+
+	const toggleHistory = () => {
+		const next = !showHistory();
+		setShowHistory(next);
+		if (next) void loadVersions();
+	};
+
 	const save = async (id: string, md: string) => {
 		setStatus("saving…");
 		const res = await fetch(`/api/docs/${id}`, {
@@ -31,7 +63,13 @@ const Doc = (props: { id: string; doc: NonNullable<Awaited<ReturnType<typeof get
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ markdown: md }),
 		});
-		setStatus(res.ok ? `saved ${new Date().toLocaleTimeString()}` : "save failed");
+		if (res.ok) {
+			setVerNum(((await res.json()) as { version: number }).version);
+			setStatus(`saved ${new Date().toLocaleTimeString()}`);
+			if (showHistory()) void loadVersions();
+		} else {
+			setStatus("save failed");
+		}
 	};
 
 	const post = async (id: string, body: Record<string, unknown>) => {
@@ -46,11 +84,16 @@ const Doc = (props: { id: string; doc: NonNullable<Awaited<ReturnType<typeof get
 	return (
 		<>
 			<Title>{doc().title} — Mad Cactus</Title>
+			<div class="doc-shell">
+				<div class="doc-main">
 			{/* macro-style: slim chrome row, then the title reads as the first
 			    line of the document itself */}
 			<div class="doc-topbar">
-				<span>{status() || `v${doc().version}`}</span>
+				<span>{status() || `v${verNum()}`}</span>
 				<div style={{ flex: 1 }} />
+				<button type="button" class="btn btn-sm" classList={{ active: showHistory() }} onClick={toggleHistory}>
+					History
+				</button>
 				<button type="button" class="btn btn-sm" onClick={async () => {
 					const r = await post(props.id, { op: "share", enabled: !shareUrl() });
 					setShareUrl(r.shareToken ? `${location.origin}/share/${r.shareToken}` : "");
@@ -112,6 +155,44 @@ const Doc = (props: { id: string; doc: NonNullable<Awaited<ReturnType<typeof get
 				}}
 				onSave={(md) => save(props.id, md)}
 			/>
+				</div>
+				<Show when={showHistory()}>
+					<aside class="doc-history">
+						<div class="doc-history-head">History</div>
+						<Show when={versions().length} fallback={<p class="muted">No saved versions yet.</p>}>
+							<For each={versions()}>
+								{(v) => (
+									<button
+										type="button"
+										class="doc-history-row"
+										classList={{ active: sel() === v.version }}
+										onClick={() => void openVersion(v.version)}
+									>
+										<span class="doc-history-ver">v{v.version}</span>
+										<span class="doc-history-author" classList={{ agent: v.author === "agent" }}>
+											{v.author}
+										</span>
+										<span class="muted">{new Date(v.updatedAt).toLocaleString()}</span>
+									</button>
+								)}
+							</For>
+						</Show>
+						<Show when={sel() !== null}>
+							<div class="doc-diff">
+								<Show when={diff()} fallback={<p class="muted">Loading…</p>}>
+									{(parts) => (
+										<For each={parts()}>
+											{(p) =>
+												p.added ? <ins>{p.value}</ins> : p.removed ? <del>{p.value}</del> : <span>{p.value}</span>
+											}
+										</For>
+									)}
+								</Show>
+							</div>
+						</Show>
+					</aside>
+				</Show>
+			</div>
 		</>
 	);
 };

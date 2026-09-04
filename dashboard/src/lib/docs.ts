@@ -1,60 +1,34 @@
 // Docs — CRDT markdown documents with redline wired in.
 //
-// Merge layer: a Loro doc holding one LoroText with the markdown. Human saves
-// arrive as full markdown; we convert old→new into Loro deltas so a concurrent
-// agent append merges instead of clobbering (char-level CRDT, same lib macro
-// uses). The markdown column is the projection: search, export, lint, pairs.
-//
-// ponytail: single-text Loro doc + diff-hunk deltas replaces macro's 2.8k-line
-// @loro-mirror/core tree mirror — our docs are one text, not a nested Lexical
-// tree on the server. If docs ever become multi-writer trees, vendor
-// ~/GitHub/macro/packages/loro-mirror and store serialized editor state.
+// Merge layer: a Loro doc holding one LoroText with the markdown, tracked via
+// ~/lib/crdt-text (shared with email drafts). Human saves arrive as full
+// markdown; we convert old→new into Loro deltas so a concurrent agent append
+// merges instead of clobbering. The markdown column is the projection: search,
+// export, lint, pairs.
 import { desc, eq } from "drizzle-orm";
-import { LoroDoc, type LoroText } from "loro-crdt";
 import { randomBytes } from "crypto";
 import { db } from "~/db";
 import { docs, type Doc } from "~/db/schema";
 import { addPair, lintDraft, shouldBlock, type Violation } from "~/lib/redline";
+import { trackText, listTextVersions, getTextVersionDiff } from "~/lib/crdt-text";
 
-// ── Loro layer ─────────────────────────────────────────────────────
-
-function loroFromSnapshot(snapshotB64: string | null | undefined): { doc: LoroDoc; text: LoroText } {
-	const doc = new LoroDoc();
-	if (snapshotB64) {
-		try {
-			doc.import(new Uint8Array(Buffer.from(snapshotB64, "base64")));
-		} catch {
-			// corrupt/absent snapshot — start fresh; markdown column stays truth
-		}
-	}
-	const text = doc.getText("markdown");
-	return { doc, text };
-}
-
-function snapshotB64(doc: LoroDoc): string {
-	return Buffer.from(doc.export({ mode: "snapshot" })).toString("base64");
-}
-
-/** Apply full-markdown replacement as Loro ops (keeps CRDT history + merge base). */
-function applyMarkdown(text: LoroText, next: string) {
-	const current = text.toString();
-	if (current === next) return;
-	if (current.length > 0) text.delete(0, current.length);
-	if (next.length > 0) text.insert(0, next);
-}
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // ── Queries ────────────────────────────────────────────────────────
 
 export async function createDoc(title: string, markdown = ""): Promise<Doc> {
-	const { doc, text } = loroFromSnapshot(null);
+	const [row] = await db.insert(docs).values({ title, markdown }).returning();
 	if (markdown) {
-		text.insert(0, markdown);
-		doc.commit();
+		const tracked = await trackText("doc", row.id, "", "human", markdown);
+		if (tracked) {
+			const [updated] = await db
+				.update(docs)
+				.set({ loroSnapshot: tracked.loroSnapshot, version: tracked.version })
+				.where(eq(docs.id, row.id))
+				.returning();
+			return updated;
+		}
 	}
-	const [row] = await db
-		.insert(docs)
-		.values({ title, markdown, loroSnapshot: snapshotB64(doc) })
-		.returning();
 	return row;
 }
 
@@ -67,26 +41,42 @@ export async function getDoc(id: string): Promise<Doc | null> {
 	// "invalid input syntax for type uuid" instead of returning no rows. Guard so
 	// callers get the clean not-found path. Swap for a slug->id lookup if agents
 	// keep naming docs by slug.
-	if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return null;
+	if (!UUID_RE.test(id)) return null;
 	const [row] = await db.select().from(docs).where(eq(docs.id, id));
 	return row ?? null;
 }
 
-export async function saveDocMarkdown(id: string, markdown: string, author: "human" | "agent" = "human") {
+/** Returns the doc's new version number (unchanged if markdown identical). */
+export async function saveDocMarkdown(
+	id: string,
+	markdown: string,
+	author: "human" | "agent" = "human",
+): Promise<number> {
 	const row = await getDoc(id);
 	if (!row) throw new Error(`doc not found: ${id}`);
-	const { doc, text } = loroFromSnapshot(row.loroSnapshot);
-	applyMarkdown(text, markdown);
-	doc.commit();
+	const tracked = await trackText("doc", id, row.loroSnapshot, author, markdown);
+	if (!tracked) return row.version;
 	await db
 		.update(docs)
 		.set({
 			markdown,
-			loroSnapshot: snapshotB64(doc),
-			version: row.version + 1,
+			loroSnapshot: tracked.loroSnapshot,
+			version: tracked.version,
 			...(author === "human" ? { lastAgentContent: row.lastAgentContent } : {}),
 		})
 		.where(eq(docs.id, id));
+	return tracked.version;
+}
+
+export async function listDocVersions(docId: string) {
+	if (!UUID_RE.test(docId)) return [];
+	return listTextVersions("doc", docId);
+}
+
+/** Word-level diff between version N and N-1, computed server-side. */
+export async function getDocVersionDiff(docId: string, version: number) {
+	if (!UUID_RE.test(docId)) return null;
+	return getTextVersionDiff("doc", docId, version);
 }
 
 export async function renameDoc(id: string, title: string) {
@@ -130,12 +120,12 @@ export async function agentWrite(input: {
 			? input.content
 			: (row.markdown ? row.markdown.replace(/\n*$/, "\n\n") : "") + input.content + "\n";
 
-	await saveDocMarkdown(input.docId, next, "agent");
+	const version = await saveDocMarkdown(input.docId, next, "agent");
 	await db
 		.update(docs)
 		.set({ lastAgentContent: input.content, chatUuid: input.chatUuid })
 		.where(eq(docs.id, input.docId));
-	return { blocked: false, docId: input.docId, version: row.version + 1 };
+	return { blocked: false, docId: input.docId, version };
 }
 
 /**

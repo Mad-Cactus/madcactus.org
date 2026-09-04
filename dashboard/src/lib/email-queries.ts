@@ -13,6 +13,7 @@ import { getAuthedClient } from "~/lib/session";import {
 	sendGmail,
 } from "~/lib/gmail";
 import { finalizeDraft, lintDraft, saveRevision, shouldBlock } from "~/lib/redline";
+import { trackText } from "~/lib/crdt-text";
 
 async function requireAdmin() {
 	const supabase = await getAuthedClient();
@@ -145,9 +146,17 @@ export async function sendOutboxDraft(outboxId: string, bodyOverride?: string): 
 			await saveRevision(row.draftId, body, "human");
 			pairId = await finalizeDraft(row.draftId);
 		}
+		// the sent body lands as its own tracked version (human author)
+		const tracked = await trackText("email_draft", row.id, row.loroSnapshot, "human", body);
 		await db
 			.update(emailOutbox)
-			.set({ status: "sent", body, gmailMessageId, pairId: pairId ?? null })
+			.set({
+				status: "sent",
+				body,
+				gmailMessageId,
+				pairId: pairId ?? null,
+				...(tracked ? { loroSnapshot: tracked.loroSnapshot, version: tracked.version } : {}),
+			})
 			.where(eq(emailOutbox.id, outboxId));
 		// record the sent message locally — replies keep their thread current
 		// without waiting for a sync (new composes land via the SENT sync)
@@ -218,5 +227,34 @@ export async function createEmailDraft(input: {
 			chatUuid: input.chatUuid,
 		})
 		.returning();
+	// v1 of the draft's tracked history = the agent's original body
+	const tracked = await trackText("email_draft", outbox.id, "", "agent", input.body);
+	if (tracked) {
+		await db
+			.update(emailOutbox)
+			.set({ loroSnapshot: tracked.loroSnapshot, version: tracked.version })
+			.where(eq(emailOutbox.id, outbox.id));
+	}
 	return { blocked: false, outboxId: outbox.id, draftId: draft.id };
+}
+
+/**
+ * Persist a human edit to a draft body (Drafts tab autosave / PUT endpoint).
+ * CRDT-tracked like docs: hunk-diffed into the Loro snapshot + version row.
+ * Returns the new version number (unchanged if body identical).
+ */
+export async function saveDraftBody(
+	outboxId: string,
+	body: string,
+	author: "human" | "agent" = "human",
+): Promise<number | null> {
+	const [row] = await db.select().from(emailOutbox).where(eq(emailOutbox.id, outboxId));
+	if (!row) return null;
+	const tracked = await trackText("email_draft", outboxId, row.loroSnapshot, author, body);
+	if (!tracked) return row.version;
+	await db
+		.update(emailOutbox)
+		.set({ body, loroSnapshot: tracked.loroSnapshot, version: tracked.version })
+		.where(eq(emailOutbox.id, outboxId));
+	return tracked.version;
 }

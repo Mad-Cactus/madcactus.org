@@ -7,6 +7,7 @@ import {
 	integer,
 	pgEnum,
 	index,
+	uniqueIndex,
 	primaryKey,
 	bigint,
 	pgView,
@@ -509,6 +510,30 @@ export const docs = pgTable(
 	},
 );
 
+// Change history for any tracked text surface (docs, email drafts, …).
+// Coalesced edit sessions — a row per save burst, not per autosave. The Loro
+// snapshot on the owning row holds full CRDT history; this table is the
+// human-readable timeline feeding the diff panels.
+export const textVersions = pgTable(
+	"text_versions",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		// "doc" | "email_draft" — owner table resolved by the lib layer
+		entity: text("entity").notNull(),
+		entityId: uuid("entity_id").notNull(),
+		version: integer("version").notNull(),
+		author: text("author").notNull().default("human"), // "human" | "agent"
+		// full content snapshot at this version — diff computed on read
+		content: text("content").notNull().default(""),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date()),
+	},
+	(t) => [uniqueIndex("text_versions_entity_ver_idx").on(t.entity, t.entityId, t.version)],
+);
+
 // ── Email (Gmail-backed inbox, redline-enabled) ────────────────────
 
 export const emailAccounts = pgTable("email_accounts", {
@@ -576,6 +601,9 @@ export const emailOutbox = pgTable(
 		toEmail: text("to_email").notNull(),
 		subject: text("subject").notNull(),
 		body: text("body").notNull(),
+		// CRDT merge layer for the draft body — same pattern as docs.loroSnapshot
+		loroSnapshot: text("loro_snapshot").notNull().default(""),
+		version: integer("version").notNull().default(0),
 		chatUuid: text("chat_uuid"),
 		status: text("status").notNull().default("draft"), // draft|sent|failed
 		gmailMessageId: text("gmail_message_id"),
@@ -612,6 +640,7 @@ export type DocumentVisibility = Document["visibility"];
 export type InvoiceStatus = Invoice["status"];
 export type OutreachProspect = typeof outreachProspects.$inferSelect;
 export type Doc = typeof docs.$inferSelect;
+export type TextVersion = typeof textVersions.$inferSelect;
 export type EmailAccount = typeof emailAccounts.$inferSelect;
 export type EmailThread = typeof emailThreads.$inferSelect;
 export type EmailMessage = typeof emailMessages.$inferSelect;
