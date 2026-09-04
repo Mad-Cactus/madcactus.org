@@ -13,6 +13,7 @@ import {
 	brainTimeline,
 	clientMembers,
 	companies,
+	outreachProspects,
 	projects,
 } from "~/db/schema";
 import { computeEmotionalWeight, loopDedupKey, planLoopForThread, slugify, type ThreadSummary } from "./core";
@@ -72,6 +73,61 @@ export async function syncPersons(): Promise<{ created: number }> {
 		await ensure(m.name);
 	}
 	return { created };
+}
+
+/**
+ * Prospect pipeline → brain: one prospect page per outreach prospect
+ * (stage/next-action in frontmatter) + a follow-up open loop when a
+ * next_action_at is set. Won/lost prospects close their loop.
+ */
+export async function syncProspects(): Promise<{ created: number; loopsOpened: number; loopsClosed: number }> {
+	let created = 0;
+	let loopsOpened = 0;
+	let loopsClosed = 0;
+	const prospects = await db.select().from(outreachProspects);
+	for (const p of prospects) {
+		const slug = `prospect-${slugify(p.company)}`;
+		const existing = await db.select({ id: brainPages.id }).from(brainPages).where(eq(brainPages.slug, slug)).limit(1);
+		if (existing.length === 0) {
+			await db.insert(brainPages).values({
+				slug,
+				type: "entity",
+				entityKind: "prospect",
+				title: p.company,
+				frontmatter: { stage: p.stage, nextActionAt: p.nextActionAt, notes: p.notes },
+			});
+			created++;
+		}
+		// terminal stages in the outreach pipeline: won | shutdown
+		const done = p.stage === "won" || p.stage === "shutdown";
+		const dedupKey = `prospect_next_action:${p.id}`;
+		if (p.nextActionAt && !done) {
+			const res = await db
+				.insert(brainOpenLoops)
+				.values({
+					dedupKey,
+					loopType: "commitment_owed_by_me",
+					companyId: null,
+					counterpartySlug: slug,
+					summary: `${p.stage} prospect ${p.company}: next action ${p.nextActionNote ?? "follow up"}`,
+					pageSlug: slug,
+					dueAt: p.nextActionAt,
+					detector: "deterministic_thread",
+					confidence: 1,
+				})
+				.onConflictDoNothing({ target: brainOpenLoops.dedupKey })
+				.returning({ id: brainOpenLoops.id });
+			loopsOpened += res.length;
+		} else if (done) {
+			const res = await db
+				.update(brainOpenLoops)
+				.set({ status: "done", closedAt: new Date(), closedBy: "syncProspects" })
+				.where(and(eq(brainOpenLoops.dedupKey, dedupKey), eq(brainOpenLoops.status, "open")))
+				.returning({ id: brainOpenLoops.id });
+			loopsClosed += res.length;
+		}
+	}
+	return { created, loopsOpened, loopsClosed };
 }
 
 export async function syncEntities(): Promise<{ created: number }> {

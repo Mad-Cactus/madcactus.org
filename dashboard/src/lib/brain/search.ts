@@ -1,9 +1,11 @@
 // Brain search — the query path. Hybrid ranking: full-text (tsvector) over
-// distilled pages/chunks, trigram/ILIKE fallback, facts by entity + text,
-// open loops. Raw workspace records stay in searchWorkspace (memory.ts).
+// distilled pages/chunks + semantic (pgvector cosine) when embeddings are
+// configured, facts by entity + text, open loops. Raw workspace records stay
+// in workspace-search.ts.
 import { sql, desc, eq, and, isNull } from "drizzle-orm";
 import { db } from "~/db";
 import { brainChunks, brainFacts, brainOpenLoops, brainPages } from "~/db/schema";
+import { embedQuery } from "./embed";
 
 const tsq = (q: string) => sql`websearch_to_tsquery('english', ${q})`;
 
@@ -18,6 +20,26 @@ export async function brainQuery(query: string): Promise<BrainQueryResult> {
 	const q = query.trim();
 	if (!q) return { pages: [], chunks: [], facts: [], open_loops: [] };
 	const like = `%${q}%`;
+
+	// semantic path (pgvector, migration 0017): nearest chunks to the query
+	// embedding, merged with the FTS hits. No key / no pgvector → empty, FTS covers it.
+	let semantic: { slug: string; title: string; snippet: string }[] = [];
+	const vec = await embedQuery(q);
+	if (vec) {
+		try {
+			// raw SQL: the embedding columns exist only on pgvector DBs (migration 0017)
+			semantic = await db.execute<{ slug: string; title: string; snippet: string }>(sql`
+				SELECT p.slug, p.title, left(c.chunk_text, 400) AS snippet
+				FROM brain_chunks c
+				JOIN brain_pages p ON p.id = c.page_id
+				WHERE p.deleted_at IS NULL AND c.embedding IS NOT NULL
+				ORDER BY c.embedding <=> ${`[${vec.join(",")}]`}::vector
+				LIMIT 6
+			`);
+		} catch {
+			// local dev without pgvector
+		}
+	}
 
 	const pages = await db
 		.select({
@@ -75,7 +97,7 @@ export async function brainQuery(query: string): Promise<BrainQueryResult> {
 		.where(and(eq(brainOpenLoops.status, "open"), sql`${brainOpenLoops.summary} ILIKE ${like}`))
 		.limit(10);
 
-	return { pages, chunks, facts, open_loops: loops };
+	return { pages, chunks: [...chunks, ...semantic], facts, open_loops: loops };
 }
 
 /** All live (non-expired, non-superseded) facts for one entity slug. */

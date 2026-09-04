@@ -19,7 +19,8 @@ import {
 	textVersions,
 } from "~/db/schema";
 import { chunkText, factHash, slugify } from "./core";
-import { syncEntities, syncPersons, detectLoops, backfillTimeline, recomputeWeight } from "./ingest";
+import { syncEntities, syncPersons, syncProspects, detectLoops, backfillTimeline, recomputeWeight } from "./ingest";
+import { embedPending } from "./embed";
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
@@ -367,6 +368,25 @@ export async function extractTranscripts(
 		) as ExtractedFact[];
 		const res = await insertFacts(out, { sourceTable: "documents", sourceId: doc.id, surface: "transcript" });
 		inserted += res.inserted;
+		// deterministic person events: every speaker gets an audit fact on their
+		// person page — the base a person brief enriches from
+		const meetingDate = doc.createdAt.toISOString().slice(0, 10);
+		const speakerNames = [...new Set(turns.map((t) => (t.speaker ?? "").trim()).filter(Boolean))];
+		for (const speaker of speakerNames) {
+			if (/^speaker \d+$/i.test(speaker)) continue;
+			await insertFacts(
+				[
+					{
+						entity: `person ${speaker}`,
+						fact: `Spoke in the meeting "${doc.title}" (${meetingDate})`,
+						kind: "event",
+						notability: "low",
+						confidence: 1,
+					},
+				],
+				{ sourceTable: "documents", sourceId: doc.id, surface: "transcript" },
+			);
+		}
 		if (!newest || doc.createdAt > newest) newest = doc.createdAt;
 	}
 	if (newest && !opts.reprocess) await setCursor("extract_transcripts", newest.toISOString());
@@ -520,6 +540,7 @@ export async function runCycle(
 	const out: Record<string, unknown> = {};
 	out.entities = await syncEntities();
 	out.persons = await syncPersons();
+	out.prospects = await syncProspects();
 	out.loops = await detectLoops();
 	out.timeline = await backfillTimeline();
 	if (!opts.skipLlm) {
@@ -547,6 +568,11 @@ export async function runCycle(
 			out.enrich = await enrich();
 		} catch (e) {
 			out.enrich = { error: e instanceof Error ? e.message : String(e) };
+		}
+		try {
+			out.embed = await embedPending();
+		} catch (e) {
+			out.embed = { error: e instanceof Error ? e.message : String(e) };
 		}
 	}
 	out.weight = await recomputeWeight();
