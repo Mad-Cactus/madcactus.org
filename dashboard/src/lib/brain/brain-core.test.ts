@@ -114,3 +114,36 @@ describe("computeEmotionalWeight", () => {
 		expect(cold).toBeGreaterThanOrEqual(0);
 	});
 });
+
+import { findPairs, type VersionRow } from "./distill";
+
+const vr = (entityId: string, author: string, minsAgo: number, content = ""): VersionRow => ({
+	id: `${entityId}-${author}-${minsAgo}`,
+	entity: "doc",
+	entityId,
+	author,
+	content,
+	createdAt: new Date(Date.now() - minsAgo * 60_000),
+});
+
+describe("findPairs", () => {
+	test("pairs each agent write with the next human edit", () => {
+		const pairs = findPairs([vr("d1", "agent", 30), vr("d1", "human", 20), vr("d1", "agent", 10), vr("d1", "human", 5)]);
+		expect(pairs.length).toBe(2);
+		expect(pairs[0].agent.createdAt < pairs[0].human.createdAt).toBe(true);
+		expect(pairs[1].agent.id).toContain("10");
+	});
+	test("trailing agent write without human edit pairs nothing", () => {
+		expect(findPairs([vr("d1", "agent", 10)]).length).toBe(0);
+	});
+	test("consecutive human edits collapse into one pair against the last agent write", () => {
+		const pairs = findPairs([vr("d1", "agent", 30), vr("d1", "human", 20), vr("d1", "human", 10)]);
+		expect(pairs.length).toBe(1);
+		expect(pairs[0].human.id).toContain("10");
+	});
+	test("entities are paired independently", () => {
+		const pairs = findPairs([vr("d1", "agent", 30), vr("d2", "agent", 25), vr("d2", "human", 20), vr("d1", "human", 10)]);
+		expect(pairs.length).toBe(2);
+		expect(pairs.map((p) => p.entityId).sort()).toEqual(["d1", "d2"]);
+	});
+});

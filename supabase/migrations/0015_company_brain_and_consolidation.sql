@@ -1,6 +1,6 @@
 CREATE EXTENSION IF NOT EXISTS pg_trgm;--> statement-breakpoint
 CREATE TYPE "public"."brain_entity_kind" AS ENUM('company', 'person', 'project', 'topic');--> statement-breakpoint
-CREATE TYPE "public"."brain_fact_kind" AS ENUM('event', 'preference', 'commitment', 'belief', 'fact', 'idea');--> statement-breakpoint
+CREATE TYPE "public"."brain_fact_kind" AS ENUM('event', 'preference', 'commitment', 'belief', 'fact', 'idea', 'lesson');--> statement-breakpoint
 CREATE TYPE "public"."brain_job_status" AS ENUM('pending', 'running', 'done', 'failed');--> statement-breakpoint
 CREATE TYPE "public"."brain_loop_detector" AS ENUM('deterministic_thread', 'llm_extract', 'manual');--> statement-breakpoint
 CREATE TYPE "public"."brain_loop_status" AS ENUM('open', 'done', 'dropped', 'stale');--> statement-breakpoint

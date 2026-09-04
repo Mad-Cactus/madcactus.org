@@ -66,6 +66,121 @@ async function setCursor(key: string, at: string) {
 		.onConflictDoUpdate({ target: brainState.key, set: { value: { at } } });
 }
 
+// ── extract_lessons (the diff engine) ──────────────────────────────
+
+export type VersionRow = {
+	id: string;
+	entity: string; // 'doc' | 'email_draft'
+	entityId: string;
+	author: string;
+	content: string;
+	createdAt: Date;
+};
+
+export type LessonPair = {
+	entity: string;
+	entityId: string;
+	agent: VersionRow;
+	human: VersionRow;
+};
+
+/**
+ * Pair agent writes with the human edit that followed them — each pair is one
+ * "what the agent did vs what Collin kept" data point. The most recent agent
+ * version before each human version is its counterpart; each agent version
+ * pairs at most once. Versions must be ascending by createdAt.
+ */
+export function findPairs(versions: VersionRow[]): LessonPair[] {
+	const byEntity = new Map<string, VersionRow[]>();
+	for (const v of versions) {
+		const list = byEntity.get(v.entityId) ?? [];
+		list.push(v);
+		byEntity.set(v.entityId, list);
+	}
+	const pairs: LessonPair[] = [];
+	for (const [, list] of byEntity) {
+		list.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+		let pendingAgent: VersionRow | null = null;
+		let pendingHuman: VersionRow | null = null;
+		const flush = () => {
+			if (pendingAgent && pendingHuman) {
+				pairs.push({ entity: pendingHuman.entity, entityId: pendingHuman.entityId, agent: pendingAgent, human: pendingHuman });
+			}
+			pendingAgent = null;
+			pendingHuman = null;
+		};
+		for (const v of list) {
+			if (v.author === "agent") {
+				flush(); // previous round ends when the agent writes again
+				pendingAgent = v;
+			} else {
+				pendingHuman = v; // consecutive human edits: keep the latest
+			}
+		}
+		flush();
+	}
+	return pairs;
+}
+
+const LESSONS_SYSTEM = `You derive durable writing lessons from editing pairs.
+Input: pairs of (agent draft, Collin's final text). For each pair output the LESSONS a writing agent should learn:
+[{"lesson": "<one durable rule, stated as a preference>", "entity": "<client/topic name it applies to, or 'voice' if universal>"}]
+Rules: lessons are general ("Cut the throat-clearing opener", "Use 'Glad' not 'Sounds like'"), never quote the whole text. 0-2 lessons per pair — skip pairs with nothing to learn. Output ONLY the JSON array.`;
+
+/** Learn from diffs: agent write → human edit pairs become lesson facts. */
+export async function extractLessons(opts: { maxPairs?: number; maxChars?: number } = {}): Promise<{ pairs: number; lessons: number }> {
+	const maxPairs = opts.maxPairs ?? 8;
+	const maxChars = opts.maxChars ?? 2000;
+	const since = await getCursor("extract_lessons");
+	const sinceDate = since ? new Date(since) : new Date(Date.now() - 30 * 86_400_000);
+
+	const rows = await db
+		.select()
+		.from(textVersions)
+		.where(and(gt(textVersions.createdAt, sinceDate), inArray(textVersions.entity, ["doc", "email_draft"])))
+		.orderBy(textVersions.createdAt)
+		.limit(100);
+
+	const pairs = findPairs(
+		rows.map((r) => ({
+			id: r.id,
+			entity: r.entity,
+			entityId: r.entityId,
+			author: r.author,
+			content: r.content,
+			createdAt: r.createdAt,
+		})),
+	).slice(-maxPairs);
+
+	if (pairs.length === 0) {
+		const last = rows.at(-1)?.createdAt;
+		if (last) await setCursor("extract_lessons", last.toISOString());
+		return { pairs: 0, lessons: 0 };
+	}
+
+	let lessons = 0;
+	let newest: Date | null = null;
+	for (const p of pairs) {
+		const prompt = `PAIR — agent draft:
+${p.agent.content.slice(0, maxChars)}
+
+Collin's final:
+${p.human.content.slice(0, maxChars)}`;
+		const out = parseJsonArray(await llm(LESSONS_SYSTEM, prompt)) as { lesson?: string; entity?: string }[];
+		for (const item of out) {
+			if (!item?.lesson) continue;
+			await insertFacts(
+				[{ entity: item.entity ?? "voice", fact: item.lesson, kind: "lesson", notability: "high", confidence: 0.9 }],
+				{ sourceTable: "text_versions", sourceId: p.human.id },
+			);
+			lessons++;
+		}
+		if (!newest || p.human.createdAt > newest) newest = p.human.createdAt;
+	}
+	if (newest) await setCursor("extract_lessons", newest.toISOString());
+	return { pairs: pairs.length, lessons };
+}
+
 // ── extract_facts ──────────────────────────────────────────────────
 
 type ExtractedFact = {
@@ -322,6 +437,11 @@ export async function runCycle(opts: { skipLlm?: boolean } = {}): Promise<Record
 			out.extract = await extractFacts();
 		} catch (e) {
 			out.extract = { error: e instanceof Error ? e.message : String(e) };
+		}
+		try {
+			out.lessons = await extractLessons();
+		} catch (e) {
+			out.lessons = { error: e instanceof Error ? e.message : String(e) };
 		}
 		try {
 			out.consolidate = await consolidate();

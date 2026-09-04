@@ -34,6 +34,21 @@ export async function syncEntities(): Promise<{ created: number }> {
 			await db.update(brainPages).set({ companyId: c.id }).where(eq(brainPages.slug, slug));
 		}
 	}
+	// the voice page: lessons from diffs accumulate here (entity_slug 'voice')
+	const voiceExists = await db
+		.select({ id: brainPages.id })
+		.from(brainPages)
+		.where(eq(brainPages.slug, "madcactus-voice"))
+		.limit(1);
+	if (voiceExists.length === 0) {
+		await db.insert(brainPages).values({
+			slug: "madcactus-voice",
+			type: "entity",
+			entityKind: "topic",
+			title: "Mad Cactus Voice",
+		});
+		created++;
+	}
 	for (const p of await db.select({ id: projects.id, name: projects.name }).from(projects)) {
 		const slug = slugify(`project ${p.name}`);
 		const existing = await db.select({ id: brainPages.id }).from(brainPages).where(eq(brainPages.slug, slug)).limit(1);

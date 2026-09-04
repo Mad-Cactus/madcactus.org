@@ -428,7 +428,7 @@ export const textVersions = pgTable(
 // gbrain's sources; company_id ties pages/loops to real clients.
 
 export const brainEntityKind = pgEnum("brain_entity_kind", ["company", "person", "project", "topic"]);
-export const brainFactKind = pgEnum("brain_fact_kind", ["event", "preference", "commitment", "belief", "fact", "idea"]);
+export const brainFactKind = pgEnum("brain_fact_kind", ["event", "preference", "commitment", "belief", "fact", "idea", "lesson"]);
 export const brainVisibility = pgEnum("brain_visibility", ["private", "world"]);
 export const brainNotability = pgEnum("brain_notability", ["high", "medium", "low"]);
 export const brainLoopType = pgEnum("brain_loop_type", [
