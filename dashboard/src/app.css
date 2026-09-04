@@ -601,7 +601,7 @@ input[type="date"] {
   color-scheme: light;
 }
 
-input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="file"]):not(.form-group input) {
+input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="file"]):not(.form-group input):not(.doc-title) {
   background: var(--bg-card);
   color: var(--text);
   border: 1px solid rgba(0, 0, 0, 0.12);
@@ -610,7 +610,7 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type=
   font-size: 14px;
 }
 
-input:not(.form-group input):focus {
+input:not(.form-group input):not(.doc-title):focus {
   outline: none;
   border-color: var(--gold);
 }
@@ -798,22 +798,113 @@ input:not(.form-group input):focus {
 }
 
 /* ── Docs editor (Lexical) ─────────────────────────────────────── */
-.doc-editor {
-	border: 1px solid rgba(0, 0, 0, 0.12);
-	background: var(--bg-card);
-	padding: 24px 28px;
-	min-height: 420px;
-	font-size: 15px;
-	line-height: 1.6;
+/* macro-style doc page: slim chrome row, title as the first line of the
+   document itself, borderless body column */
+.doc-topbar {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	margin-bottom: 4px;
+	font-size: 12px;
+	color: var(--text-muted);
+}
+.doc-share { font-size: 13px; margin: 0 0 4px; }
+.doc-title {
+	font-family: var(--font-sans);
+	font-weight: 700;
+	font-size: 30px;
+	letter-spacing: -0.5px;
+	background: transparent;
+	border: none;
+	border-bottom: 1px dashed transparent;
+	padding: 0;
+	margin: 8px 0 12px;
+	color: inherit;
+	width: 100%;
+	max-width: 760px;
+}
+.doc-title:hover,
+.doc-title:focus {
+	border-bottom-color: rgba(188, 156, 92, 0.5);
 	outline: none;
 }
-.doc-editor:focus { border-color: rgba(0, 0, 0, 0.3); }
+.doc-editor {
+	border: none;
+	background: transparent;
+	padding: 0 0 96px;
+	max-width: 760px;
+	min-height: 50vh;
+	font-size: 15.5px;
+	line-height: 1.7;
+	outline: none;
+	caret-color: var(--gold, #bc9c5c);
+}
 .doc-editor.readonly { opacity: 0.7; }
-.doc-editor h1 { font-size: 26px; margin: 16px 0 8px; }
-.doc-editor h2 { font-size: 20px; margin: 14px 0 6px; }
-.doc-editor h3, .doc-editor h4 { font-size: 16px; margin: 12px 0 4px; }
-.doc-editor ul, .doc-editor ol { padding-left: 24px; }
+.doc-editor > *:first-child { margin-top: 0; }
+.doc-editor h1 { font-size: 28px; margin: 24px 0 8px; letter-spacing: -0.3px; }
+.doc-editor h2 { font-size: 21px; margin: 20px 0 6px; letter-spacing: -0.2px; }
+.doc-editor h3, .doc-editor h4 { font-size: 16.5px; margin: 16px 0 4px; }
+.doc-editor p { margin: 0 0 10px; }
+.doc-editor ul, .doc-editor ol { padding-left: 24px; margin: 0 0 10px; }
+.doc-editor ul { list-style: disc; }
+.doc-editor ol { list-style: decimal; }
+.doc-editor li { margin: 2px 0; }
+.doc-editor li[role="checkbox"] { list-style: none; margin-left: -20px; }
+.doc-editor li[role="checkbox"]::before {
+	content: "";
+	display: inline-block;
+	width: 13px;
+	height: 13px;
+	border: 1.5px solid rgba(0, 0, 0, 0.4);
+	border-radius: 3px;
+	margin-right: 8px;
+	vertical-align: -2px;
+	line-height: 13px;
+	text-align: center;
+	font-size: 11px;
+}
+.doc-editor li[role="checkbox"][aria-checked="true"]::before {
+	background: var(--gold, #bc9c5c);
+	border-color: var(--gold, #bc9c5c);
+	content: "\2713";
+	color: #fff;
+}
+.doc-editor ul.contains-task-list, .doc-editor li.task-list-item { list-style: none; }
+.doc-editor blockquote {
+	border-left: 3px solid var(--gold, #bc9c5c);
+	margin: 12px 0;
+	padding: 2px 0 2px 14px;
+	color: var(--text-muted);
+}
 .doc-editor code { background: rgba(0, 0, 0, 0.05); padding: 1px 5px; font-family: ui-monospace, monospace; font-size: 13px; }
-.doc-editor pre { background: rgba(0, 0, 0, 0.04); padding: 12px; overflow-x: auto; }
+.doc-editor pre { background: rgba(0, 0, 0, 0.04); padding: 12px; border-radius: 6px; overflow-x: auto; }
+.doc-editor pre code { background: transparent; padding: 0; }
 .doc-editor a { color: var(--text); text-decoration: underline; text-decoration-color: var(--gold, #bc9c5c); }
+.doc-editor hr { border: none; border-top: 1px solid rgba(0, 0, 0, 0.12); margin: 20px 0; }
 .doc-editor .lexical-highlight, .doc-editor mark { background: rgba(188, 156, 92, 0.35); }
+
+/* floating selection toolbar (macro-style) */
+.doc-toolbar {
+	position: fixed;
+	transform: translateX(-50%);
+	gap: 2px;
+	background: #201d19;
+	border: 1px solid rgba(255, 255, 255, 0.09);
+	border-radius: 8px;
+	padding: 4px;
+	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+	z-index: 1000;
+}
+.doc-toolbar button {
+	border: none;
+	background: transparent;
+	color: #e8e2d6;
+	min-width: 28px;
+	height: 26px;
+	border-radius: 5px;
+	cursor: pointer;
+	font-size: 12.5px;
+	padding: 0 6px;
+}
+.doc-toolbar button:hover { background: rgba(255, 255, 255, 0.12); }
+.doc-toolbar button.active { background: rgba(188, 156, 92, 0.4); }
