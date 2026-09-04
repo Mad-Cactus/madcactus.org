@@ -508,6 +508,10 @@ export const brainFacts = pgTable(
 		supersededBy: uuid("superseded_by"),
 		consolidatedAt: timestamp("consolidated_at", { withTimezone: true }),
 		consolidatedInto: uuid("consolidated_into"),
+		// surface this fact's rules apply to: 'docs' | 'email' | 'transcript' |
+		// 'contract' | … — lessons are scoped per surface, global ones derive
+		// from all of them during consolidation
+		surface: text("surface"),
 		// provenance INTO workspace tables: 'email_messages' | 'text_versions' |
 		// 'documents' | 'manual'
 		sourceTable: text("source_table").notNull(),

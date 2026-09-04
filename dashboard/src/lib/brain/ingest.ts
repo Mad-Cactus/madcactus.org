@@ -11,10 +11,68 @@ import {
 	brainOpenLoops,
 	brainPages,
 	brainTimeline,
+	clientMembers,
 	companies,
 	projects,
 } from "~/db/schema";
 import { computeEmotionalWeight, loopDedupKey, planLoopForThread, slugify, type ThreadSummary } from "./core";
+
+/**
+ * Person pages from every corpus that names humans: meeting transcript
+ * speakers + email counterparties + portal members. Facts attach to these
+ * slugs as the corpus grows (who said what, who prefers what).
+ */
+export async function syncPersons(): Promise<{ created: number }> {
+	let created = 0;
+	const seen = new Set<string>();
+	// role addresses and separator-less local parts aren't people
+	const ROLE = /^(noreply|no-reply|hello|hi|team|updates|update|info|support|admin|notifications|notify|mail|contact|careers)\d*@/i;
+	const ensure = async (name: string) => {
+		const clean = name.trim();
+		if (!clean || clean.length > 60 || /^speaker \d+$/i.test(clean)) return;
+		const slug = `person-${slugify(clean)}`;
+		if (seen.has(slug)) return;
+		seen.add(slug);
+		const existing = await db.select({ id: brainPages.id }).from(brainPages).where(eq(brainPages.slug, slug)).limit(1);
+		if (existing.length === 0) {
+			await db.insert(brainPages).values({
+				slug,
+				type: "entity",
+				entityKind: "person",
+				title: clean,
+			});
+			created++;
+		}
+	};
+	// meeting speakers (transcript_json blocks)
+	const speakers = await db.execute<{ speaker: string }>(sql`
+		SELECT DISTINCT t->>'speaker' AS speaker
+		FROM documents, jsonb_array_elements(transcript_json::jsonb) AS t
+		WHERE type = 'transcript' AND transcript_json IS NOT NULL
+		LIMIT 500
+	`);
+	for (const r of speakers) await ensure(r.speaker ?? "");
+	// email counterparties (inbound senders)
+	const senders = await db.execute<{ from_email: string | null }>(sql`
+		SELECT from_email FROM email_messages WHERE from_email IS NOT NULL
+		GROUP BY from_email ORDER BY count(*) DESC LIMIT 200
+	`);
+	for (const r of senders) {
+		const local = (r.from_email ?? "").split("@")[0] ?? "";
+		if (ROLE.test(local) || !/[._-]/.test(local)) continue; // "cpfeifer" can't be split safely
+		const name = local
+			.replace(/[._-]+/g, " ")
+			.replace(/\b\w/g, (c) => c.toUpperCase());
+		// machine senders survive the ROLE filter as "No Reply <hash>" etc
+		if (/reply/i.test(name) || /^usr\b/i.test(local) || /\b(in|the|and|for|of|a|an)\b/i.test(name)) continue;
+		await ensure(name);
+	}
+	// portal members
+	for (const m of await db.select({ name: clientMembers.name }).from(clientMembers)) {
+		await ensure(m.name);
+	}
+	return { created };
+}
 
 export async function syncEntities(): Promise<{ created: number }> {
 	let created = 0;

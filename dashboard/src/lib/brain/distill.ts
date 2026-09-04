@@ -11,12 +11,15 @@ import {
 	brainPages,
 	brainState,
 	brainTakes,
+	companies,
+	documents,
 	emailMessages,
 	emailThreads,
+	projects,
 	textVersions,
 } from "~/db/schema";
 import { chunkText, factHash, slugify } from "./core";
-import { syncEntities, detectLoops, backfillTimeline, recomputeWeight } from "./ingest";
+import { syncEntities, syncPersons, detectLoops, backfillTimeline, recomputeWeight } from "./ingest";
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
@@ -56,7 +59,7 @@ export function parseJsonArray(text: string): unknown[] {
 async function getCursor(key: string): Promise<string | null> {
 	const [row] = await db.select({ value: brainState.value }).from(brainState).where(eq(brainState.key, key));
 	const v = row?.value as { at?: string } | undefined;
-	return v?.at ?? null;
+	return v?.at || null;
 }
 
 async function setCursor(key: string, at: string) {
@@ -171,7 +174,7 @@ ${p.human.content.slice(0, maxChars)}`;
 			if (!item?.lesson) continue;
 			await insertFacts(
 				[{ entity: item.entity ?? "voice", fact: item.lesson, kind: "lesson", notability: "high", confidence: 0.9 }],
-				{ sourceTable: "text_versions", sourceId: p.human.id },
+				{ sourceTable: "text_versions", sourceId: p.human.id, surface: surfaceForPair(p.entity) },
 			);
 			lessons++;
 		}
@@ -197,8 +200,18 @@ Given recent workspace content (emails, doc edits), output a JSON array of facts
 Rules: only durable facts (relationships, decisions, preferences, commitments, project state) — not chatter.
 Never invent. One atomic fact per item. Output ONLY the JSON array.`;
 
+/** Which surface a lesson/fact applies to — rules differ per surface. */
+export function surfaceForPair(entity: string): string {
+	if (entity === "email_draft") return "email";
+	if (entity === "doc") return "docs";
+	return entity;
+}
+
 /** Insert facts with deterministic dedup (entity + normalized-text hash). */
-export async function insertFacts(facts: ExtractedFact[], provenance: { sourceTable: string; sourceId?: string }) {
+export async function insertFacts(
+	facts: (ExtractedFact & { speaker?: string })[],
+	provenance: { sourceTable: string; sourceId?: string; surface?: string },
+) {
 	let inserted = 0;
 	let skipped = 0;
 	for (const f of facts) {
@@ -214,6 +227,8 @@ export async function insertFacts(facts: ExtractedFact[], provenance: { sourceTa
 					confidence: typeof f.confidence === "number" ? Math.min(1, Math.max(0, f.confidence)) : 1,
 					sourceTable: provenance.sourceTable,
 					sourceId: provenance.sourceId,
+					surface: provenance.surface,
+					context: f.speaker ? `said by ${f.speaker}` : null,
 					factHash: factHash(f.fact),
 				})
 				.onConflictDoNothing({ target: [brainFacts.entitySlug, brainFacts.factHash] });
@@ -285,6 +300,78 @@ export async function extractFacts(opts: { maxChars?: number } = {}): Promise<{ 
 	const res = await insertFacts(out, { sourceTable: "email_messages" });
 	if (newest) await setCursor("extract_facts", newest.toISOString());
 	return { ...res, sources };
+}
+
+// ── extract_transcripts (meetings, speaker-attributed) ─────────────
+
+const TRANSCRIPT_SYSTEM = `You extract durable facts from a meeting transcript for a consulting firm's company brain.
+Output a JSON array:
+[{"entity": "<client/project the fact is about>", "speaker": "<who said it, exactly as labeled>", "fact": "<one atomic durable statement, attributed>", "kind": "event|preference|commitment|belief|fact|idea", "notability": "high|medium|low", "confidence": 0.0-1.0}]
+Rules: decisions, commitments, preferences, objections, project state — not small talk. Attribute the fact to its speaker in "speaker". Never invent. Output ONLY the JSON array.`;
+
+/**
+ * Distill meeting transcripts into speaker-attributed facts. Reprocessing
+ * (after diarization improves) expires the old document-sourced facts and
+ * re-extracts — the audit trail keeps the expired rows.
+ */
+export async function extractTranscripts(
+	opts: { maxChars?: number; reprocess?: boolean } = {},
+): Promise<{ meetings: number; inserted: number }> {
+	const maxChars = opts.maxChars ?? 24000;
+	if (opts.reprocess) {
+		await db
+			.update(brainFacts)
+			.set({ expiredAt: new Date() })
+			.where(and(eq(brainFacts.sourceTable, "documents"), isNull(brainFacts.expiredAt)));
+		await setCursor("extract_transcripts", "");
+	}
+	const since = await getCursor("extract_transcripts");
+	const sinceDate = since ? new Date(since) : new Date(Date.now() - 90 * 86_400_000);
+
+	const meetings = await db
+		.select({
+			id: documents.id,
+			title: documents.title,
+			transcriptJson: documents.transcriptJson,
+			createdAt: documents.createdAt,
+			company: companies.name,
+		})
+		.from(documents)
+		.leftJoin(projects, eq(projects.id, documents.projectId))
+		.leftJoin(companies, eq(companies.id, projects.companyId))
+		.where(and(eq(documents.type, "transcript"), gt(documents.createdAt, sinceDate)))
+		.orderBy(desc(documents.createdAt))
+		.limit(5);
+
+	let inserted = 0;
+	let newest: Date | null = null;
+	for (const doc of meetings) {
+		if (!doc.transcriptJson) continue;
+		let turns: { speaker?: string; text?: string }[] = [];
+		try {
+			turns = JSON.parse(doc.transcriptJson) as typeof turns;
+		} catch {
+			continue;
+		}
+		const transcript = turns
+			.map((t) => `[${t.speaker ?? "unknown"}]: ${t.text ?? ""}`)
+			.join("\n")
+			.slice(0, maxChars);
+		if (!transcript.trim()) continue;
+
+		const out = parseJsonArray(
+			await llm(
+				TRANSCRIPT_SYSTEM,
+				`Meeting: ${doc.title}${doc.company ? ` (client: ${doc.company})` : ""}\n\nTranscript:\n${transcript}`,
+			),
+		) as ExtractedFact[];
+		const res = await insertFacts(out, { sourceTable: "documents", sourceId: doc.id, surface: "transcript" });
+		inserted += res.inserted;
+		if (!newest || doc.createdAt > newest) newest = doc.createdAt;
+	}
+	if (newest && !opts.reprocess) await setCursor("extract_transcripts", newest.toISOString());
+	if (opts.reprocess) await setCursor("extract_transcripts", new Date().toISOString());
+	return { meetings: meetings.length, inserted };
 }
 
 // ── consolidate (facts → takes) ────────────────────────────────────
@@ -427,9 +514,12 @@ export async function rechunkPage(pageId: string, body: string) {
 const CYCLE_STALE_MS = 24 * 3600_000;
 
 /** Full brain cycle: deterministic phases, then LLM distillation. */
-export async function runCycle(opts: { skipLlm?: boolean } = {}): Promise<Record<string, unknown>> {
+export async function runCycle(
+	opts: { skipLlm?: boolean; reprocessTranscripts?: boolean } = {},
+): Promise<Record<string, unknown>> {
 	const out: Record<string, unknown> = {};
 	out.entities = await syncEntities();
+	out.persons = await syncPersons();
 	out.loops = await detectLoops();
 	out.timeline = await backfillTimeline();
 	if (!opts.skipLlm) {
@@ -442,6 +532,11 @@ export async function runCycle(opts: { skipLlm?: boolean } = {}): Promise<Record
 			out.lessons = await extractLessons();
 		} catch (e) {
 			out.lessons = { error: e instanceof Error ? e.message : String(e) };
+		}
+		try {
+			out.transcripts = await extractTranscripts({ reprocess: opts.reprocessTranscripts });
+		} catch (e) {
+			out.transcripts = { error: e instanceof Error ? e.message : String(e) };
 		}
 		try {
 			out.consolidate = await consolidate();
