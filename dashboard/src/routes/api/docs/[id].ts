@@ -1,10 +1,12 @@
 import type { APIEvent } from "@solidjs/start/server";
 import { getAuthedClient } from "~/lib/session";
-import { renameDoc, createDoc, getDoc, saveDocMarkdown, toggleShare, finalizeDoc } from "~/lib/docs";
+import { renameDoc, createDoc, getDoc, saveDocMarkdown, toggleShare, finalizeDoc, listDocVersions, getDocVersionDiff } from "~/lib/docs";
 
 /**
  * Docs item API — admin-session guarded.
  * GET  /api/docs/:id   → doc (json)
+ * GET  /api/docs/:id?versions=1 → version list (no content)
+ * GET  /api/docs/:id?diff=N → word-diff of version N vs N-1
  * PUT  /api/docs/:id   { markdown } → { version }
  * POST /api/docs/:id   { op: "finalize" | "share", enabled? } → result
  */
@@ -18,6 +20,14 @@ function json(body: unknown, status = 200) {
 
 export const GET = async (event: APIEvent) => {
 	if (!(await requireAdmin())) return json({ error: "Unauthorized" }, 401);
+	const url = new URL(event.request.url);
+	if (url.searchParams.has("versions")) return json({ versions: await listDocVersions(event.params.id) });
+	const diffVer = Number(url.searchParams.get("diff"));
+	if (Number.isInteger(diffVer) && diffVer > 0) {
+		const diff = await getDocVersionDiff(event.params.id, diffVer);
+		if (!diff) return json({ error: "Not found" }, 404);
+		return json(diff);
+	}
 	const doc = await getDoc(event.params.id);
 	if (!doc) return json({ error: "Not found" }, 404);
 	return json(doc);
