@@ -51,8 +51,9 @@ const Layout: ParentComponent<{ user?: { id?: string; email?: string } | null }>
 					</For>
 				</nav>
 				<Timer />
-				<div class="muted" style={{ "font-size": "11px", "margin-top": "10px" }}>
-					⌘K commands · g e email · g d docs
+				<div class="sidebar-hints">
+					<div><kbd>⌘K</kbd><span>commands</span></div>
+					<div><kbd>g</kbd><kbd>e</kbd><span>email</span><kbd>g</kbd><kbd>d</kbd><span>docs</span></div>
 				</div>
 				<div class="sidebar-footer">
 					<Show when={props.user?.email}>

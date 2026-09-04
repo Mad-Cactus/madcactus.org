@@ -86,7 +86,8 @@ async function gmail<T>(account: EmailAccount, path: string, init?: RequestInit)
 		headers: { Authorization: `Bearer ${token}`, ...(init?.headers ?? {}) },
 	});
 	if (!res.ok) throw new Error(`gmail ${path}: ${(await res.text()).slice(0, 300)}`);
-	return (await res.json()) as T;
+	const text = await res.text();
+	return (text ? JSON.parse(text) : null) as T; // DELETE returns 204 empty
 }
 
 // ── Payload parsing ────────────────────────────────────────────────
@@ -172,13 +173,15 @@ async function upsertMessage(account: EmailAccount, threadRowId: string, msg: Gm
 		.onConflictDoNothing({ target: emailMessages.gmailId });
 }
 
-/** Sync an account: pulls the latest 50 threads (full snapshot each time).
- *  historyId is stored for a future incremental history.list upgrade —
- *  ponytail: 50 threads × round-trip is fine at one-user volume. */
+/** Sync an account: pulls the latest 50 INBOX threads (full snapshot each
+ *  time). INBOX-only matters: an unfiltered pull re-inserts threads the user
+ *  spammed/trashed/archived locally, resurrecting them forever. historyId is
+ *  stored for a future incremental history.list upgrade — ponytail: 50
+ *  threads × round-trip is fine at one-user volume. */
 export async function syncAccount(account: EmailAccount): Promise<{ synced: number; full: boolean }> {
 	const list = await gmail<{ threads: GmailThreadRef[]; historyId?: string }>(
 		account,
-		"/threads?maxResults=50",
+		"/threads?labelIds=INBOX&maxResults=50",
 	);
 	let synced = 0;
 	for (const ref of list.threads ?? []) {
@@ -227,15 +230,68 @@ export async function syncAccount(account: EmailAccount): Promise<{ synced: numb
 	if (list.historyId) {
 		await db
 			.update(emailAccounts)
-			.set({ syncHistoryId: list.historyId, lastSyncAt: new Date() })
-			.where(eq(emailAccounts.id, account.id));
+			.set({ syncHistoryId: list.historyId });
 	}
+	// mark fresh even without a historyId — otherwise every read re-syncs
+	await db
+		.update(emailAccounts)
+		.set({ lastSyncAt: new Date() })
+		.where(eq(emailAccounts.id, account.id));
 	return { synced, full: !account.syncHistoryId };
 }
 
 export async function getPrimaryAccount(): Promise<EmailAccount | null> {
 	const [row] = await db.select().from(emailAccounts).limit(1);
 	return row ?? null;
+}
+
+// ── Unsubscribe (List-Unsubscribe / RFC 8058 one-click) ──────────
+
+export type UnsubInfo = {	target: string; type: "http" | "mailto"; oneClick: boolean; subject?: string };
+
+/** Look up the List-Unsubscribe header on the newest received message. */
+export async function findUnsubscribe(account: EmailAccount, threadRowId: string): Promise<UnsubInfo | null> {
+	const msgs = await db
+		.select({ gmailId: emailMessages.gmailId, isSent: emailMessages.isSent })
+		.from(emailMessages)
+		.where(eq(emailMessages.threadId, threadRowId))
+		.orderBy(desc(emailMessages.date));
+	const last = msgs.find((m) => !m.isSent) ?? msgs[0];
+	if (!last?.gmailId) return null;
+	const meta = await gmail<{ payload?: { headers?: { name: string; value: string }[] } }>(
+		account,
+		`/messages/${last.gmailId}?format=metadata`,
+	);
+	const headers = meta.payload?.headers ?? [];
+	const get = (n: string) => headers.find((h) => h.name.toLowerCase() === n)?.value;
+	const list = get("list-unsubscribe");
+	if (!list) return null;
+	const entries = [...list.matchAll(/<([^>]+)>/g)].map((m) => m[1]);
+	const http = entries.find((e) => e.startsWith("http"));
+	if (http) {
+		return { target: http, type: "http", oneClick: !!get("list-unsubscribe-post") };
+	}
+	const mailto = entries.find((e) => e.startsWith("mailto:"));
+	if (mailto) {
+		const u = new URL(mailto);
+		return {	target: u.pathname, type: "mailto", oneClick: false, subject: u.searchParams.get("subject") ?? "unsubscribe" };
+	}
+	return null;
+}
+
+/** Fire the unsubscribe. HTTP = RFC 8058 one-click POST; mailto = send the email. */
+export async function performUnsubscribe(account: EmailAccount, info: UnsubInfo): Promise<"one-click" | "email"> {
+	if (info.type === "http") {
+		const res = await fetch(info.target, {
+			method: "POST",
+			headers: { "Content-Type": "application/x-www-form-urlencoded" },
+			body: info.oneClick ? "List-Unsubscribe=One-Click" : undefined,
+		});
+		if (!res.ok) throw new Error(`unsubscribe POST failed: ${res.status}`);
+		return "one-click";
+	}
+	await sendGmail(account, { to: info.target, subject: info.subject ?? "unsubscribe", body: "unsubscribe" });
+	return "email";
 }
 
 // ── Send ───────────────────────────────────────────────────────────
@@ -310,6 +366,38 @@ export async function setThreadUnread(account: EmailAccount, threadRowId: string
 		body: JSON.stringify(unread ? { addLabelIds: ["UNREAD"] } : { removeLabelIds: ["UNREAD"] }),
 	});
 	await db.update(emailThreads).set({ unread }).where(eq(emailThreads.id, threadRowId));
+}
+
+// shared tail of spam/trash: gone from the inbox → drop the local rows too
+async function removeLocalThread(account: EmailAccount, threadRowId: string) {
+	await db.delete(emailMessages).where(eq(emailMessages.threadId, threadRowId));
+	await db.delete(emailThreads).where(and(eq(emailThreads.id, threadRowId), eq(emailThreads.accountId, account.id)));
+}
+
+/** Report spam: SPAM label on, INBOX off, local rows dropped. */
+export async function setThreadSpam(account: EmailAccount, threadRowId: string) {
+	const [thread] = await db
+		.select()
+		.from(emailThreads)
+		.where(and(eq(emailThreads.id, threadRowId), eq(emailThreads.accountId, account.id)));
+	if (!thread) throw new Error("thread not found");
+	await gmail(account, `/threads/${thread.gmailThreadId}/modify`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ addLabelIds: ["SPAM"], removeLabelIds: ["INBOX"] }),
+	});
+	await removeLocalThread(account, threadRowId);
+}
+
+/** Trash: Gmail DELETE moves the thread to trash (recoverable there). */
+export async function trashThread(account: EmailAccount, threadRowId: string) {
+	const [thread] = await db
+		.select()
+		.from(emailThreads)
+		.where(and(eq(emailThreads.id, threadRowId), eq(emailThreads.accountId, account.id)));
+	if (!thread) throw new Error("thread not found");
+	await gmail(account, `/threads/${thread.gmailThreadId}`, { method: "DELETE" });
+	await removeLocalThread(account, threadRowId);
 }
 
 /** Inbox list (or search via Gmail q passthrough). */

@@ -2,8 +2,7 @@ import { query, action, redirect } from "@solidjs/router";
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "~/db";
 import { emailOutbox, emailThreads } from "~/db/schema";
-import { getAuthedClient } from "~/lib/session";
-import {
+import { getAuthedClient } from "~/lib/session";import {
 	getPrimaryAccount,
 	listInbox,
 	setThreadArchived,
@@ -32,14 +31,26 @@ export const getEmailStatusQuery = query(async () => {
 	return account ? { email: account.email, lastSyncAt: account.lastSyncAt } : null;
 }, "email-status");
 
+/** Account ids with a sync currently running (see getInboxQuery). */
+const syncingAccounts = new Set<string>();
+
 export const getInboxQuery = query(async (opts: { q?: string; archived?: boolean } = {}) => {
 	"use server";
 	await requireAdmin();
 	const account = await getPrimaryAccount();
 	if (!account) return { connected: false as const, threads: [], drafts: [] };
-	// sync on read if stale >2min — no background worker needed at this volume
+	// sync on read if stale >2min — no background worker at this volume.
+	// Fire-and-forget: awaiting it here blocks SSR for the whole first sync
+	// (50 threads × round-trips) and renders a white page. The email route
+	// polls revalidate() until the rows land. In-flight guard keeps repeated
+	// reads from stacking concurrent syncs (lastSyncAt only updates at the end).
 	const stale = !account.lastSyncAt || Date.now() - account.lastSyncAt.getTime() > 2 * 60_000;
-	if (stale) await syncAccount(account).catch(() => {});
+	if (stale && !syncingAccounts.has(account.id)) {
+		syncingAccounts.add(account.id);
+		void syncAccount(account)
+			.catch(() => {})
+			.finally(() => syncingAccounts.delete(account.id));
+	}
 	const threads = await listInbox(account, { q: opts.q, includeArchived: opts.archived });
 	const drafts = await db
 		.select()
@@ -96,6 +107,7 @@ export type SendResult =
  * (draftId set), sending finalizes the redline draft → pair → derivation.
  */
 export async function sendOutboxDraft(outboxId: string, bodyOverride?: string): Promise<SendResult> {
+	"use server"; // file also exports client-imported query()/action() stubs — keep db chain out of the client bundle
 	const [row] = await db.select().from(emailOutbox).where(eq(emailOutbox.id, outboxId));
 	if (!row) return { ok: false, error: "draft not found" };
 	if (row.status === "sent") return { ok: false, error: "already sent" };
@@ -162,6 +174,7 @@ export async function createEmailDraft(input: {
 	threadId?: string;
 	context?: string;
 }): Promise<{ blocked: true; violations: Awaited<ReturnType<typeof lintDraft>> } | { blocked: false; outboxId: string; draftId: string }> {
+	"use server";
 	const violations = await lintDraft(input.body);
 	if (shouldBlock(violations)) return { blocked: true, violations };
 

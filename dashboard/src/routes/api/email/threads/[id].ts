@@ -1,9 +1,25 @@
 import type { APIEvent } from "@solidjs/start/server";
 import { getAuthedClient } from "~/lib/session";
-import { getPrimaryAccount, setThreadArchived, setThreadUnread } from "~/lib/gmail";
+import { getPrimaryAccount, setThreadArchived, setThreadUnread, setThreadSpam, threadWithMessages, trashThread } from "~/lib/gmail";
 
 /**
- * POST /api/email/threads/:id  { op: "archive" | "unarchive" | "read" | "unread" }
+ * GET /api/email/threads/:id → { thread, messages } for the reading pane.
+ */
+export const GET = async (event: APIEvent) => {
+	if (!(await getAuthedClient())) {
+		return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+	}
+	const account = await getPrimaryAccount();
+	if (!account) {
+		return new Response(JSON.stringify({ error: "NO_ACCOUNT: connect Gmail first" }), { status: 400 });
+	}
+	const full = await threadWithMessages(account, event.params.id);
+	if (!full) return new Response(JSON.stringify({ error: "not found" }), { status: 404 });
+	return new Response(JSON.stringify(full), { headers: { "Content-Type": "application/json" } });
+};
+
+/**
+ * POST /api/email/threads/:id  { op: "archive" | "unarchive" | "read" | "unread" | "spam" | "delete" }
  * Mirrors macro's e / shift+e / u / shift+u.
  */
 export const POST = async (event: APIEvent) => {
@@ -25,6 +41,12 @@ export const POST = async (event: APIEvent) => {
 				break;
 			case "read":
 				await setThreadUnread(account, event.params.id, false);
+				break;
+			case "spam":
+				await setThreadSpam(account, event.params.id);
+				break;
+			case "delete":
+				await trashThread(account, event.params.id);
 				break;
 			case "unread":
 				await setThreadUnread(account, event.params.id, true);

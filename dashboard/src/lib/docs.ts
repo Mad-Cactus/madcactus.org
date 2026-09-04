@@ -63,12 +63,12 @@ export async function listDocs(): Promise<Doc[]> {
 }
 
 export async function getDoc(id: string): Promise<Doc | null> {
+	// ponytail: docs.id is uuid — a slug like "loom-scripts" makes postgres throw
+	// "invalid input syntax for type uuid" instead of returning no rows. Guard so
+	// callers get the clean not-found path. Swap for a slug->id lookup if agents
+	// keep naming docs by slug.
+	if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return null;
 	const [row] = await db.select().from(docs).where(eq(docs.id, id));
-	return row ?? null;
-}
-
-export async function getDocByShareToken(token: string): Promise<Doc | null> {
-	const [row] = await db.select().from(docs).where(eq(docs.shareToken, token));
 	return row ?? null;
 }
 
@@ -87,6 +87,10 @@ export async function saveDocMarkdown(id: string, markdown: string, author: "hum
 			...(author === "human" ? { lastAgentContent: row.lastAgentContent } : {}),
 		})
 		.where(eq(docs.id, id));
+}
+
+export async function renameDoc(id: string, title: string) {
+	await db.update(docs).set({ title }).where(eq(docs.id, id));
 }
 
 export async function toggleShare(id: string, enabled: boolean): Promise<string | null> {

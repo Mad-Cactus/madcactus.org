@@ -1,5 +1,5 @@
 import { Title } from "@solidjs/meta";
-import { createAsync, useAction, useSearchParams } from "@solidjs/router";
+import { createAsync, revalidate, useAction, useSearchParams } from "@solidjs/router";
 import { For, Show, createSignal, createEffect, onMount, onCleanup } from "solid-js";
 import Layout from "~/components/Layout";
 import {
@@ -22,15 +22,21 @@ export default function AdminEmail() {
 
 	const [q, setQ] = createSignal("");
 	const [selected, setSelected] = createSignal<ThreadFull | null>(null);
+	const [selIdx, setSelIdx] = createSignal(0);
+	// confirmation modal for destructive macros (spam / delete / unsubscribe)
+	const [pending, setPending] = createSignal<{ title: string; body: string; confirm: string; danger: boolean; run: () => Promise<void> } | null>(null);
 	const [compose, setCompose] = createSignal<{ to: string; subject: string; body: string; threadId?: string } | null>(null);
 	const [editBody, setEditBody] = createSignal<Record<string, string>>({});
 	const [sendStatus, setSendStatus] = createSignal("");
 	const [connecting, setConnecting] = createSignal(false);
 
-	const loadThread = async (t: EmailThread) => {
+	const loadThread = async (t: EmailThread, i?: number) => {
 		const res = await fetch(`/api/email/threads/${t.id}`);
 		const data = (await res.json()) as ThreadFull;
+		if (i !== undefined) setSelIdx(i);
 		setSelected(data);
+		const row = document.querySelectorAll("[data-thread-row]")[i ?? selIdx()];
+		row?.scrollIntoView({ block: "nearest" });
 		if (t.unread) {
 			await fetch(`/api/email/threads/${t.id}`, {
 				method: "POST",
@@ -40,13 +46,20 @@ export default function AdminEmail() {
 		}
 	};
 
+	// set by threadOp when a row-removing op lands — the inbox effect then
+	// selects the thread above so triage continues from the same spot
+	let cursorToRestore: number | null = null;
+
 	const threadOp = async (id: string, op: string) => {
 		await fetch(`/api/email/threads/${id}`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ op }),
 		});
+		const removing = op === "archive" || op === "spam" || op === "delete";
+		if (removing) cursorToRestore = Math.max(selIdx() - 1, 0);
 		setSelected(null);
+		void revalidate("email-inbox"); // drop archived/marked rows from the list immediately
 	};
 
 	const sendDraft = async (outboxId: string) => {
@@ -77,6 +90,64 @@ export default function AdminEmail() {
 		});
 	};
 
+	const confirmPending = async () => {
+		const p = pending();
+		setPending(null);
+		if (p) await p.run();
+	};
+
+	const askSpam = () => {
+		const s = selected();
+		if (!s) return;
+		setPending({
+			title: "Report spam?",
+			body: `Mark "${s.thread.subject}" from ${s.thread.fromEmail} as spam and drop it from your inbox.`,
+			confirm: "Report spam",
+			danger: true,
+			run: () => threadOp(s.thread.id, "spam"),
+		});
+	};
+
+	const askDelete = () => {
+		const s = selected();
+		if (!s) return;
+		setPending({
+			title: "Delete thread?",
+			body: `Move "${s.thread.subject}" from ${s.thread.fromEmail} to trash (recoverable in Gmail).`,
+			confirm: "Delete",
+			danger: true,
+			run: () => threadOp(s.thread.id, "delete"),
+		});
+	};
+
+	const askUnsub = async () => {
+		const s = selected();
+		if (!s) return;
+		setSendStatus("looking for unsubscribe info…");
+		const res = await fetch(`/api/email/threads/${s.thread.id}/unsubscribe`);
+		const info = (await res.json()) as { target: string; type: "http" | "mailto"; oneClick: boolean; subject?: string } | null;
+		if (!info) {
+			setSendStatus("No unsubscribe info found in this thread.");
+			setTimeout(() => setSendStatus(""), 5000);
+			return;
+		}
+		const what = info.type === "http"
+			? `One-click unsubscribe from ${new URL(info.target).host}${info.oneClick ? "" : " (plain POST)"} — the thread gets archived.`
+			: `This sends an unsubscribe email to ${info.target} — the thread gets archived.`;
+		setPending({
+			title: "Unsubscribe?",
+			body: what,
+			confirm: "Unsubscribe",
+			danger: false,
+			run: async () => {
+				const r = await fetch(`/api/email/threads/${s.thread.id}/unsubscribe`, { method: "POST" });
+				const j = (await r.json()) as { ok?: boolean; via?: string; error?: string };
+				setSendStatus(j.ok ? (j.via === "one-click" ? "Unsubscribed (one-click). Thread archived." : "Unsubscribe email sent. Thread archived.") : `unsubscribe failed: ${j.error}`);
+				setTimeout(() => setSendStatus(""), 6000);
+			},
+		});
+	};
+
 	const manualCompose = async () => {
 		const c = compose();
 		if (!c?.to || !c.body) return;
@@ -91,7 +162,6 @@ export default function AdminEmail() {
 	};
 
 	// ── hotkeys ──
-	let listIndex = () => 0;
 	let searchEl: HTMLInputElement | undefined;
 	onMount(() => {
 		const handler = async (e: KeyboardEvent) => {
@@ -99,6 +169,19 @@ export default function AdminEmail() {
 			const typing = ["INPUT", "TEXTAREA"].includes(target.tagName) || target.isContentEditable;
 			if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") return; // palette handles
 			if (typing) return;
+			// confirm modal is up: it owns the keyboard — Enter runs, Escape
+			// cancels (keeping the selection), everything else is swallowed.
+			// Must sit above the global "/" and Escape branches.
+			if (pending()) {
+				if (e.key === "Enter") {
+					e.preventDefault();
+					void confirmPending();
+				} else if (e.key === "Escape") {
+					e.preventDefault();
+					setPending(null);
+				}
+				return;
+			}
 			const threads = inbox()?.threads ?? [];
 			if (e.key === "/") {
 				e.preventDefault();
@@ -111,16 +194,19 @@ export default function AdminEmail() {
 				return;
 			}
 			if (compose()) return;
+			// j/k move a visible selection; nothing selected yet → j starts at the
+			// top row instead of skipping it
+			const cur = selected() ? selIdx() : -1;
 			if (e.key === "j" || e.key === "ArrowDown") {
 				e.preventDefault();
-				listIndex = () => Math.min(listIndex() + 1, threads.length - 1);
-				const t = threads[listIndex()];
-				if (t) await loadThread(t);
+				const i = Math.min(cur + 1, threads.length - 1);
+				const t = threads[i];
+				if (t) await loadThread(t, i);
 			} else if (e.key === "k" || e.key === "ArrowUp") {
 				e.preventDefault();
-				listIndex = () => Math.max(listIndex() - 1, 0);
-				const t = threads[listIndex()];
-				if (t) await loadThread(t);
+				const i = Math.max(cur - 1, 0);
+				const t = threads[i];
+				if (t) await loadThread(t, i);
 			} else if (e.key === "e" && selected()) {
 				await threadOp(selected()!.thread.id, "archive");
 			} else if (e.key === "E" && selected()) {
@@ -128,6 +214,12 @@ export default function AdminEmail() {
 			} else if (e.key === "u" && selected()) {
 				await threadOp(selected()!.thread.id, "unread");
 				setSelected(null);
+			} else if (e.key === "!" && selected()) {
+				askSpam();
+			} else if (e.key === "#" && selected()) {
+				askDelete();
+			} else if (e.key === "x" && selected()) {
+				void askUnsub();
 			} else if (e.key === "r" && selected()) {
 				const last = selected()!.messages.filter((m) => !m.isSent).at(-1);
 				setCompose({
@@ -152,9 +244,35 @@ export default function AdminEmail() {
 	});
 
 	createEffect(() => {
+		const threads = inbox()?.threads;
+		if (cursorToRestore === null || !threads?.length) return;
+		// the removed row's slot opened — land on the thread above it
+		const i = Math.min(cursorToRestore, threads.length - 1);
+		cursorToRestore = null;
+		const t = threads[i];
+		if (t) void loadThread(t, i);
+	});
+
+	createEffect(() => {
 		// OAuth callback lands here with ?connected=1 — strip it so a later
 		// manual ?connected doesn't retrigger
 		if (searchParams.connected) window.location.replace("/admin/email");
+	});
+
+	// getInboxQuery syncs in the background (fire-and-forget) so this page must
+	// poll until the rows land — otherwise a fresh connect renders an empty inbox
+	// that stays empty until the next manual action.
+	onMount(() => {
+		let ticks = 0;
+		const timer = setInterval(() => {
+			const snap = inbox();
+			if (snap?.connected && snap.threads.length === 0 && ticks++ < 60) {
+				void revalidate("email-inbox");
+			} else {
+				clearInterval(timer);
+			}
+		}, 2500);
+		onCleanup(() => clearInterval(timer));
 	});
 
 	return (
@@ -176,7 +294,7 @@ export default function AdminEmail() {
 				</Show>
 			</div>
 			<p class="page-subtitle">
-				j/k move · e done · u unread · r reply · f forward · c compose · / search — agent drafts below are
+				j/k move · e done · u unread · r reply · f forward · ! spam · # delete · x unsub · c compose · / search — agent drafts below are
 				voice-linted before sending
 			</p>
 
@@ -233,11 +351,20 @@ export default function AdminEmail() {
 				<div>
 					<Show when={inbox()?.threads?.length} fallback={<div class="muted">{inbox()?.connected ? "Inbox zero." : "Connect Gmail to load your inbox."}</div>}>
 						<For each={inbox()?.threads}>
-							{(t) => (
+							{(t, i) => (
 								<div
+									data-thread-row=""
 									class="card"
-									style={{ padding: "12px 16px", "margin-bottom": "8px", cursor: "pointer", opacity: t.unread ? 1 : 0.75 }}
-									onClick={() => loadThread(t)}
+									style={{
+										padding: "12px 16px",
+										"margin-bottom": "8px",
+										cursor: "pointer",
+										opacity: t.unread ? 1 : 0.75,
+										// selected-row tint matches the palette's selection color
+										background: selected()?.thread.id === t.id ? "rgba(188, 156, 92, 0.12)" : undefined,
+										transition: "background 120ms",
+									}}
+									onClick={() => loadThread(t, i())}
 								>
 									<div style={{ display: "flex", gap: "10px", "align-items": "baseline" }}>
 										<Show when={t.unread}><span style={{ color: "#bc9c5c" }}>●</span></Show>
@@ -271,10 +398,37 @@ export default function AdminEmail() {
 						<div style={{ display: "flex", gap: "8px", "margin-top": "8px" }}>
 							<button type="button" class="btn btn-sm" onClick={() => threadOp(selected()!.thread.id, "archive")}>Done (e)</button>
 							<button type="button" class="btn btn-sm" onClick={() => threadOp(selected()!.thread.id, "unread")}>Unread (u)</button>
+							<button type="button" class="btn btn-sm" onClick={askUnsub}>Unsub (x)</button>
+							<button type="button" class="btn btn-sm" style={{ "border-color": "#a33", color: "#a33" }} onClick={askSpam}>Spam (!)</button>
+							<button type="button" class="btn btn-sm" style={{ "border-color": "#a33", color: "#a33" }} onClick={askDelete}>Delete (#)</button>
 						</div>
 					</div>
 				</Show>
 			</div>
+
+			{/* destructive-action confirm modal (spam / delete / unsubscribe) */}
+			<Show when={pending()}>
+				<div
+					style={{ position: "fixed", inset: "0", background: "rgba(0, 0, 0, 0.35)", "z-index": 60, display: "grid", "place-items": "center" }}
+					onClick={() => setPending(null)}
+				>
+					<div class="card" style={{ width: "460px", "max-width": "90vw", padding: "24px", background: "var(--bg-card)", "border-top-color": pending()!.danger ? "#a33" : "var(--text)" }} onClick={(e) => e.stopPropagation()}>
+						<h2 style={{ "font-size": "17px", margin: "0 0 8px" }}>{pending()!.title}</h2>
+						<p class="muted" style={{ "font-size": "14px", "line-height": "1.5", margin: 0, "overflow-wrap": "anywhere" }}>{pending()!.body}</p>
+						<div style={{ display: "flex", gap: "8px", "justify-content": "flex-end", "margin-top": "16px" }}>
+							<button type="button" class="btn btn-sm" onClick={() => setPending(null)}>Cancel (esc)</button>
+							<button
+								type="button"
+								class="btn btn-sm"
+								style={pending()!.danger ? { "border-color": "#a33", color: "#a33" } : { "border-color": "var(--gold)", color: "var(--gold)" }}
+								onClick={() => void confirmPending()}
+							>
+								{pending()!.confirm} (⏎)
+							</button>
+						</div>
+					</div>
+				</div>
+			</Show>
 
 			{/* compose/reply overlay */}
 			<Show when={compose()}>

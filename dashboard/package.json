@@ -2,11 +2,12 @@
 	"name": "dashboard",
 	"type": "module",
 	"scripts": {
-		"dev": "vite dev",
+		"dev": "vite dev --port 3000",
 		"build": "tsc --noEmit && vite build",
 		"typecheck": "tsc --noEmit",
 		"prepare": "command -v git >/dev/null 2>&1 && git config core.hooksPath .githooks || true",
 		"start": "bun .output/server/index.mjs",
+		"test": "DATABASE_URL=postgres://dummy@localhost:5/dummy bun test src/lib",
 		"preview": "vite preview",
 		"db:generate": "drizzle-kit generate",
 		"db:migrate": "drizzle-kit migrate",

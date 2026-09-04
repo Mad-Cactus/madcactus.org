@@ -5,6 +5,18 @@ on:
     branches: [main]
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+      - working-directory: dashboard
+        run: |
+          bun install
+          bun run test
+
   typecheck:
     runs-on: ubuntu-latest
     steps:

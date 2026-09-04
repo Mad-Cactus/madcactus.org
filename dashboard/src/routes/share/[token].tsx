@@ -1,7 +1,7 @@
 import { Title } from "@solidjs/meta";
 import { useParams } from "@solidjs/router";
 import { createResource, For, Match, Switch } from "solid-js";
-import { getDocByShareToken } from "~/lib/docs";
+import { getDocByShareToken } from "~/lib/docs-share";
 
 // ponytail: 20-line markdown→HTML for headings/bold/italic/code/lists/links —
 // enough for share previews. If shared docs need full GFM, swap in marked.
