@@ -156,7 +156,7 @@ const TOOLS = [
 	{
 		name: "get_doc",
 		description:
-			"Get a doc's current markdown. The 'Voice lessons' doc holds Collin's writing rules — read it before drafting any email or doc for him.",
+			"Get a doc's current markdown. Read the corpus docs first when writing for Collin: 'Voice lessons' (rules derived from his real edits) and 'AI-slop rules' (patterns to never ship).",
 		inputSchema: {
 			type: "object",
 			properties: { doc_id: { type: "string" } },
@@ -223,7 +223,7 @@ const TOOLS = [
 	{
 		name: "create_email_draft",
 		description:
-			"Create an email for Collin to review in the dashboard outbox. Read the 'Voice lessons' doc (get_doc via list_docs) FIRST — write like the corrected examples there. The human sends; you never send. Pass chat_uuid = your session id for provenance.",
+			"Create an email for Collin to review in the dashboard outbox. Read 'Voice lessons' AND 'AI-slop rules' (get_doc via list_docs) FIRST and write like the corrected examples. The human sends; you never send. Pass chat_uuid = your session id for provenance.",
 		inputSchema: {
 			type: "object",
 			properties: {
