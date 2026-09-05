@@ -1,21 +1,33 @@
 import { A } from "@solidjs/router";
-import { For, ParentComponent, Show, createEffect } from "solid-js";
+import { For, ParentComponent, Show, createEffect, createSignal, onMount } from "solid-js";
 import Timer from "~/components/Timer";
 import CommandPalette from "~/components/CommandPalette";
+import { FeedbackWidget } from "~/components/FeedbackWidget";
 
 const links = [
-	{ href: "/admin", label: "Dashboard" },
-	{ href: "/admin/email", label: "Email" },
-	{ href: "/admin/projects", label: "Projects" },
-	{ href: "/admin/companies", label: "Companies" },
-	{ href: "/admin/meetings", label: "Meetings" },
-	{ href: "/admin/outreach", label: "Outreach" },
-	{ href: "/admin/docs", label: "Docs" },
-	{ href: "/admin/brain", label: "Brain" },
-	{ href: "/admin/api-keys", label: "API Keys" },
+	{ href: "/admin", label: "Dashboard", short: "D" },
+	{ href: "/admin/email", label: "Email", short: "E" },
+	{ href: "/admin/projects", label: "Projects", short: "P" },
+	{ href: "/admin/companies", label: "Companies", short: "C" },
+	{ href: "/admin/meetings", label: "Meetings", short: "M" },
+	{ href: "/admin/outreach", label: "Outreach", short: "O" },
+	{ href: "/admin/docs", label: "Docs", short: "Do" },
+	{ href: "/admin/brain", label: "Brain", short: "B" },
+	{ href: "/admin/api-keys", label: "API Keys", short: "K" },
 ];
 
 const Layout: ParentComponent<{ user?: { id?: string; email?: string } | null }> = (props) => {
+	// ponytail: collapsed state loads after mount — SSR always renders expanded,
+	// so a saved collapse flashes for one frame. Move to a cookie if that bugs you.
+	const [collapsed, setCollapsed] = createSignal(false);
+	onMount(() => setCollapsed(localStorage.getItem("sidebar-collapsed") === "1"));
+
+	function toggleCollapsed() {
+		const next = !collapsed();
+		setCollapsed(next);
+		localStorage.setItem("sidebar-collapsed", next ? "1" : "0");
+	}
+
 	// Identify user in PostHog once loaded
 	createEffect(() => {
 		const u = props.user;
@@ -27,9 +39,18 @@ const Layout: ParentComponent<{ user?: { id?: string; email?: string } | null }>
 	}
 
 	return (
-		<div class="layout">
+		<div class="layout" classList={{ collapsed: collapsed() }}>
 			<CommandPalette />
 			<aside class="sidebar">
+				<button
+					type="button"
+					class="sidebar-collapse"
+					title={collapsed() ? "Expand sidebar" : "Collapse sidebar"}
+					aria-expanded={!collapsed()}
+					onClick={toggleCollapsed}
+				>
+					{collapsed() ? "›" : "‹"}
+				</button>
 				<div class="sidebar-logo">
 					<img src="/cactus-seal.svg" alt="Mad Cactus" />
 					<div class="sidebar-logo-text">
@@ -45,8 +66,10 @@ const Layout: ParentComponent<{ user?: { id?: string; email?: string } | null }>
 								end={link.href === "/admin"}
 								class="nav-link"
 								activeClass="active"
+								title={link.label}
+								data-short={link.short}
 							>
-								{link.label}
+								<span class="nav-label">{link.label}</span>
 							</A>
 						)}
 					</For>
@@ -58,11 +81,16 @@ const Layout: ParentComponent<{ user?: { id?: string; email?: string } | null }>
 				</div>
 				<div class="sidebar-footer">
 					<Show when={props.user?.email}>
-						<div style={{ "margin-bottom": "8px" }}>{props.user!.email}</div>
+						<div class="sidebar-email" title={props.user!.email}>{props.user!.email}</div>
 					</Show>
-					<form method="post" action="/admin/logout" style={{ display: "inline" }} onSubmit={handleLogoutForm}>
-						<button type="submit">Sign out</button>
-					</form>
+					<div class="sidebar-footer-actions">
+						<form method="post" action="/admin/logout" style={{ display: "inline" }} onSubmit={handleLogoutForm}>
+							<button type="submit" data-short="⏻" title="Sign out">
+								<span class="nav-label">Sign out</span>
+							</button>
+						</form>
+						<FeedbackWidget source="madcactus-dashboard" server="https://aspectrr-feedback.fly.dev" />
+					</div>
 				</div>
 			</aside>
 			<main class="content">{props.children}</main>

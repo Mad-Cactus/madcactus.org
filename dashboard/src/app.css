@@ -146,6 +146,101 @@
   color: rgba(255, 255, 255, 0.4);
 }
 
+.sidebar-email {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-bottom: 8px;
+}
+
+.sidebar-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+/* Feedback trigger — vendored widget styles it as a floating zinc pill;
+   restyle as an inline footer text button next to Sign out. */
+.sidebar-footer-actions [data-feedback-widget] {
+  position: static;
+  background: none;
+  box-shadow: none;
+  padding: 0;
+  border-radius: 0;
+  font-size: 12px;
+  font-family: var(--font-sans);
+}
+
+.sidebar-footer-actions [data-feedback-widget]:hover {
+  background: none;
+  color: var(--gold);
+}
+
+.sidebar-collapse {
+  position: absolute;
+  top: 16px;
+  right: -11px;
+  z-index: 10;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--bg-elevated);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.sidebar-collapse:hover {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+/* ── Collapsed sidebar — icon rail ── */
+.layout.collapsed .sidebar {
+  width: 52px;
+}
+
+.layout.collapsed .sidebar-logo {
+  padding: 20px 0;
+  justify-content: center;
+}
+
+.layout.collapsed .sidebar-logo-text,
+.layout.collapsed .nav-label,
+.layout.collapsed .sidebar-hints,
+.layout.collapsed .sidebar-email,
+.layout.collapsed .timer-widget {
+  display: none;
+}
+
+.layout.collapsed .nav-link {
+  padding: 10px 0;
+  text-align: center;
+}
+
+.layout.collapsed .nav-link::before {
+  content: attr(data-short);
+}
+
+.layout.collapsed .sidebar-footer {
+  padding: 16px 0;
+}
+
+.layout.collapsed .sidebar-footer-actions {
+  flex-direction: column;
+  gap: 12px;
+}
+
+.layout.collapsed .sidebar-footer-actions button::before {
+  content: attr(data-short);
+}
+
 .sidebar-footer button {
   background: none;
   border: none;
