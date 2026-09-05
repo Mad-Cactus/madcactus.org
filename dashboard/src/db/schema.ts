@@ -727,6 +727,53 @@ export const emailOutbox = pgTable(
 	(t) => [index("idx_email_outbox_status").on(t.status)],
 );
 
+// ── Slack (raw mirror — brain source, like email) ──────────────────
+
+export const slackUsers = pgTable("slack_users", {
+	id: uuid("id").primaryKey().defaultRandom(),
+	slackId: text("slack_id").notNull().unique(),
+	name: text("name").notNull().default(""),
+	realName: text("real_name").notNull().default(""),
+	email: text("email"),
+	isBot: boolean("is_bot").notNull().default(false),
+	deleted: boolean("deleted").notNull().default(false),
+	syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const slackChannels = pgTable("slack_channels", {
+	id: uuid("id").primaryKey().defaultRandom(),
+	slackId: text("slack_id").notNull().unique(),
+	name: text("name").notNull(),
+	purpose: text("purpose").notNull().default(""),
+	isArchived: boolean("is_archived").notNull().default(false),
+	// null = never synced
+	lastSyncAt: timestamp("last_sync_at", { withTimezone: true }),
+});
+
+export const slackMessages = pgTable(
+	"slack_messages",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		channelId: uuid("channel_id")
+			.notNull()
+			.references(() => slackChannels.id, { onDelete: "cascade" }),
+		// slack message ts — unique per channel, the natural message id
+		ts: text("ts").notNull(),
+		threadTs: text("thread_ts"),
+		userId: text("user_id"),
+		userName: text("user_name").notNull().default(""),
+		text: text("text").notNull().default(""),
+		isBot: boolean("is_bot").notNull().default(false),
+		// slack timestamp → real time
+		messageAt: timestamp("message_at", { withTimezone: true }).notNull(),
+		syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+	(t) => [
+		uniqueIndex("slack_messages_channel_ts_uq").on(t.channelId, t.ts),
+		index("idx_slack_messages_date").on(t.messageAt),
+	],
+);
+
 // ── Inferred types (replaces hand-maintained interfaces) ───────────
 
 export type Company = typeof companies.$inferSelect;

@@ -11,6 +11,7 @@ const links = [
 	{ href: "/admin/meetings", label: "Meetings" },
 	{ href: "/admin/outreach", label: "Outreach" },
 	{ href: "/admin/docs", label: "Docs" },
+	{ href: "/admin/brain", label: "Brain" },
 	{ href: "/admin/api-keys", label: "API Keys" },
 ];
 

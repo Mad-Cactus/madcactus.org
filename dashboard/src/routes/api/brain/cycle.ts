@@ -3,6 +3,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { hashKey } from "~/lib/crypto";
 import { db } from "~/db";
 import { apiKeys } from "~/db/schema";
+import { getAuthedClient } from "~/lib/session";
 import { runCycle } from "~/lib/brain/distill";
 
 /**
@@ -21,6 +22,8 @@ function json(body: unknown, status = 200) {
 }
 
 async function authorize(request: Request): Promise<boolean> {
+	// dashboard session (admin page buttons)
+	if (await getAuthedClient()) return true;
 	const secret = process.env.CRON_SECRET;
 	const header = request.headers.get("x-cron-secret");
 	if (secret && header && header === secret) return true;
@@ -39,7 +42,13 @@ async function authorize(request: Request): Promise<boolean> {
 
 export const POST = async (event: APIEvent) => {
 	if (!(await authorize(event.request))) return json({ error: "Unauthorized" }, 401);
-	const body = (await event.request.json().catch(() => ({}))) as { reprocessTranscripts?: boolean };
-	const result = await runCycle({ reprocessTranscripts: body.reprocessTranscripts === true });
+	const body = (await event.request.json().catch(() => ({}))) as {
+		reprocessTranscripts?: boolean;
+		slack?: boolean;
+	};
+	const result = await runCycle({
+		reprocessTranscripts: body.reprocessTranscripts === true,
+		slack: body.slack !== false, // schedulers + admin default to syncing slack
+	});
 	return json({ ok: true, cycle: result });
 };

@@ -16,11 +16,14 @@ import {
 	emailMessages,
 	emailThreads,
 	projects,
+	slackChannels,
+	slackMessages,
 	textVersions,
 } from "~/db/schema";
 import { chunkText, factHash, slugify } from "./core";
 import { syncEntities, syncPersons, syncProspects, detectLoops, backfillTimeline, recomputeWeight } from "./ingest";
 import { embedPending } from "./embed";
+import { syncSlack } from "~/lib/slack";
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
@@ -394,6 +397,48 @@ export async function extractTranscripts(
 	return { meetings: meetings.length, inserted };
 }
 
+// ── extract_slack_facts ────────────────────────────────────────────
+
+/** Extract facts from slack messages newer than the cursor (channel hinted). */
+export async function extractSlackFacts(opts: { maxChars?: number } = {}): Promise<{ inserted: number; sources: number }> {
+	const maxChars = opts.maxChars ?? 20000;
+	const since = await getCursor("extract_slack");
+	const sinceDate = since ? new Date(since) : new Date(Date.now() - 7 * 86_400_000);
+
+	const rows = await db
+		.select({
+			id: slackMessages.id,
+			date: slackMessages.messageAt,
+			text: slackMessages.text,
+			channel: slackChannels.name,
+			userName: slackMessages.userName,
+		})
+		.from(slackMessages)
+		.innerJoin(slackChannels, eq(slackChannels.id, slackMessages.channelId))
+		.where(gt(slackMessages.messageAt, sinceDate))
+		.orderBy(slackMessages.messageAt)
+		.limit(120);
+
+	if (rows.length === 0) return { inserted: 0, sources: 0 };
+
+	// one batch, channel+author labeled; provenance is table-level (slack
+	// messages are chatty — per-fact source ids aren't worth the token cost)
+	let batch = "";
+	let newest: Date | null = null;
+	for (const r of rows) {
+		const block = `SLACK #${r.channel} ${r.date.toISOString()} — ${r.userName}: ${r.text.slice(0, 500)}\n`;
+		if (batch.length + block.length > maxChars) break;
+		batch += block;
+		if (!newest || r.date > newest) newest = r.date;
+	}
+	if (!batch.trim()) return { inserted: 0, sources: 0 };
+
+	const out = parseJsonArray(await llm(EXTRACT_SYSTEM, batch)) as ExtractedFact[];
+	const res = await insertFacts(out, { sourceTable: "slack_messages", surface: "slack" });
+	if (newest) await setCursor("extract_slack", newest.toISOString());
+	return { inserted: res.inserted, sources: rows.length };
+}
+
 // ── consolidate (facts → takes) ────────────────────────────────────
 
 const CONSOLIDATE_SYSTEM = `You consolidate facts about one entity into a single durable "take".
@@ -535,9 +580,16 @@ const CYCLE_STALE_MS = 24 * 3600_000;
 
 /** Full brain cycle: deterministic phases, then LLM distillation. */
 export async function runCycle(
-	opts: { skipLlm?: boolean; reprocessTranscripts?: boolean } = {},
+	opts: { skipLlm?: boolean; reprocessTranscripts?: boolean; slack?: boolean } = {},
 ): Promise<Record<string, unknown>> {
 	const out: Record<string, unknown> = {};
+	if (opts.slack) {
+		try {
+			out.slackSync = await syncSlack();
+		} catch (e) {
+			out.slackSync = { error: e instanceof Error ? e.message : String(e) };
+		}
+	}
 	out.entities = await syncEntities();
 	out.persons = await syncPersons();
 	out.prospects = await syncProspects();
@@ -558,6 +610,11 @@ export async function runCycle(
 			out.transcripts = await extractTranscripts({ reprocess: opts.reprocessTranscripts });
 		} catch (e) {
 			out.transcripts = { error: e instanceof Error ? e.message : String(e) };
+		}
+		try {
+			out.slackFacts = await extractSlackFacts();
+		} catch (e) {
+			out.slackFacts = { error: e instanceof Error ? e.message : String(e) };
 		}
 		try {
 			out.consolidate = await consolidate();

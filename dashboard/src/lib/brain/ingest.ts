@@ -72,6 +72,11 @@ export async function syncPersons(): Promise<{ created: number }> {
 	for (const m of await db.select({ name: clientMembers.name }).from(clientMembers)) {
 		await ensure(m.name);
 	}
+	// slack members (real names only)
+	const slack = await db.execute<{ real_name: string; name: string }>(sql`
+		SELECT real_name, name FROM slack_users WHERE deleted = false AND is_bot = false LIMIT 500
+	`);
+	for (const r of slack) await ensure(r.real_name || r.name);
 	return { created };
 }
 
