@@ -308,21 +308,18 @@ export default function AdminEmail() {
 				return;
 			}
 			if (compose()) return;
-			// thread hotkeys only make sense in the inbox tab
-			if (folder() !== "inbox") return;
-			// h/l move focus between list (left) and reading pane (right):
-			// l opens the row at the cursor (or first row), h closes the pane
-			if (e.key === "h") {
+			// h/l cycle the folder tabs (wrap) — works on every tab
+			if (e.key === "h" || e.key === "l") {
 				e.preventDefault();
+				const folders = ["inbox", "drafts", "sent"] as const;
+				const i = folders.indexOf(folder());
+				setFolder(folders[(i + (e.key === "l" ? 1 : -1) + folders.length) % folders.length]);
 				setSelected(null);
+				setVisMode(false);
 				return;
 			}
-			if (e.key === "l") {
-				e.preventDefault();
-				const t = threads[selIdx()] ?? threads[0];
-				if (t) await loadThread(t, selected() ? selIdx() : 0);
-				return;
-			}
+			// remaining thread hotkeys only make sense in the inbox tab
+			if (folder() !== "inbox") return;
 			// j/k move a visible selection; nothing selected yet → j starts at the
 			// top row instead of skipping it. In visual mode moving just extends
 			// the range — no fetch, no mark-as-read.
@@ -441,7 +438,7 @@ export default function AdminEmail() {
 				</Show>
 			</div>
 			<p class="page-subtitle">
-				j/k move · V select · e done · u unread · r reply · f forward · ! spam · # delete · x unsub · c compose · / search
+				j/k move · h/l tabs · V select · e done · u unread · r reply · f forward · ! spam · # delete · x unsub · c compose · / search
 			</p>
 
 			<Show when={searchParams.connect}>
