@@ -3,6 +3,7 @@
 #
 #   ./scripts/dev-setup.sh          → Postgres + schema + seed (use `bun run dev`)
 #   ./scripts/dev-setup.sh --app    → also start the app container on :3000
+#   ./scripts/dev-teardown.sh       → remove everything (containers, data, .env)
 #
 # No API keys required — every integration (LLM, Gmail, Slack, embeddings)
 # degrades gracefully. Add real keys in dashboard/.env when you want them.
