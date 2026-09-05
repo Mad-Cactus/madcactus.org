@@ -5,7 +5,7 @@
     "": {
       "name": "example-basic",
       "dependencies": {
-        "@aspectrr/feedback-widget": "^0.1.3",
+        "@aspectrr/feedback-widget": "^0.1.4",
         "@kobalte/core": "^0.13.12",
         "@lexical/code": "0.45.0",
         "@lexical/headless": "0.45.0",
@@ -54,7 +54,7 @@
   "packages": {
     "@alloc/quick-lru": ["@alloc/quick-lru@5.2.0", "", {}, "sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw=="],
 
-    "@aspectrr/feedback-widget": ["@aspectrr/feedback-widget@0.1.3", "", { "dependencies": { "@kobalte/core": "^0.13.10", "modern-screenshot": "^4.6.0" }, "peerDependencies": { "solid-js": "^1.8.0" } }, "sha512-4tvPKFpHkveSG4UmCnKeSNrwdTpFvNJvm+TVCvlyJqHfOg9LrSylxN/ilfRmVgzQ+EJxNtkdvBzsgn+mAlqaCA=="],
+    "@aspectrr/feedback-widget": ["@aspectrr/feedback-widget@0.1.4", "", { "dependencies": { "@kobalte/core": "^0.13.10", "modern-screenshot": "^4.6.0" }, "peerDependencies": { "solid-js": "^1.8.0" } }, "sha512-dX403CYK2IUXCYijqF0KV+4Oji29MpfLr6qLEc/i+/+I2hKSyVoMZ5Ciaj/F8X7Wi3NeZwskkkRnvEm/xZ96Wg=="],
 
     "@babel/code-frame": ["@babel/code-frame@7.29.7", "", { "dependencies": { "@babel/helper-validator-identifier": "^7.29.7", "js-tokens": "^4.0.0", "picocolors": "^1.1.1" } }, "sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw=="],
 
