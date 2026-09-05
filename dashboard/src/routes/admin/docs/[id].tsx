@@ -113,7 +113,7 @@ const Doc = (props: { id: string; doc: NonNullable<Awaited<ReturnType<typeof get
 				<button type="button" class="btn btn-primary btn-sm" onClick={async () => {
 					await save(props.id, markdown());
 					const r = await post(props.id, { op: "finalize" });
-					setStatus(r.pairId ? `finalized → pair ${r.pairId.slice(0, 8)}` : r.error);
+					setStatus(r.ok ? "marked final" : r.error);
 				}}>
 					Finalize
 				</button>

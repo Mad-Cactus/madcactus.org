@@ -106,6 +106,21 @@
       "when": 1788455101113,
       "tag": "0014_salty_johnny_blaze",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1788542859886,
+      "tag": "0015_company_brain_and_consolidation",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1788566493637,
+      "tag": "slack_source",
+      "breakpoints": true,
+      "filename": "0018_slack_source.sql"
     }
   ]
 }

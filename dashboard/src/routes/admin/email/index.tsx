@@ -82,12 +82,8 @@ export default function AdminEmail() {
 			body: JSON.stringify({ op: "send", body: editBody()[outboxId] }),
 		});
 		const r = await res.json();
-		if (r.blocked) {
-			setSendStatus(`BLOCKED by your voice rules: ${r.violations.map((v: any) => v.rule).join("; ")}`);
-			return;
-		}
 		if (r.ok) {
-			setSendStatus(r.pairId ? `sent — lesson pair ${r.pairId.slice(0, 8)} queued` : "sent");
+			setSendStatus("sent");
 			setTimeout(() => setSendStatus(""), 5000);
 			void revalidate("email-inbox"); // move the row from drafts to Sent immediately
 		} else {

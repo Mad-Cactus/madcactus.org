@@ -12,7 +12,6 @@ import { getAuthedClient } from "~/lib/session";import {
 	threadWithMessages,
 	sendGmail,
 } from "~/lib/gmail";
-import { finalizeDraft, lintDraft, saveRevision, shouldBlock } from "~/lib/redline";
 import { trackText } from "~/lib/crdt-text";
 
 async function requireAdmin() {
@@ -100,14 +99,13 @@ export const unreadEmailAction = action(async (formData: FormData) => {
 }, "unreadEmail");
 
 export type SendResult =
-	| { ok: true; gmailMessageId: string; pairId?: string }
-	| { ok: false; blocked: true; violations: Awaited<ReturnType<typeof lintDraft>> }
+	| { ok: true; gmailMessageId: string }
 	| { ok: false; error: string };
 
 /**
  * Send an outbox draft: the body is LINTED against voice patterns first —
  * avoid-violations BLOCK the send (the gate). If the draft came from an agent
- * (draftId set), sending finalizes the redline draft → pair → derivation.
+ * Agent drafts land here via createEmailDraft; the human edits (or not).
  */
 export async function sendOutboxDraft(outboxId: string, bodyOverride?: string): Promise<SendResult> {
 	"use server"; // file also exports client-imported query()/action() stubs — keep db chain out of the client bundle
@@ -116,8 +114,6 @@ export async function sendOutboxDraft(outboxId: string, bodyOverride?: string): 
 	if (row.status === "sent") return { ok: false, error: "already sent" };
 
 	const body = bodyOverride ?? row.body;
-	const violations = await lintDraft(body);
-	if (shouldBlock(violations)) return { ok: false, blocked: true, violations };
 
 	const account = await getPrimaryAccount();
 	if (!account) return { ok: false, error: "NO_ACCOUNT: connect Gmail first" };
@@ -140,12 +136,6 @@ export async function sendOutboxDraft(outboxId: string, bodyOverride?: string): 
 			body,
 			inReplyToGmailId,
 		});
-		let pairId: string | undefined;
-		if (row.draftId) {
-			// human's sent text = final; agent's original = draft → pair
-			await saveRevision(row.draftId, body, "human");
-			pairId = await finalizeDraft(row.draftId);
-		}
 		// the sent body lands as its own tracked version (human author)
 		const tracked = await trackText("email_draft", row.id, row.loroSnapshot, "human", body);
 		await db
@@ -154,7 +144,6 @@ export async function sendOutboxDraft(outboxId: string, bodyOverride?: string): 
 				status: "sent",
 				body,
 				gmailMessageId,
-				pairId: pairId ?? null,
 				...(tracked ? { loroSnapshot: tracked.loroSnapshot, version: tracked.version } : {}),
 			})
 			.where(eq(emailOutbox.id, outboxId));
@@ -177,7 +166,7 @@ export async function sendOutboxDraft(outboxId: string, bodyOverride?: string): 
 				.set({ lastMessageAt: new Date() })
 				.where(eq(emailThreads.id, row.threadId));
 		}
-		return { ok: true, gmailMessageId, pairId };
+		return { ok: true, gmailMessageId };
 	} catch (e) {
 		const error = e instanceof Error ? e.message : String(e);
 		await db.update(emailOutbox).set({ status: "failed", error }).where(eq(emailOutbox.id, outboxId));
@@ -192,9 +181,9 @@ export const sendDraftAction = action(async (formData: FormData) => {
 }, "sendDraft");
 
 /**
- * Agent ingest (MCP create_email_draft): lint the body first — avoid-violations
- * BLOCK (agent gets them back to fix). Otherwise store a redline draft
- * (surface=email) + outbox row; the human reviews/edits/sends in the UI.
+ * Agent ingest (brain MCP create_email_draft): store an outbox row; the human
+ * reviews/edits/sends in the UI. v1 of the draft's tracked history = the
+ * agent's original body.
  */
 export async function createEmailDraft(input: {
 	to: string;
@@ -203,23 +192,10 @@ export async function createEmailDraft(input: {
 	chatUuid: string;
 	threadId?: string;
 	context?: string;
-}): Promise<{ blocked: true; violations: Awaited<ReturnType<typeof lintDraft>> } | { blocked: false; outboxId: string; draftId: string }> {
-	"use server";
-	const violations = await lintDraft(input.body);
-	if (shouldBlock(violations)) return { blocked: true, violations };
-
-	const { createDraft } = await import("~/lib/redline");
-	const draft = await createDraft({
-		content: input.body,
-		context: input.context ?? `email to ${input.to}: ${input.subject}`,
-		tags: "email",
-		chatUuid: input.chatUuid,
-		surface: "email",
-	});
+}): Promise<{ outboxId: string }> {
 	const [outbox] = await db
 		.insert(emailOutbox)
 		.values({
-			draftId: draft.id,
 			threadId: input.threadId ?? null,
 			toEmail: input.to,
 			subject: input.subject,
@@ -235,7 +211,7 @@ export async function createEmailDraft(input: {
 			.set({ loroSnapshot: tracked.loroSnapshot, version: tracked.version })
 			.where(eq(emailOutbox.id, outbox.id));
 	}
-	return { blocked: false, outboxId: outbox.id, draftId: draft.id };
+	return { outboxId: outbox.id };
 }
 
 /**

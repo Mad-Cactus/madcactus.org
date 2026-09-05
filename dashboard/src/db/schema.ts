@@ -13,6 +13,9 @@ import {
 	pgView,
 	doublePrecision,
 	check,
+	jsonb,
+	real,
+	date,
 } from "drizzle-orm/pg-core";
 import { sql, eq } from "drizzle-orm";
 
@@ -365,127 +368,9 @@ export const monthlyHoursByProject = pgView("monthly_hours_by_project").as(
 			),
 );
 
-// ── Redline (draft → human edits → lessons learning loop) ─────────
-// Postgres port of ~/GitHub/redline's SQLite schema. Same model: agents push
-// drafts (stamped with their chat_uuid), humans edit, finalize computes the
-// pair + diff, derivation derives lessons. Patterns are the machine-checkable
-// gate (lint); lessons are prose rules for agent context.
+export const docStatus = pgEnum("doc_status", ["draft", "final"]);
 
-export const redlineSurface = pgEnum("redline_surface", ["manual", "doc", "email"]);
-export const redlineAuthor = pgEnum("redline_author", ["agent", "human"]);
-export const redlineDraftStatus = pgEnum("redline_draft_status", ["open", "finalized", "deleted"]);
-export const redlinePatternType = pgEnum("redline_pattern_type", ["literal", "regex"]);
-export const redlineDirection = pgEnum("redline_direction", ["avoid", "prefer"]);
-export const redlineConfidence = pgEnum("redline_confidence", ["unconfirmed", "confirmed"]);
-export const redlineJobStatus = pgEnum("redline_job_status", ["pending", "processing", "done", "failed"]);
-
-export const redlineDrafts = pgTable(
-	"redline_drafts",
-	{
-		id: uuid("id").primaryKey().defaultRandom(),
-		title: text("title").notNull().default(""),
-		context: text("context"),
-		tags: text("tags"), // comma-separated
-		// pi session id of the writing agent — lets the derivation sidecar pull
-		// the exact transcript that produced the draft (the context problem)
-		chatUuid: text("chat_uuid"),
-		source: redlineAuthor("source").notNull().default("agent"),
-		status: redlineDraftStatus("status").notNull().default("open"),
-		// denormalized latest revision content — cheap reads for the inbox UI
-		currentContent: text("current_content").notNull(),
-		// plain uuid (not .references) — pairs.draft_id references drafts, so a
-		// typed FK here would be a circular definition
-		pairId: uuid("pair_id"),
-		surface: redlineSurface("surface").notNull().default("manual"),
-		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-		updatedAt: timestamp("updated_at", { withTimezone: true })
-			.notNull()
-			.defaultNow()
-			.$onUpdate(() => new Date()),
-	},
-	(t) => [index("idx_redline_drafts_status").on(t.status)],
-);
-
-export const redlineRevisions = pgTable(
-	"redline_revisions",
-	{
-		id: uuid("id").primaryKey().defaultRandom(),
-		draftId: uuid("draft_id")
-			.notNull()
-			.references(() => redlineDrafts.id, { onDelete: "cascade" }),
-		content: text("content").notNull(),
-		author: redlineAuthor("author").notNull().default("agent"),
-		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-	},
-	(t) => [index("idx_redline_revisions_draft").on(t.draftId)],
-);
-
-export const redlinePairs = pgTable(
-	"redline_pairs",
-	{
-		id: uuid("id").primaryKey().defaultRandom(),
-		draftId: uuid("draft_id"), // set when the pair came from a draft
-		surface: redlineSurface("surface").notNull().default("manual"),
-		context: text("context"),
-		tags: text("tags"),
-		chatUuid: text("chat_uuid"),
-		draftContent: text("draft_content").notNull(),
-		finalContent: text("final_content").notNull(),
-		diffText: text("diff_text").notNull(),
-		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-	},
-	(t) => [index("idx_redline_pairs_created").on(t.createdAt)],
-);
-
-export const redlineLessons = pgTable(
-	"redline_lessons",
-	{
-		id: uuid("id").primaryKey().defaultRandom(),
-		pairId: uuid("pair_id").references(() => redlinePairs.id, { onDelete: "set null" }),
-		lesson: text("lesson").notNull(),
-		tags: text("tags"),
-		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-	},
-	(t) => [index("idx_redline_lessons_pair").on(t.pairId)],
-);
-
-export const redlinePatterns = pgTable(
-	"redline_patterns",
-	{
-		id: uuid("id").primaryKey().defaultRandom(),
-		lessonId: uuid("lesson_id").references(() => redlineLessons.id, { onDelete: "set null" }),
-		rule: text("rule").notNull(),
-		pattern: text("pattern").notNull(),
-		patternType: redlinePatternType("pattern_type").notNull().default("literal"),
-		direction: redlineDirection("direction").notNull().default("avoid"),
-		category: text("category").notNull().default("style"),
-		beforeText: text("before_text"),
-		afterText: text("after_text"),
-		confidence: redlineConfidence("confidence").notNull().default("unconfirmed"),
-		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-	},
-);
-
-export const redlineDerivationJobs = pgTable(
-	"redline_derivation_jobs",
-	{
-		id: uuid("id").primaryKey().defaultRandom(),
-		pairId: uuid("pair_id")
-			.notNull()
-			.references(() => redlinePairs.id, { onDelete: "cascade" })
-			.unique(), // idempotent — one job per pair
-		status: redlineJobStatus("status").notNull().default("pending"),
-		attempts: integer("attempts").notNull().default(0),
-		error: text("error"),
-		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-		updatedAt: timestamp("updated_at", { withTimezone: true })
-			.notNull()
-			.defaultNow()
-			.$onUpdate(() => new Date()),
-	},
-);
-
-// ── Docs (CRDT markdown documents, redline-enabled) ───────────────
+// ── Docs (CRDT markdown documents + version history) ───────────────
 
 export const docs = pgTable(
 	"docs",
@@ -497,8 +382,8 @@ export const docs = pgTable(
 		// base64 Loro snapshot — CRDT merge layer (agent appends vs human edits)
 		loroSnapshot: text("loro_snapshot").notNull().default(""),
 		version: integer("version").notNull().default(0),
-		// last gated agent write — becomes the draft side of the finalize pair
-		lastAgentContent: text("last_agent_content"),
+		// draft = awaiting human review (agent-pushed), final = human-approved
+		status: docStatus("status").notNull().default("final"),
 		chatUuid: text("chat_uuid"),
 		// set = publicly viewable at /share/<token>
 		shareToken: text("share_token").unique(),
@@ -534,7 +419,234 @@ export const textVersions = pgTable(
 	(t) => [uniqueIndex("text_versions_entity_ver_idx").on(t.entity, t.entityId, t.version)],
 );
 
-// ── Email (Gmail-backed inbox, redline-enabled) ────────────────────
+// ── Brain (gbrain-style distilled knowledge, native tables) ────────
+// Ported from garrytan/gbrain's Postgres model: pages hold distilled
+// knowledge, chunks make it retrievable, facts are atomic claims with
+// supersession chains (never deleted — audit trail), takes are consolidated
+// conclusions, open_loops track commitments. Tight coupling: provenance
+// columns (source_table/source_id) point INTO workspace tables instead of
+// gbrain's sources; company_id ties pages/loops to real clients.
+
+export const brainEntityKind = pgEnum("brain_entity_kind", ["company", "person", "project", "topic", "prospect"]);
+export const brainFactKind = pgEnum("brain_fact_kind", ["event", "preference", "commitment", "belief", "fact", "idea", "lesson"]);
+export const brainVisibility = pgEnum("brain_visibility", ["private", "world"]);
+export const brainNotability = pgEnum("brain_notability", ["high", "medium", "low"]);
+export const brainLoopType = pgEnum("brain_loop_type", [
+	"commitment_owed_by_me",
+	"commitment_owed_to_me",
+	"unanswered_inbound",
+	"unanswered_outbound",
+	"decision_pending",
+]);
+export const brainLoopStatus = pgEnum("brain_loop_status", ["open", "done", "dropped", "stale"]);
+export const brainLoopDetector = pgEnum("brain_loop_detector", ["deterministic_thread", "llm_extract", "manual"]);
+export const brainTakeKind = pgEnum("brain_take_kind", ["fact", "take", "bet", "hypothesis"]);
+export const brainJobStatus = pgEnum("brain_job_status", ["pending", "running", "done", "failed"]);
+
+export const brainPages = pgTable(
+	"brain_pages",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		// unique citation key, kebab-case — [source:slug] style
+		slug: text("slug").notNull().unique(),
+		// 'entity' (company/person/project/topic card) | 'take' | 'summary' | 'note'
+		type: text("type").notNull().default("entity"),
+		entityKind: brainEntityKind("entity_kind"),
+		// tight coupling: entity pages for clients point at the CRM row
+		companyId: uuid("company_id").references(() => companies.id, { onDelete: "set null" }),
+		title: text("title").notNull(),
+		// distilled body — synthesized from facts/takes by the enrich phase
+		compiledTruth: text("compiled_truth").notNull().default(""),
+		timelineText: text("timeline_text").notNull().default(""),
+		frontmatter: jsonb("frontmatter").notNull().default({}),
+		contentHash: text("content_hash"),
+		// deterministic 0..1 salience (recency + loop pressure + notability),
+		// recomputed by the cycle — ranks search results
+		emotionalWeight: real("emotional_weight").notNull().default(0),
+		deletedAt: timestamp("deleted_at", { withTimezone: true }),
+		lastRetrievedAt: timestamp("last_retrieved_at", { withTimezone: true }),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date()),
+	},
+	(t) => [index("idx_brain_pages_company").on(t.companyId), index("idx_brain_pages_type").on(t.type)],
+);
+
+export const brainChunks = pgTable(
+	"brain_chunks",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		pageId: uuid("page_id")
+			.notNull()
+			.references(() => brainPages.id, { onDelete: "cascade" }),
+		chunkIndex: integer("chunk_index").notNull(),
+		chunkText: text("chunk_text").notNull(),
+		tokenCount: integer("token_count"),
+		// v1 searches via to_tsvector expression index (see migration 0015);
+		// embedding vector(1536) lands later on Supabase pgvector
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+	(t) => [index("idx_brain_chunks_page").on(t.pageId)],
+);
+
+export const brainFacts = pgTable(
+	"brain_facts",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		entitySlug: text("entity_slug").notNull(),
+		fact: text("fact").notNull(),
+		kind: brainFactKind("kind").notNull().default("fact"),
+		visibility: brainVisibility("visibility").notNull().default("private"),
+		notability: brainNotability("notability").notNull().default("medium"),
+		context: text("context"),
+		validFrom: timestamp("valid_from", { withTimezone: true }).notNull().defaultNow(),
+		validUntil: timestamp("valid_until", { withTimezone: true }),
+		expiredAt: timestamp("expired_at", { withTimezone: true }),
+		// supersession chain: newer fact points at the one it replaces
+		supersededBy: uuid("superseded_by"),
+		consolidatedAt: timestamp("consolidated_at", { withTimezone: true }),
+		consolidatedInto: uuid("consolidated_into"),
+		// surface this fact's rules apply to: 'docs' | 'email' | 'transcript' |
+		// 'contract' | … — lessons are scoped per surface, global ones derive
+		// from all of them during consolidation
+		surface: text("surface"),
+		// provenance INTO workspace tables: 'email_messages' | 'text_versions' |
+		// 'documents' | 'manual'
+		sourceTable: text("source_table").notNull(),
+		sourceId: uuid("source_id"),
+		confidence: real("confidence").notNull().default(1),
+		// md5(lower(trim(fact))) — deterministic dedup key per entity
+		factHash: text("fact_hash").notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+	(t) => [
+		index("idx_brain_facts_entity").on(t.entitySlug),
+		uniqueIndex("brain_facts_entity_hash_uq").on(t.entitySlug, t.factHash),
+	],
+);
+
+export const brainTakes = pgTable(
+	"brain_takes",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		pageId: uuid("page_id")
+			.notNull()
+			.references(() => brainPages.id, { onDelete: "cascade" }),
+		rowNum: integer("row_num").notNull(),
+		claim: text("claim").notNull(),
+		kind: brainTakeKind("kind").notNull().default("take"),
+		holder: text("holder").notNull().default("madcactus"),
+		// 0..1 conviction
+		weight: real("weight").notNull().default(0.5),
+		active: boolean("active").notNull().default(true),
+		supersededBy: uuid("superseded_by"),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date()),
+	},
+	(t) => [uniqueIndex("brain_takes_page_row_uq").on(t.pageId, t.rowNum)],
+);
+
+export const brainLinks = pgTable(
+	"brain_links",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		fromPageId: uuid("from_page_id")
+			.notNull()
+			.references(() => brainPages.id, { onDelete: "cascade" }),
+		toPageId: uuid("to_page_id")
+			.notNull()
+			.references(() => brainPages.id, { onDelete: "cascade" }),
+		linkType: text("link_type").notNull().default(""),
+		context: text("context").notNull().default(""),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+	(t) => [uniqueIndex("brain_links_from_to_type_uq").on(t.fromPageId, t.toPageId, t.linkType)],
+);
+
+export const brainTimeline = pgTable(
+	"brain_timeline",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		pageId: uuid("page_id")
+			.notNull()
+			.references(() => brainPages.id, { onDelete: "cascade" }),
+		date: date("date").notNull(),
+		source: text("source").notNull().default(""),
+		summary: text("summary").notNull(),
+		detail: text("detail").notNull().default(""),
+		// provenance: 'email_threads' | 'email_messages' | 'documents' | 'text_versions'
+		sourceTable: text("source_table"),
+		sourceId: uuid("source_id"),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+	(t) => [index("idx_brain_timeline_page").on(t.pageId, t.date)],
+);
+
+export const brainOpenLoops = pgTable(
+	"brain_open_loops",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		dedupKey: text("dedup_key").notNull().unique(),
+		loopType: brainLoopType("loop_type").notNull(),
+		companyId: uuid("company_id").references(() => companies.id, { onDelete: "set null" }),
+		counterpartySlug: text("counterparty_slug"),
+		counterpartyEmail: text("counterparty_email"),
+		summary: text("summary").notNull(),
+		evidence: jsonb("evidence").notNull().default([]),
+		threadId: uuid("thread_id").references(() => emailThreads.id, { onDelete: "set null" }),
+		pageSlug: text("page_slug"),
+		dueAt: timestamp("due_at", { withTimezone: true }),
+		status: brainLoopStatus("status").notNull().default("open"),
+		detector: brainLoopDetector("detector").notNull().default("deterministic_thread"),
+		confidence: real("confidence").notNull().default(1),
+		openedAt: timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(),
+		lastActivityAt: timestamp("last_activity_at", { withTimezone: true }).notNull().defaultNow(),
+		closedAt: timestamp("closed_at", { withTimezone: true }),
+		closedBy: text("closed_by"),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date()),
+	},
+);
+
+export const brainJobs = pgTable(
+	"brain_jobs",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		// 'extract_facts' | 'consolidate' | 'enrich' | 'detect_loops' | 'sync_entities'
+		phase: text("phase").notNull(),
+		scope: text("scope"),
+		status: brainJobStatus("status").notNull().default("pending"),
+		payload: jsonb("payload").notNull().default({}),
+		attempts: integer("attempts").notNull().default(0),
+		error: text("error"),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date()),
+	},
+	(t) => [index("idx_brain_jobs_phase_status").on(t.phase, t.status)],
+);
+
+// cycle cursors + key/value state (mirrors gbrain's config + ingest_log)
+export const brainState = pgTable("brain_state", {
+	key: text("key").primaryKey(),
+	value: jsonb("value").notNull().default({}),
+	updatedAt: timestamp("updated_at", { withTimezone: true })
+		.notNull()
+		.defaultNow()
+		.$onUpdate(() => new Date()),
+});
+
+// ── Email (Gmail-backed inbox) ────────────────────
 
 export const emailAccounts = pgTable("email_accounts", {
 	id: uuid("id").primaryKey().defaultRandom(),
@@ -595,8 +707,6 @@ export const emailOutbox = pgTable(
 	"email_outbox",
 	{
 		id: uuid("id").primaryKey().defaultRandom(),
-		// agent-created drafts ride the redline loop: send → finalize → pair
-		draftId: uuid("draft_id"), // plain ref — redline_drafts has no back-ref
 		threadId: uuid("thread_id"), // set = reply, null = new thread
 		toEmail: text("to_email").notNull(),
 		subject: text("subject").notNull(),
@@ -607,7 +717,6 @@ export const emailOutbox = pgTable(
 		chatUuid: text("chat_uuid"),
 		status: text("status").notNull().default("draft"), // draft|sent|failed
 		gmailMessageId: text("gmail_message_id"),
-		pairId: uuid("pair_id"),
 		error: text("error"),
 		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp("updated_at", { withTimezone: true })
@@ -616,6 +725,53 @@ export const emailOutbox = pgTable(
 			.$onUpdate(() => new Date()),
 	},
 	(t) => [index("idx_email_outbox_status").on(t.status)],
+);
+
+// ── Slack (raw mirror — brain source, like email) ──────────────────
+
+export const slackUsers = pgTable("slack_users", {
+	id: uuid("id").primaryKey().defaultRandom(),
+	slackId: text("slack_id").notNull().unique(),
+	name: text("name").notNull().default(""),
+	realName: text("real_name").notNull().default(""),
+	email: text("email"),
+	isBot: boolean("is_bot").notNull().default(false),
+	deleted: boolean("deleted").notNull().default(false),
+	syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const slackChannels = pgTable("slack_channels", {
+	id: uuid("id").primaryKey().defaultRandom(),
+	slackId: text("slack_id").notNull().unique(),
+	name: text("name").notNull(),
+	purpose: text("purpose").notNull().default(""),
+	isArchived: boolean("is_archived").notNull().default(false),
+	// null = never synced
+	lastSyncAt: timestamp("last_sync_at", { withTimezone: true }),
+});
+
+export const slackMessages = pgTable(
+	"slack_messages",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		channelId: uuid("channel_id")
+			.notNull()
+			.references(() => slackChannels.id, { onDelete: "cascade" }),
+		// slack message ts — unique per channel, the natural message id
+		ts: text("ts").notNull(),
+		threadTs: text("thread_ts"),
+		userId: text("user_id"),
+		userName: text("user_name").notNull().default(""),
+		text: text("text").notNull().default(""),
+		isBot: boolean("is_bot").notNull().default(false),
+		// slack timestamp → real time
+		messageAt: timestamp("message_at", { withTimezone: true }).notNull(),
+		syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+	(t) => [
+		uniqueIndex("slack_messages_channel_ts_uq").on(t.channelId, t.ts),
+		index("idx_slack_messages_date").on(t.messageAt),
+	],
 );
 
 // ── Inferred types (replaces hand-maintained interfaces) ───────────
@@ -645,9 +801,3 @@ export type EmailAccount = typeof emailAccounts.$inferSelect;
 export type EmailThread = typeof emailThreads.$inferSelect;
 export type EmailMessage = typeof emailMessages.$inferSelect;
 export type EmailOutbox = typeof emailOutbox.$inferSelect;
-export type RedlineDraft = typeof redlineDrafts.$inferSelect;
-export type RedlineRevision = typeof redlineRevisions.$inferSelect;
-export type RedlinePair = typeof redlinePairs.$inferSelect;
-export type RedlineLesson = typeof redlineLessons.$inferSelect;
-export type RedlinePattern = typeof redlinePatterns.$inferSelect;
-export type RedlineDerivationJob = typeof redlineDerivationJobs.$inferSelect;
