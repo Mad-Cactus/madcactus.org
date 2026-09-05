@@ -9,6 +9,8 @@ import {
 	setOutreachStageAction,
 	setOutreachNextActionAction,
 	getBrainDigestQuery,
+	getBrainActivityQuery,
+	type BrainActivity,
 	type BrainDigestItem,
 } from "~/lib/admin-queries";
 import { OUTREACH_STAGES, type OutreachProspect, type OutreachStage } from "~/db/schema";
@@ -117,6 +119,71 @@ function DigestSection(props: { brainUrl: string }) {
 	);
 }
 
+function ActivityDetails(props: { brainUrl: string }) {
+	const activity = createAsync(() => getBrainActivityQuery(props.brainUrl));
+	return (
+		<Suspense fallback={<p class="muted" style={{ "font-size": "12px" }}>Loading…</p>}>
+			<Show when={activity()}>
+				{(a) => (
+					<Show
+						when={!a().error}
+						fallback={
+							<p class="muted" style={{ "font-size": "12px", "font-style": "italic" }}>
+								{a().error === "no key" ? "no activity key configured for this brain" : "brain unreachable"}
+							</p>
+						}
+					>
+						<ActivityMetrics activity={(a() as { activity: BrainActivity }).activity} />
+					</Show>
+				)}
+			</Show>
+		</Suspense>
+	);
+}
+
+function ActivityMetrics(props: { activity: BrainActivity }) {
+	const a = () => props.activity;
+	return (
+		<Show
+			when={a().visits > 0 || a().toolCalls > 0}
+			fallback={<p class="muted" style={{ "font-size": "12px", "font-style": "italic" }}>no brain activity yet</p>}
+		>
+			<div class="muted" style={{ "font-size": "12px", margin: "5px 0", display: "grid", gap: "2px" }}>
+				<div>
+					{a().visits} visit{a().visits === 1 ? "" : "s"}
+					<Show when={a().visitDays > 1}> across {a().visitDays} days</Show>
+					<Show when={a().lastVisit}> · last {fmtDate(new Date(a().lastVisit!))}</Show>
+				</div>
+				<div>
+					read to {a().maxDepth}% · dwell {a().maxDwell ? fmtDur(a().maxDwell) : "0s"} · {a().clicks} click{a().clicks === 1 ? "" : "s"}
+				</div>
+				<Show when={a().toolCalls > 0}>
+					<div>
+						MCP: {a().toolCalls} call{a().toolCalls === 1 ? "" : "s"}
+						<Show when={a().lastToolAt}> · last {fmtDate(new Date(a().lastToolAt!))}</Show>
+						<Show when={a().tools.length}> — {a().tools.join(", ")}</Show>
+					</div>
+				</Show>
+			</div>
+		</Show>
+	);
+}
+
+/** Fetches only on first expand — one board render = zero activity calls. */
+function ActivitySection(props: { brainUrl: string }) {
+	const [open, setOpen] = createSignal(false);
+	return (
+		<div style={{ "font-size": "12px", margin: "5px 0" }}>
+			<button type="button" class="btn btn-sm" onClick={() => setOpen(!open())}>
+				{open() ? "▾ brain activity" : "▸ brain activity"}
+			</button>
+			<Show when={open()}>
+				<ActivityDetails brainUrl={props.brainUrl} />
+			</Show>
+		</div>
+	);
+}
+
 function BoardCard(props: { prospect: OutreachProspect; due: boolean; onDragStart?: (id: string) => void }) {
 	const p = () => props.prospect;
 	const setStage = useAction(setOutreachStageAction);
@@ -209,6 +276,7 @@ function BoardCard(props: { prospect: OutreachProspect; due: boolean; onDragStar
 
 			<Show when={p().brainUrl}>
 				<DigestSection brainUrl={p().brainUrl!} />
+				<ActivitySection brainUrl={p().brainUrl!} />
 			</Show>
 
 			<Show when={p().notes}>

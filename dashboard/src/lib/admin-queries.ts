@@ -805,3 +805,64 @@ export const getBrainDigestQuery = query(async (brainUrl: string) => {
 		return { error: "brain unreachable" as const };
 	}
 }, "brain-digest");
+
+export interface BrainActivity {
+	visits: number;
+	visitDays: number;
+	lastVisit: string | null;
+	toolCalls: number;
+	lastToolAt: string | null;
+	// max scroll depth reached, 0–100 (% of page height)
+	maxDepth: number;
+	clicks: number;
+	// longest single-visit dwell, seconds
+	maxDwell: number;
+	tools: string[];
+}
+
+// Activity keys are per brain host: BRAIN_ACTIVITY_KEYS="host1=key1,host2=key2".
+function activityKeyFor(brainUrl: string): string {
+	let host: string;
+	try {
+		host = new URL(brainUrl).host;
+	} catch {
+		return "";
+	}
+	for (const pair of String(process.env.BRAIN_ACTIVITY_KEYS ?? "").split(",")) {
+		const eq = pair.indexOf("=");
+		if (eq > 0 && pair.slice(0, eq).trim() === host) return pair.slice(eq + 1).trim();
+	}
+	return "";
+}
+
+// Same fail-soft contract as the digest: engagement stats must never block
+// the board. No key for this host is "no data", not an error.
+export const getBrainActivityQuery = query(async (brainUrl: string) => {
+	"use server";
+	await requireAdmin();
+	const key = activityKeyFor(brainUrl);
+	if (!key) return { error: "no key" as const };
+	try {
+		const res = await fetch(`${brainUrl.replace(/\/+$/, "")}/activity`, {
+			headers: { accept: "application/json", "x-activity-key": key },
+			signal: AbortSignal.timeout(5_000),
+		});
+		if (!res.ok) return { error: "brain unreachable" as const };
+		const j = (await res.json()) as Partial<BrainActivity>;
+		return {
+			activity: {
+				visits: j.visits ?? 0,
+				visitDays: j.visitDays ?? 0,
+				lastVisit: j.lastVisit ?? null,
+				toolCalls: j.toolCalls ?? 0,
+				lastToolAt: j.lastToolAt ?? null,
+				maxDepth: j.maxDepth ?? 0,
+				clicks: j.clicks ?? 0,
+				maxDwell: j.maxDwell ?? 0,
+				tools: Array.isArray(j.tools) ? j.tools.map(String) : [],
+			} satisfies BrainActivity,
+		};
+	} catch {
+		return { error: "brain unreachable" as const };
+	}
+}, "brain-activity");
