@@ -35,7 +35,7 @@ export const getEmailStatusQuery = query(async () => {
 /** Account ids with a sync currently running (see getInboxQuery). */
 const syncingAccounts = new Set<string>();
 
-export const getInboxQuery = query(async (opts: { q?: string } = {}) => {
+export const getInboxQuery = query(async (opts: { q?: string; folder?: "inbox" | "drafts" | "sent" } = {}) => {
 	"use server";
 	await requireAdmin();
 	const account = await getPrimaryAccount();
@@ -52,13 +52,21 @@ export const getInboxQuery = query(async (opts: { q?: string } = {}) => {
 			.catch(() => {})
 			.finally(() => syncingAccounts.delete(account.id));
 	}
-	const threads = await listInbox(account, { q: opts.q });
+	// Gmail's search index covers the whole mailbox — scope matches to the
+	// active tab so a Sent search never lands in the Inbox list.
+	let threads = await listInbox(account, { q: opts.q });
+	if (opts.q && opts.folder !== "sent") threads = threads.filter((t) => !t.archived);
 	const drafts = await db
 		.select()
 		.from(emailOutbox)
 		.where(eq(emailOutbox.status, "draft"))
 		.orderBy(desc(emailOutbox.createdAt));
-	const sent = await listSent(account);
+	let sent = await listSent(account);
+	if (opts.q && opts.folder === "sent") {
+		const hits = new Set(threads.map((t) => t.id));
+		sent = sent.filter((s) => hits.has(s.thread.id));
+		threads = []; // sent matches belong to the Sent tab, not the Inbox badge
+	}
 	return { connected: true as const, threads, drafts, sent };
 }, "email-inbox");
 
