@@ -117,7 +117,7 @@ function DigestSection(props: { brainUrl: string }) {
 	);
 }
 
-function BoardCard(props: { prospect: OutreachProspect; due: boolean }) {
+function BoardCard(props: { prospect: OutreachProspect; due: boolean; onDragStart?: (id: string) => void }) {
 	const p = () => props.prospect;
 	const setStage = useAction(setOutreachStageAction);
 	const setNextAction = useAction(setOutreachNextActionAction);
@@ -128,7 +128,10 @@ function BoardCard(props: { prospect: OutreachProspect; due: boolean }) {
 	function startDrag(e: DragEvent) {
 		e.dataTransfer?.setData("text/plain", p().id);
 		if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
-		setDragging(true);
+		props.onDragStart?.(p().id);
+		// defer the class flip — a synchronous DOM write inside dragstart can
+		// abort the drag in Chrome
+		setTimeout(() => setDragging(true), 0);
 	}
 
 	async function handleSave(e: Event) {
@@ -263,6 +266,8 @@ function Board() {
 	async function handleDrop(e: DragEvent, stage: OutreachStage) {
 		e.preventDefault();
 		setHoverStage(undefined);
+		// id travels via the Board signal (set synchronously in dragstart);
+		// dataTransfer is only a fallback
 		const id = draggedId() ?? e.dataTransfer?.getData("text/plain");
 		setDraggedId(undefined);
 		if (!id) return;
@@ -314,7 +319,7 @@ function Board() {
 									</div>
 									<div class="board-cards">
 										<For each={col.cards}>
-											{(p) => <BoardCard prospect={p} due={dueIds().has(p.id)} />}
+											{(p) => <BoardCard prospect={p} due={dueIds().has(p.id)} onDragStart={setDraggedId} />}
 										</For>
 										<Show when={!col.cards.length}>
 											<p class="muted" style={{ "font-size": "12px", margin: "0" }}>drop here</p>
