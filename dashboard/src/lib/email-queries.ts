@@ -193,6 +193,7 @@ export async function createEmailDraft(input: {
 	threadId?: string;
 	context?: string;
 }): Promise<{ outboxId: string }> {
+	"use server"; // without this the db chain lands in the client bundle → "Buffer is not defined"
 	const [outbox] = await db
 		.insert(emailOutbox)
 		.values({
@@ -224,6 +225,7 @@ export async function saveDraftBody(
 	body: string,
 	author: "human" | "agent" = "human",
 ): Promise<number | null> {
+	"use server"; // same client-bundle leak as createEmailDraft
 	const [row] = await db.select().from(emailOutbox).where(eq(emailOutbox.id, outboxId));
 	if (!row) return null;
 	const tracked = await trackText("email_draft", outboxId, row.loroSnapshot, author, body);

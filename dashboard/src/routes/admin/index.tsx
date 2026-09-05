@@ -145,20 +145,36 @@ export default function Home() {
 										<div class="sub">Needs Plaid</div>
 									</div>
 								</div>
-								<div class="stat-card stat-card-placeholder">
-									<div class="label">Google Workspace</div>
-									<div class="value value-muted">
-										—
-										<div class="sub">Not connected</div>
+								<div class="stat-card">
+									<div class="label">Docs</div>
+									<div class="value">
+										{ov().docs.total}
 									</div>
+									<div class="sub">documents in the workspace</div>
 								</div>
-								<div class="stat-card stat-card-placeholder">
-									<div class="label">Gmail</div>
-									<div class="value value-muted">
-										—
-										<div class="sub">Not connected</div>
+								<Show
+									when={ov().email.connected}
+									fallback={
+										<div class="stat-card stat-card-placeholder">
+											<div class="label">Email</div>
+											<div class="value value-muted">
+												—
+												<div class="sub">Not connected</div>
+											</div>
+										</div>
+									}
+								>
+									<div class="stat-card">
+										<div class="label">Email</div>
+										<div class="value">
+											{ov().email.unread}
+										</div>
+										<div class="sub">
+											unread · {ov().email.total} threads · synced
+											{ov().email.lastSyncAt?.toLocaleTimeString() ?? "never"}
+										</div>
 									</div>
-								</div>
+								</Show>
 							</div>
 
 							{/* ── Work needing attention ── */}
