@@ -12,8 +12,8 @@ import type { EmailThread, EmailMessage, EmailOutbox } from "~/db/schema";
 type DraftVersionRow = { id: string; version: number; author: string; createdAt: string; updatedAt: string };
 type DraftDiffPart = { added?: boolean; removed?: boolean; value: string };
 
-// Hotkeys mirror macro: j/k move + open, e archive, shift+e unarchive,
-// u unread, r reply, f forward, c compose, / search, Esc close.
+// Hotkeys mirror macro: j/k move + open, h/l list↔pane, e archive, shift+e
+// unarchive, u unread, r reply, f forward, c compose, / search, Esc close.
 
 type ThreadFull = { thread: EmailThread; messages: EmailMessage[] };
 
@@ -241,6 +241,19 @@ export default function AdminEmail() {
 			if (compose()) return;
 			// thread hotkeys only make sense in the inbox tab
 			if (folder() !== "inbox") return;
+			// h/l move focus between list (left) and reading pane (right):
+			// l opens the row at the cursor (or first row), h closes the pane
+			if (e.key === "h") {
+				e.preventDefault();
+				setSelected(null);
+				return;
+			}
+			if (e.key === "l") {
+				e.preventDefault();
+				const t = threads[selIdx()] ?? threads[0];
+				if (t) await loadThread(t, selected() ? selIdx() : 0);
+				return;
+			}
 			// j/k move a visible selection; nothing selected yet → j starts at the
 			// top row instead of skipping it
 			const cur = selected() ? selIdx() : -1;
@@ -347,7 +360,7 @@ export default function AdminEmail() {
 				</Show>
 			</div>
 			<p class="page-subtitle">
-				j/k move · e done · u unread · r reply · f forward · ! spam · # delete · x unsub · c compose · / search — drafts are
+				j/k move · h/l panes · e done · u unread · r reply · f forward · ! spam · # delete · x unsub · c compose · / search — drafts are
 				voice-linted before sending; every edit is CRDT-tracked
 			</p>
 

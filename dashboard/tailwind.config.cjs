@@ -4,6 +4,8 @@ module.exports = {
   content: [
     "src/routes/**/*.{ts,tsx}",
     "src/components/**/*.{ts,tsx}",
+    // scan the published feedback widget — its zinc utilities get purged otherwise
+    "node_modules/@aspectrr/feedback-widget/dist/**/*.js",
   ],
   theme: {
     extend: {

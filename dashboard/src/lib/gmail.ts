@@ -279,6 +279,15 @@ export async function syncAccount(account: EmailAccount): Promise<{ synced: numb
 		if (row) synced++;
 	}
 
+	// Re-fetch the 50 most recent SENT threads too — fetchMissingThreads skips
+	// known ids, so replies sent from the Gmail UI on threads we already have
+	// locally never landed until this loop existed.
+	const sentFresh = sentIds.filter((id) => !inboxSet.has(id)).slice(0, 50);
+	for (const id of sentFresh) {
+		const row = await upsertThread(account, await fetchFullThread(account, id));
+		if (row) synced++;
+	}
+
 	const setArchived = async (ids: string[], archived: boolean) => {
 		for (let i = 0; i < ids.length; i += 500) {
 			await db
@@ -447,14 +456,17 @@ export async function setThreadSpam(account: EmailAccount, threadRowId: string) 
 	await removeLocalThread(account, threadRowId);
 }
 
-/** Trash: Gmail DELETE moves the thread to trash (recoverable there). */
+/** Trash: POST /trash moves the thread to trash (recoverable in Gmail).
+ *  Never use DELETE here — threads.delete is a permanent erase that only
+ *  service accounts with domain-wide delegation may call; for OAuth users it
+ *  403s, which is why delete silently did nothing. */
 export async function trashThread(account: EmailAccount, threadRowId: string) {
 	const [thread] = await db
 		.select()
 		.from(emailThreads)
 		.where(and(eq(emailThreads.id, threadRowId), eq(emailThreads.accountId, account.id)));
 	if (!thread) throw new Error("thread not found");
-	await gmail(account, `/threads/${thread.gmailThreadId}`, { method: "DELETE" });
+	await gmail(account, `/threads/${thread.gmailThreadId}/trash`, { method: "POST" });
 	await removeLocalThread(account, threadRowId);
 }
 
