@@ -2,7 +2,7 @@ import { A } from "@solidjs/router";
 import { For, ParentComponent, Show, createEffect, createSignal, onMount } from "solid-js";
 import Timer from "~/components/Timer";
 import CommandPalette from "~/components/CommandPalette";
-import { FeedbackWidget } from "~/components/FeedbackWidget";
+import { FeedbackWidget } from "@aspectrr/feedback-widget";
 
 const links = [
 	{ href: "/admin", label: "Dashboard", short: "D" },

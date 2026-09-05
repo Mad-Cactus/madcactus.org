@@ -241,6 +241,17 @@
   content: attr(data-short);
 }
 
+/* Package trigger has a bare text label (no .nav-label span / data-short),
+   so zero out the font and paint the glyph ourselves. */
+.layout.collapsed .sidebar-footer-actions [data-feedback-widget] {
+  font-size: 0;
+}
+
+.layout.collapsed .sidebar-footer-actions [data-feedback-widget]::before {
+  content: "✎";
+  font-size: 12px;
+}
+
 .sidebar-footer button {
   background: none;
   border: none;

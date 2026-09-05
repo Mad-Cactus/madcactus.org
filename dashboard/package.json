@@ -15,6 +15,7 @@
 		"db:studio": "drizzle-kit studio"
 	},
 	"dependencies": {
+		"@aspectrr/feedback-widget": "^0.1.0",
 		"@kobalte/core": "^0.13.12",
 		"@lexical/code": "0.45.0",
 		"@lexical/headless": "0.45.0",
