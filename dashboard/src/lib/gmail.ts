@@ -188,7 +188,11 @@ async function upsertThread(
 ) {
 	const messages = full.messages ?? [];
 	if (messages.length === 0) return null;
-	const last = messages[messages.length - 1];
+	if (isTrashed(full)) {
+		await removeLocalGmailThread(account, full.id);
+		return null;
+	}
+	const last = latestMessage(messages)!;
 	const from = addr(header(last.payload, "From"));
 	const subject = header(last.payload, "Subject") || "(no subject)";
 	const unread = last.labelIds?.includes("UNREAD") ?? false;
@@ -441,6 +445,29 @@ async function removeLocalThread(account: EmailAccount, threadRowId: string) {
 	await db.delete(emailThreads).where(and(eq(emailThreads.id, threadRowId), eq(emailThreads.accountId, account.id)));
 }
 
+// sync-side mirror: Gmail says the thread is trashed → drop local rows so a
+// concurrent sync can't resurrect mail the user just deleted
+async function removeLocalGmailThread(account: EmailAccount, gmailThreadId: string) {
+	const [row] = await db
+		.select({ id: emailThreads.id })
+		.from(emailThreads)
+		.where(and(eq(emailThreads.gmailThreadId, gmailThreadId), eq(emailThreads.accountId, account.id)));
+	if (!row) return;
+	await removeLocalThread(account, row.id);
+}
+
+/** Last message by date — Gmail's message array order is not guaranteed, and
+ *  picking the wrong "last" put the user's own sent text in the list preview. */
+export function latestMessage(messages: GmailMessage[]): GmailMessage | undefined {
+	return messages.slice().sort((a, b) => Number(a.internalDate) - Number(b.internalDate)).at(-1);
+}
+
+/** Every message carries the TRASH label → the thread lives in Gmail's trash. */
+export function isTrashed(full: { messages?: GmailMessage[] }): boolean {
+	const ms = full.messages ?? [];
+	return ms.length > 0 && ms.every((m) => m.labelIds?.includes("TRASH"));
+}
+
 /** Report spam: SPAM label on, INBOX off, local rows dropped. */
 export async function setThreadSpam(account: EmailAccount, threadRowId: string) {
 	const [thread] = await db
@@ -448,11 +475,16 @@ export async function setThreadSpam(account: EmailAccount, threadRowId: string) 
 		.from(emailThreads)
 		.where(and(eq(emailThreads.id, threadRowId), eq(emailThreads.accountId, account.id)));
 	if (!thread) throw new Error("thread not found");
-	await gmail(account, `/threads/${thread.gmailThreadId}/modify`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ addLabelIds: ["SPAM"], removeLabelIds: ["INBOX"] }),
-	});
+	try {
+		await gmail(account, `/threads/${thread.gmailThreadId}/modify`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ addLabelIds: ["SPAM"], removeLabelIds: ["INBOX"] }),
+		});
+	} catch (e) {
+		// already reported elsewhere → still drop the local rows
+		if (!String(e).includes("404")) throw e;
+	}
 	await removeLocalThread(account, threadRowId);
 }
 
@@ -466,7 +498,12 @@ export async function trashThread(account: EmailAccount, threadRowId: string) {
 		.from(emailThreads)
 		.where(and(eq(emailThreads.id, threadRowId), eq(emailThreads.accountId, account.id)));
 	if (!thread) throw new Error("thread not found");
-	await gmail(account, `/threads/${thread.gmailThreadId}/trash`, { method: "POST" });
+	try {
+		await gmail(account, `/threads/${thread.gmailThreadId}/trash`, { method: "POST" });
+	} catch (e) {
+		// already trashed elsewhere → still drop the local rows
+		if (!String(e).includes("404")) throw e;
+	}
 	await removeLocalThread(account, threadRowId);
 }
 

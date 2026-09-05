@@ -14,6 +14,7 @@ type DraftDiffPart = { added?: boolean; removed?: boolean; value: string };
 
 // Hotkeys mirror macro: j/k move + open, h/l list↔pane, e archive, shift+e
 // unarchive, u unread, r reply, f forward, c compose, / search, Esc close.
+// V = visual multi-select: j/k extend the range, then e/u/!/# act on all of it.
 
 type ThreadFull = { thread: EmailThread; messages: EmailMessage[] };
 
@@ -32,7 +33,16 @@ export default function AdminEmail() {
 	const [selected, setSelected] = createSignal<ThreadFull | null>(null);
 	const [selIdx, setSelIdx] = createSignal(0);
 	// confirmation modal for destructive macros (spam / delete / unsubscribe)
-	const [pending, setPending] = createSignal<{ title: string; body: string; confirm: string; danger: boolean; run: () => Promise<void> } | null>(null);
+	const [pending, setPending] = createSignal<{ title: string; body: string; confirm: string; danger: boolean; run: () => Promise<unknown> } | null>(null);
+	// visual multi-select (V): range = anchor..cursor, ops apply to the range
+	const [visMode, setVisMode] = createSignal(false);
+	const [visAnchor, setVisAnchor] = createSignal(0);
+	const visRangeIdx = () => [Math.min(visAnchor(), selIdx()), Math.max(visAnchor(), selIdx())] as const;
+	const visRangeIds = (): string[] => {
+		if (!visMode()) return [];
+		const [a, b] = visRangeIdx();
+		return (inbox()?.threads ?? []).slice(a, b + 1).map((t) => t.id);
+	};
 	const [compose, setCompose] = createSignal<{ to: string; subject: string; body: string; threadId?: string } | null>(null);
 	// client-side windowing over the full local corpus — no server pagination
 	const [visibleCount, setVisibleCount] = createSignal(50);
@@ -65,16 +75,52 @@ export default function AdminEmail() {
 	// selects the thread above so triage continues from the same spot
 	let cursorToRestore: number | null = null;
 
-	const threadOp = async (id: string, op: string) => {
-		await fetch(`/api/email/threads/${id}`, {
+	const flash = (msg: string, ms = 6000) => {
+		setSendStatus(msg);
+		setTimeout(() => setSendStatus(""), ms);
+	};
+
+	const threadOp = async (id: string, op: string): Promise<boolean> => {
+		const res = await fetch(`/api/email/threads/${id}`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ op }),
 		});
+		if (!res.ok) {
+			// surface server errors — silent no-ops looked like "delete is broken"
+			const r = (await res.json().catch(() => ({}))) as { error?: string };
+			flash(`failed: ${r.error ?? `HTTP ${res.status}`}`);
+			return false;
+		}
 		const removing = op === "archive" || op === "spam" || op === "delete";
 		if (removing) cursorToRestore = Math.max(selIdx() - 1, 0);
 		setSelected(null);
 		void revalidate("email-inbox"); // drop archived/marked rows from the list immediately
+		return true;
+	};
+
+	// bulk apply over the visual selection: one fetch per thread, one revalidate
+	// at the end (per-op revalidates would reload the cursor N times)
+	const bulkOp = async (ids: string[], op: string) => {
+		if (!ids.length) return;
+		let ok = 0;
+		let lastErr = "";
+		for (const id of ids) {
+			const res = await fetch(`/api/email/threads/${id}`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ op }),
+			});
+			if (res.ok) ok++;
+			else lastErr = ((await res.json().catch(() => ({}))) as { error?: string }).error ?? `HTTP ${res.status}`;
+		}
+		if (op === "archive" || op === "spam" || op === "delete") {
+			cursorToRestore = Math.max(visRangeIdx()[0] - 1, 0);
+		}
+		setVisMode(false);
+		setSelected(null);
+		void revalidate("email-inbox");
+		flash(lastErr ? `${op}: ${ok}/${ids.length} ok — last error: ${lastErr}` : `${op}: ${ok} threads`, 8000);
 	};
 
 	const sendDraft = async (outboxId: string) => {
@@ -168,6 +214,22 @@ export default function AdminEmail() {
 		});
 	};
 
+	// bulk destructive ops over the visual selection — one confirm for the batch
+	const askBulk = (op: "spam" | "delete", ids: string[]) => {
+		const n = ids.length;
+		if (!n) return;
+		const del = op === "delete";
+		setPending({
+			title: del ? `Delete ${n} threads?` : `Report spam on ${n} threads?`,
+			body: del
+				? `Move ${n} selected threads to trash (recoverable in Gmail).`
+				: `Mark ${n} selected threads as spam and drop them from your inbox.`,
+			confirm: del ? "Delete" : "Report spam",
+			danger: true,
+			run: () => bulkOp(ids, op),
+		});
+	};
+
 	const askUnsub = async () => {
 		const s = selected();
 		if (!s) return;
@@ -237,6 +299,10 @@ export default function AdminEmail() {
 				return;
 			}
 			if (e.key === "Escape") {
+				if (visMode()) {
+					setVisMode(false);
+					return;
+				}
 				setSelected(null);
 				setCompose(null);
 				return;
@@ -258,38 +324,50 @@ export default function AdminEmail() {
 				return;
 			}
 			// j/k move a visible selection; nothing selected yet → j starts at the
-			// top row instead of skipping it
+			// top row instead of skipping it. In visual mode moving just extends
+			// the range — no fetch, no mark-as-read.
 			const cur = selected() ? selIdx() : -1;
+			const move = async (i: number) => {
+				if (i < 0 || i >= threads.length) return;
+				if (i >= visibleCount()) setVisibleCount(i + 100);
+				if (visMode()) {
+					setSelIdx(i);
+					document.querySelectorAll("[data-thread-row]")[i]?.scrollIntoView({ block: "nearest" });
+					return;
+				}
+				const t = threads[i];
+				if (t) await loadThread(t, i);
+			};
 			if (e.key === "j" || e.key === "ArrowDown") {
 				e.preventDefault();
-				const i = Math.min(cur + 1, threads.length - 1);
-				const t = threads[i];
-				if (t) {
-					if (i >= visibleCount()) setVisibleCount(i + 100);
-					await loadThread(t, i);
-				}
+				await move(Math.min(cur + 1, threads.length - 1));
 			} else if (e.key === "k" || e.key === "ArrowUp") {
 				e.preventDefault();
-				const i = Math.max(cur - 1, 0);
-				const t = threads[i];
-				if (t) {
-					if (i >= visibleCount()) setVisibleCount(i + 100);
-					await loadThread(t, i);
-				}
-			} else if (e.key === "e" && selected()) {
-				await threadOp(selected()!.thread.id, "archive");
-			} else if (e.key === "E" && selected()) {
+				await move(Math.max(cur - 1, 0));
+			} else if (e.key === "V" && threads.length) {
+				e.preventDefault();
+				setVisAnchor(Math.max(cur, 0));
+				setVisMode(!visMode());
+			} else if (e.key === "e") {
+				if (visMode()) await bulkOp(visRangeIds(), "archive");
+				else if (selected()) await threadOp(selected()!.thread.id, "archive");
+			} else if (e.key === "E" && !visMode() && selected()) {
 				await threadOp(selected()!.thread.id, "unarchive");
-			} else if (e.key === "u" && selected()) {
-				await threadOp(selected()!.thread.id, "unread");
-				setSelected(null);
-			} else if (e.key === "!" && selected()) {
-				askSpam();
-			} else if (e.key === "#" && selected()) {
-				askDelete();
-			} else if (e.key === "x" && selected()) {
+			} else if (e.key === "u") {
+				if (visMode()) await bulkOp(visRangeIds(), "unread");
+				else if (selected()) {
+					await threadOp(selected()!.thread.id, "unread");
+					setSelected(null);
+				}
+			} else if (e.key === "!") {
+				if (visMode()) askBulk("spam", visRangeIds());
+				else if (selected()) askSpam();
+			} else if (e.key === "#") {
+				if (visMode()) askBulk("delete", visRangeIds());
+				else if (selected()) askDelete();
+			} else if (e.key === "x" && !visMode() && selected()) {
 				void askUnsub();
-			} else if (e.key === "r" && selected()) {
+			} else if (e.key === "r" && !visMode() && selected()) {
 				const last = selected()!.messages.filter((m) => !m.isSent).at(-1);
 				setCompose({
 					to: last?.fromEmail ?? "",
@@ -297,7 +375,7 @@ export default function AdminEmail() {
 					body: `\n\n---\nOn ${last ? new Date(last.date).toLocaleString() : ""}, ${last?.fromEmail ?? ""} wrote:\n${(last?.bodyText ?? "").slice(0, 2000)}`,
 					threadId: selected()!.thread.id,
 				});
-			} else if (e.key === "f" && selected()) {
+			} else if (e.key === "f" && !visMode() && selected()) {
 				const last = selected()!.messages.at(-1);
 				setCompose({
 					to: "",
@@ -363,8 +441,7 @@ export default function AdminEmail() {
 				</Show>
 			</div>
 			<p class="page-subtitle">
-				j/k move · h/l panes · e done · u unread · r reply · f forward · ! spam · # delete · x unsub · c compose · / search — drafts are
-				voice-linted before sending; every edit is CRDT-tracked
+				j/k move · V select · e done · u unread · r reply · f forward · ! spam · # delete · x unsub · c compose · / search
 			</p>
 
 			<Show when={searchParams.connect}>
@@ -482,6 +559,11 @@ export default function AdminEmail() {
 				{/* list */}
 				<div>
 					<Show when={folder() === "inbox"}>
+					<Show when={visMode()}>
+						<div class="muted" style={{ "font-size": "13px", "margin-bottom": "8px", color: "#bc9c5c" }}>
+							visual — {visRangeIds().length} selected · j/k extend · e done · u unread · ! spam · # delete · esc cancel
+						</div>
+					</Show>
 					<Show when={inbox()?.threads?.length} fallback={<div class="muted">{inbox()?.connected ? (searchParams.q ? "No matches." : "Inbox zero.") : "Connect Gmail to load your inbox."}</div>}>
 						<For each={inbox()?.threads.slice(0, visibleCount())}>
 							{(t, i) => (
@@ -493,8 +575,14 @@ export default function AdminEmail() {
 										"margin-bottom": "8px",
 										cursor: "pointer",
 										opacity: t.unread ? 1 : 0.75,
-										// selected-row tint matches the palette's selection color
-										background: selected()?.thread.id === t.id ? "rgba(188, 156, 92, 0.12)" : undefined,
+										// selected-row tint matches the palette's selection color;
+										// rows inside the visual range get a stronger wash
+										background:
+											visMode() && i() >= visRangeIdx()[0] && i() <= visRangeIdx()[1]
+												? "rgba(188, 156, 92, 0.22)"
+												: selected()?.thread.id === t.id
+													? "rgba(188, 156, 92, 0.12)"
+													: undefined,
 										transition: "background 120ms",
 									}}
 									onClick={() => loadThread(t, i())}
