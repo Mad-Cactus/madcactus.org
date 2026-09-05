@@ -1,15 +1,28 @@
 // Slack sync — raw mirror into slack_users/channels/messages (source-of-record,
 // same contract as email). The brain distills it via extractSlackFacts.
-// Needs a Slack app with scopes: users:read, users:read.email, channels:history,
-// channels:read — bot must be invited to the channels you want (#invite).
+//
+// Token: SLACK_TOKEN (falls back to SLACK_BOT_TOKEN).
+//   xoxp (user token)  → sees EVERYTHING you can see: all public channels,
+//                        your private channels, your DMs. No /invite needed.
+//                        USER scopes required: users:read, users:read.email,
+//                        channels:read, channels:history, groups:read,
+//                        groups:history, im:read, im:history, mpim:read,
+//                        mpim:history
+//   xoxb (bot token)   → public channels the bot is /invite-d to. Bot scopes:
+//                        users:read, users:read.email, channels:read,
+//                        channels:history
 import { desc, eq } from "drizzle-orm";
 import { db } from "~/db";
 import { slackChannels, slackMessages, slackUsers } from "~/db/schema";
 
 const API = "https://slack.com/api";
 
+function slackToken(): string {
+	return process.env.SLACK_TOKEN || process.env.SLACK_BOT_TOKEN || "";
+}
+
 async function slack<T>(method: string, body: Record<string, unknown>): Promise<T> {
-	const token = process.env.SLACK_BOT_TOKEN;
+	const token = slackToken();
 	if (!token) throw new Error("SLACK_BOT_TOKEN not set");
 	const res = await fetch(`${API}/${method}`, {
 		method: "POST",
@@ -24,9 +37,14 @@ async function slack<T>(method: string, body: Record<string, unknown>): Promise<
 
 /** Sync users, channels the bot is in, and ~30 days of their history. */
 export async function syncSlack(opts: { days?: number; maxChannels?: number } = {}): Promise<Record<string, unknown>> {
-	if (!process.env.SLACK_BOT_TOKEN) return { skipped: "SLACK_BOT_TOKEN not set" };
+	const token = slackToken();
+	if (!token) return { skipped: "SLACK_TOKEN not set" };
+	// xoxp = user token: everything the user can see, incl. private + DMs
+	const isUser = token.startsWith("xoxp");
+	const types = isUser ? "public_channel,private_channel,im,mpim" : "public_channel";
+	const defaultMax = isUser ? 150 : 25;
 	const days = opts.days ?? 30;
-	const maxChannels = opts.maxChannels ?? 25;
+	const maxChannels = opts.maxChannels ?? defaultMax;
 	const oldest = new Date(Date.now() - days * 86_400_000);
 	let users = 0;
 	let channels = 0;
@@ -68,12 +86,12 @@ export async function syncSlack(opts: { days?: number; maxChannels?: number } = 
 
 	// channels the bot is in
 	let channelCursor: string | undefined;
-	const channelList: { id: string; name: string; purpose: string; is_archived?: boolean }[] = [];
+	const channelList: { id: string; name?: string; purpose?: { value?: string }; is_archived?: boolean; user?: string }[] = [];
 	do {
-		const page = await slack<{ channels: typeof channelList; response_metadata?: { next_cursor?: string } }>(
+		const page = await slack<{ channels: { id: string; name?: string; purpose?: { value?: string }; is_archived?: boolean; user?: string }[]; response_metadata?: { next_cursor?: string } }>(
 			"conversations.list",
 			{
-				types: "public_channel",
+				types,
 				exclude_archived: true,
 				limit: 200,
 				...(channelCursor ? { cursor: channelCursor } : {}),
@@ -84,12 +102,17 @@ export async function syncSlack(opts: { days?: number; maxChannels?: number } = 
 	} while (channelCursor);
 
 	for (const c of channelList.slice(0, maxChannels)) {
+		// im/mpim channels come back nameless — label them from the member map
+		const name =
+			c.name ||
+			(c.user && userName.get(c.user) ? `dm ${userName.get(c.user)}` : "group-dm");
+		const purpose = c.purpose?.value ?? "";
 		const [row] = await db
 			.insert(slackChannels)
-			.values({ slackId: c.id, name: c.name, purpose: c.purpose ?? "", isArchived: !!c.is_archived })
+			.values({ slackId: c.id, name, purpose, isArchived: !!c.is_archived })
 			.onConflictDoUpdate({
 				target: slackChannels.slackId,
-				set: { name: c.name, purpose: c.purpose ?? "", isArchived: !!c.is_archived },
+				set: { name, purpose, isArchived: !!c.is_archived },
 			})
 			.returning();
 		channels++;
