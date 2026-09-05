@@ -159,7 +159,7 @@ const TOOLS = [
 	{
 		name: "get_doc",
 		description:
-			"Get a doc's current markdown. For Collin's voice rules use the redline MCP (local lessons DB) — the old 'Voice lessons'/'AI-slop rules' corpus docs were retired into it.",
+			"Get a doc's current markdown. (Collin's voice rules are NOT docs anymore — they live in the brain: query/get_entity surfaces lessons derived from his real edits.)",
 		inputSchema: {
 			type: "object",
 			properties: { doc_id: { type: "string" } },
@@ -226,7 +226,7 @@ const TOOLS = [
 	{
 		name: "create_email_draft",
 		description:
-			"Create an email for Collin to review in the dashboard outbox. Read Collin's voice lessons FIRST via the redline MCP (lessons + patterns derived from his real edits) and write like the corrected examples. The human sends; you never send. Pass chat_uuid = your session id for provenance.",
+			"Create an email for Collin to review in the dashboard outbox. Read Collin's voice lessons FIRST — query the brain (lessons are derived from his real agent-draft → human-edit pairs) and write like the corrected examples. The human sends; you never send. Pass chat_uuid = your session id for provenance.",
 		inputSchema: {
 			type: "object",
 			properties: {
