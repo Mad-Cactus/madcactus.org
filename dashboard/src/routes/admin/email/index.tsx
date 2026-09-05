@@ -19,11 +19,16 @@ type ThreadFull = { thread: EmailThread; messages: EmailMessage[] };
 
 export default function AdminEmail() {
 	const status = createAsync(() => getEmailStatusQuery(), { deferStream: true });
-	const [searchParams] = useSearchParams();
-	const inbox = createAsync(() => getInboxQuery(searchParams.q ? { q: String(searchParams.q) } : {}), { deferStream: true });
+	const [searchParams, setSearchParams] = useSearchParams();
+	// folder lives in the URL so a search keeps the tab it was typed in
+	const folder = (): "inbox" | "drafts" | "sent" =>
+		searchParams.folder === "drafts" || searchParams.folder === "sent" ? searchParams.folder : "inbox";
+	const setFolder = (f: "inbox" | "drafts" | "sent") => setSearchParams({ folder: f === "inbox" ? undefined : f });
+	const activeQ = () => (typeof searchParams.q === "string" && searchParams.q ? searchParams.q : undefined);
+	const inbox = createAsync(() => getInboxQuery({ q: activeQ(), folder: folder() }), { deferStream: true });
 	const sync = useAction(syncEmailAction);
 
-	const [q, setQ] = createSignal("");
+	const [q, setQ] = createSignal(String(searchParams.q ?? ""));
 	const [selected, setSelected] = createSignal<ThreadFull | null>(null);
 	const [selIdx, setSelIdx] = createSignal(0);
 	// confirmation modal for destructive macros (spam / delete / unsubscribe)
@@ -34,8 +39,6 @@ export default function AdminEmail() {
 	const [editBody, setEditBody] = createSignal<Record<string, string>>({});
 	const [sendStatus, setSendStatus] = createSignal("");
 	const [connecting, setConnecting] = createSignal(false);
-	// folder tabs: inbox | drafts | sent
-	const [folder, setFolder] = createSignal<"inbox" | "drafts" | "sent">("inbox");
 	// per-draft CRDT history (Drafts tab)
 	const [openDraftHistory, setOpenDraftHistory] = createSignal<string | null>(null);
 	const [draftVersions, setDraftVersions] = createSignal<Record<string, DraftVersionRow[]>>({});
@@ -332,7 +335,7 @@ export default function AdminEmail() {
 		let ticks = 0;
 		const timer = setInterval(() => {
 			const snap = inbox();
-			if (snap?.connected && snap.threads.length === 0 && ticks++ < 60) {
+			if (snap?.connected && snap.threads.length === 0 && folder() === "inbox" && ticks++ < 60) {
 				void revalidate("email-inbox");
 			} else {
 				clearInterval(timer);
@@ -445,19 +448,34 @@ export default function AdminEmail() {
 
 			<Show when={folder() !== "drafts"}>
 			{/* search */}
-			<div style={{ margin: "12px 0" }}>
+			<div style={{ margin: "12px 0", display: "flex", gap: "8px" }}>
 				<input
 					ref={searchEl}
 					type="text"
-					placeholder="Search mail (/)…"
+					placeholder={`Search ${folder()} (/)…`}
 					value={q()}
 					onInput={(e) => setQ(e.currentTarget.value)}
 					onKeyDown={(e) => {
-						if (e.key === "Enter") window.location.href = `/admin/email?q=${encodeURIComponent(q())}`;
-						if (e.key === "Escape") window.location.replace("/admin/email");
+						if (e.key === "Enter") setSearchParams({ q: q() || undefined });
+						if (e.key === "Escape") {
+							setQ("");
+							setSearchParams({ q: undefined });
+						}
 					}}
-					style={{ width: "100%", padding: "10px 14px", background: "var(--bg-card)", border: "1px solid rgba(0,0,0,0.12)", "font-size": "14px" }}
+					style={{ flex: 1, padding: "10px 14px", background: "var(--bg-card)", border: "1px solid rgba(0,0,0,0.12)", "font-size": "14px" }}
 				/>
+				<Show when={q() || activeQ()}>
+					<button
+						type="button"
+						class="btn btn-sm"
+						onClick={() => {
+							setQ("");
+							setSearchParams({ q: undefined });
+						}}
+					>
+						Clear
+					</button>
+				</Show>
 			</div>
 
 			<div style={{ display: "grid", "grid-template-columns": selected() ? "1fr 1.4fr" : "1fr", gap: "16px" }}>
