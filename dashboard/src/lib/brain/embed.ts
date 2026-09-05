@@ -1,6 +1,6 @@
 // Embeddings — the semantic layer. Columns (brain_chunks.embedding,
 // brain_facts.embedding) live in migration 0017, Supabase-only: this module
-// degrades to a no-op without OPENAI_API_KEY or without pgvector (local dev),
+// degrades to a no-op without an embeddings key or without pgvector (local dev),
 // and search falls back to pure FTS. Backfill is content-hash based — rechunk
 // or edit a text and it re-embeds on the next cycle.
 import { createHash } from "crypto";
@@ -12,10 +12,13 @@ export function textHash(text: string): string {
 }
 
 async function embedBatch(texts: string[]): Promise<number[][]> {
-	const key = process.env.OPENAI_API_KEY;
-	if (!key) throw new Error("OPENAI_API_KEY not set");
-	const base = process.env.EMBEDDINGS_BASE_URL || "https://api.openai.com/v1";
-	const model = process.env.EMBEDDINGS_MODEL || "text-embedding-3-large";
+	// one key for everything: OpenRouter serves both chat (BRAIN_MODEL) and
+	// embeddings. Override with EMBEDDINGS_* envs to use OpenAI (or any
+	// OpenAI-compatible endpoint) directly.
+	const key = process.env.EMBEDDINGS_API_KEY || process.env.OPENROUTER_API_KEY;
+	if (!key) throw new Error("EMBEDDINGS_API_KEY (or OPENROUTER_API_KEY) not set");
+	const base = process.env.EMBEDDINGS_BASE_URL || "https://openrouter.ai/api/v1";
+	const model = process.env.EMBEDDINGS_MODEL || "openai/text-embedding-3-large";
 	const res = await fetch(`${base.replace(/\/$/, "")}/embeddings`, {
 		method: "POST",
 		headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
@@ -40,7 +43,7 @@ export async function embedQuery(query: string): Promise<number[] | null> {
 }
 
 export function embeddingsEnabled(): boolean {
-	return !!process.env.OPENAI_API_KEY;
+	return !!(process.env.EMBEDDINGS_API_KEY || process.env.OPENROUTER_API_KEY);
 }
 
 /**
@@ -49,7 +52,7 @@ export function embeddingsEnabled(): boolean {
  * dev DBs without pgvector return a graceful error instead of breaking cycles.
  */
 export async function embedPending(opts: { batchSize?: number } = {}): Promise<Record<string, unknown>> {
-	if (!embeddingsEnabled()) return { skipped: "OPENAI_API_KEY not set" };
+	if (!embeddingsEnabled()) return { skipped: "no embeddings key set" };
 	const batch = opts.batchSize ?? 32;
 	try {
 		const chunks = await db.execute<{ id: string; chunk_text: string }>(sql`
