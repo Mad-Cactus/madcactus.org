@@ -12,6 +12,14 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1
+      - name: GitHub Packages auth (@aspectrr)
+        env:
+          PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN }}
+        run: |
+          cat >> ~/.npmrc <<EOF
+          @aspectrr:registry=https://npm.pkg.github.com
+          //npm.pkg.github.com/:_authToken=${PACKAGES_TOKEN}
+          EOF
       - working-directory: dashboard
         run: |
           bun install
@@ -24,6 +32,14 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1
+      - name: GitHub Packages auth (@aspectrr)
+        env:
+          PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN }}
+        run: |
+          cat >> ~/.npmrc <<EOF
+          @aspectrr:registry=https://npm.pkg.github.com
+          //npm.pkg.github.com/:_authToken=${PACKAGES_TOKEN}
+          EOF
       - working-directory: dashboard
         run: |
           bun install
@@ -40,3 +56,6 @@ jobs:
           push: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          secrets: |
+            npmrc=@aspectrr:registry=https://npm.pkg.github.com
+            //npm.pkg.github.com/:_authToken=${{ secrets.PACKAGES_TOKEN }}
