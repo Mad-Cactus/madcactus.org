@@ -69,7 +69,18 @@ export type ThreadSummary = {
 	lastMessageAt: Date;
 	lastMessageIsSent: boolean;
 	hasOpenLoop: boolean;
+	/** thread has ≥1 message sent by me — i.e. a real two-way conversation */
+	hasMyReply: boolean;
 };
+
+// role/notification addresses never carry a loop — newsletters, receipts,
+// CI notifications, recruiting pipelines. Same list spirit as syncPersons.
+const ROLE_INBOX = /^(noreply|no-reply|donotreply|do-not-reply|newsletter|news|updates?|notifications?|notify|mail(er)?|info|hello|hi|support|help|billing|invoic(es|ing)|receipts?|payments?|careers?|jobs?|recruiting|talent|team|admin|marketing|promo|announcements?|digest|weekly|monthly)\d*$/i;
+
+export function isRoleSender(email: string | null): boolean {
+	if (!email) return true;
+	return ROLE_INBOX.test(email.split("@")[0] ?? "");
+}
 
 export type LoopAction =
 	| { action: "open"; dedupKey: string; loopType: "unanswered_inbound"; summary: string; threadId: string; companyId: string | null; counterpartyEmail: string | null }
@@ -80,6 +91,16 @@ export type LoopAction =
 export function planLoopForThread(t: ThreadSummary, now = new Date(), staleDays = 3): LoopAction {
 	const dedupKey = loopDedupKey("deterministic_thread", "unanswered_inbound", t.id);
 	const staleMs = now.getTime() - t.lastMessageAt.getTime();
+	// A loop needs a real conversation: either I replied at least once (two-way
+	// thread) or the sender maps to a known client company. Newsletters,
+	// receipts, and role addresses are never loops, no matter how stale —
+	// "every unanswered inbox email" was flooding the brain with noise.
+	const actionable = !isRoleSender(t.fromEmail) && (t.hasMyReply || !!t.companyId);
+	if (!actionable) {
+		// re-evaluating a previously-opened loop that fails the gate → close it
+		if (t.hasOpenLoop) return { action: "close", dedupKey };
+		return { action: "none" };
+	}
 	if (!t.lastMessageIsSent && staleMs > staleDays * 86_400_000) {
 		if (t.hasOpenLoop) return { action: "none" };
 		return {

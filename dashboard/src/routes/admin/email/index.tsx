@@ -266,9 +266,11 @@ export default function AdminEmail() {
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify(c),
 		});
-		const row = (await res.json()) as EmailOutbox;
 		setCompose(null);
-		await sendDraft(row.id);
+		// drafts are drafts: they land in the Drafts tab for review + the real
+		// send (voice-lint gate included), they don't fire straight out
+		void revalidate("email-inbox");
+		flash("Draft saved — find it in the Drafts tab");
 	};
 
 	// ── hotkeys ──
@@ -714,7 +716,7 @@ export default function AdminEmail() {
 						/>
 						<div style={{ display: "flex", gap: "8px", "justify-content": "flex-end" }}>
 							<button type="button" class="btn btn-sm" onClick={() => setCompose(null)}>Esc</button>
-							<button type="button" class="btn btn-primary btn-sm" onClick={manualCompose}>Send</button>
+							<button type="button" class="btn btn-primary btn-sm" onClick={manualCompose}>Save draft</button>
 						</div>
 					</div>
 				</div>

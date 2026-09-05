@@ -27,7 +27,7 @@ export async function syncPersons(): Promise<{ created: number }> {
 	let created = 0;
 	const seen = new Set<string>();
 	// role addresses and separator-less local parts aren't people
-	const ROLE = /^(noreply|no-reply|hello|hi|team|updates|update|info|support|admin|notifications|notify|mail|contact|careers)\d*@/i;
+	const ROLE = /^(noreply|no-reply|hello|hi|team|updates|update|info|support|admin|notifications|notify|mail|contact|careers)\d*$/i;
 	const ensure = async (name: string) => {
 		const clean = name.trim();
 		if (!clean || clean.length > 60 || /^speaker \d+$/i.test(clean)) return;
@@ -193,6 +193,7 @@ export async function detectLoops(opts: { staleDays?: number } = {}): Promise<{ 
 		company_id: string | null;
 		last_message_at: Date;
 		last_is_sent: boolean;
+		has_my_reply: boolean;
 		has_open_loop: boolean;
 	}>(sql`
 		SELECT t.id, t.subject, t.from_email,
@@ -201,6 +202,7 @@ export async function detectLoops(opts: { staleDays?: number } = {}): Promise<{ 
 			 WHERE cm.email = t.from_email LIMIT 1) AS company_id,
 			t.last_message_at,
 			COALESCE((SELECT m.is_sent FROM email_messages m WHERE m.thread_id = t.id ORDER BY m.date DESC LIMIT 1), false) AS last_is_sent,
+			EXISTS (SELECT 1 FROM email_messages m WHERE m.thread_id = t.id AND m.is_sent) AS has_my_reply,
 			EXISTS (SELECT 1 FROM brain_open_loops l WHERE l.thread_id = t.id AND l.status = 'open') AS has_open_loop
 		FROM email_threads t
 		ORDER BY t.last_message_at DESC
@@ -218,6 +220,7 @@ export async function detectLoops(opts: { staleDays?: number } = {}): Promise<{ 
 			lastMessageAt: new Date(r.last_message_at),
 			lastMessageIsSent: r.last_is_sent,
 			hasOpenLoop: r.has_open_loop,
+			hasMyReply: r.has_my_reply,
 		};
 		const plan = planLoopForThread(summary, new Date(), opts.staleDays ?? 3);
 		if (plan.action === "open") {

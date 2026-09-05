@@ -68,6 +68,7 @@ describe("planLoopForThread", () => {
 		lastMessageAt: days(5),
 		lastMessageIsSent: false,
 		hasOpenLoop: false,
+		hasMyReply: true,
 	};
 	test("stale inbound opens a loop", () => {
 		const plan = planLoopForThread(base, new Date(), 3);
@@ -90,6 +91,25 @@ describe("planLoopForThread", () => {
 	test("client replied after loop opened → close it", () => {
 		// last message inbound but fresh: their reply arrived, loop no longer stale
 		const plan = planLoopForThread({ ...base, hasOpenLoop: true, lastMessageAt: days(1) }, new Date(), 3);
+		expect(plan.action).toBe("close");
+	});
+	test("newsletter I never replied to → no loop", () => {
+		// two-way gate: no reply from me, sender not a known client
+		const plan = planLoopForThread({ ...base, hasMyReply: false, companyId: null }, new Date(), 3);
+		expect(plan.action).toBe("none");
+	});
+	test("role sender (noreply/newsletter) → never a loop, even from a client domain", () => {
+		for (const addr of ["noreply@stripe.com", "newsletter@mobbin.com", "updates@resend.com"]) {
+			const plan = planLoopForThread({ ...base, fromEmail: addr, companyId: "c1" }, new Date(), 3);
+			expect(plan.action).toBe("none");
+		}
+	});
+	test("known client's first-touch inbound still opens a loop", () => {
+		const plan = planLoopForThread({ ...base, hasMyReply: false, companyId: "c1" }, new Date(), 3);
+		expect(plan.action).toBe("open");
+	});
+	test("previously-opened noise loop fails the gate → closes itself", () => {
+		const plan = planLoopForThread({ ...base, hasMyReply: false, companyId: null, hasOpenLoop: true }, new Date(), 3);
 		expect(plan.action).toBe("close");
 	});
 });
