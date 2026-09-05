@@ -5,7 +5,7 @@
     "": {
       "name": "example-basic",
       "dependencies": {
-        "@aspectrr/feedback-widget": "^0.1.0",
+        "@aspectrr/feedback-widget": "^0.1.3",
         "@kobalte/core": "^0.13.12",
         "@lexical/code": "0.45.0",
         "@lexical/headless": "0.45.0",
@@ -54,7 +54,7 @@
   "packages": {
     "@alloc/quick-lru": ["@alloc/quick-lru@5.2.0", "", {}, "sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw=="],
 
-    "@aspectrr/feedback-widget": ["@aspectrr/feedback-widget@0.1.0", "https://npm.pkg.github.com/download/@aspectrr/feedback-widget/0.1.0/eee7ae52a91edfe398a0296af9edc33d1fe3aa00", { "dependencies": { "@kobalte/core": "^0.13.10", "modern-screenshot": "^4.6.0" }, "peerDependencies": { "solid-js": "^1.8.0" } }, "sha512-qhAHcg1j9ragD/bzHjI7oBa8vssVqFvqdeMRIXuxg4L/Xy6cQCM/mk4ZUfDwf0a7YKJMSMUC7ahsu9qOyMBdVA=="],
+    "@aspectrr/feedback-widget": ["@aspectrr/feedback-widget@0.1.3", "", { "dependencies": { "@kobalte/core": "^0.13.10", "modern-screenshot": "^4.6.0" }, "peerDependencies": { "solid-js": "^1.8.0" } }, "sha512-4tvPKFpHkveSG4UmCnKeSNrwdTpFvNJvm+TVCvlyJqHfOg9LrSylxN/ilfRmVgzQ+EJxNtkdvBzsgn+mAlqaCA=="],
 
     "@babel/code-frame": ["@babel/code-frame@7.29.7", "", { "dependencies": { "@babel/helper-validator-identifier": "^7.29.7", "js-tokens": "^4.0.0", "picocolors": "^1.1.1" } }, "sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw=="],
 
