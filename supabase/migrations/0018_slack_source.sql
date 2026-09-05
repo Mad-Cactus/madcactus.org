@@ -33,7 +33,12 @@ CREATE TABLE "slack_users" (
 	CONSTRAINT "slack_users_slack_id_unique" UNIQUE("slack_id")
 );
 --> statement-breakpoint
-ALTER TABLE "brain_facts" ADD COLUMN "surface" text;--> statement-breakpoint
-ALTER TABLE "slack_messages" ADD CONSTRAINT "slack_messages_channel_id_slack_channels_id_fk" FOREIGN KEY ("channel_id") REFERENCES "public"."slack_channels"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-CREATE UNIQUE INDEX "slack_messages_channel_ts_uq" ON "slack_messages" USING btree ("channel_id","ts");--> statement-breakpoint
-CREATE INDEX "idx_slack_messages_date" ON "slack_messages" USING btree ("message_at");
+ALTER TABLE "brain_facts" ADD COLUMN IF NOT EXISTS "surface" text;--> statement-breakpoint
+DO $$
+BEGIN
+	IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'slack_messages_channel_id_slack_channels_id_fk') THEN
+		ALTER TABLE "slack_messages" ADD CONSTRAINT "slack_messages_channel_id_slack_channels_id_fk" FOREIGN KEY ("channel_id") REFERENCES "public"."slack_channels"("id") ON DELETE cascade ON UPDATE no action;
+	END IF;
+END $$;--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "slack_messages_channel_ts_uq" ON "slack_messages" USING btree ("channel_id","ts");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_slack_messages_date" ON "slack_messages" USING btree ("message_at");

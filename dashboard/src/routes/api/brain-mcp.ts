@@ -4,9 +4,12 @@ import { hashKey } from "~/lib/crypto";
 import { db } from "~/db";
 import { apiKeys, companies } from "~/db/schema";
 import { brainQuery, entityFacts } from "~/lib/brain/search";
-import { searchWorkspace, recentActivity } from "~/lib/brain/workspace-search";
-import { maybeRunCycle, runCycle } from "~/lib/brain/distill";
+import { brainJobs } from "~/db/schema";
 import { agentWrite, createDoc, getDoc, getDocVersionDiff, listDocVersions, listDocs } from "~/lib/docs";
+import { getVoiceLessons, lintVoiceText } from "~/lib/voice-lint";
+import { searchWorkspace, recentActivity } from "~/lib/brain/workspace-search";
+import { maybeRunCycle } from "~/lib/brain/distill";
+
 
 /**
  * MCP Server — Mad Cactus Company Brain (internal agents)
@@ -99,8 +102,17 @@ const TOOLS = [
 	{
 		name: "run_brain_cycle",
 		description:
-			"Force a brain refresh cycle: sync entities, detect loops, extract new facts, consolidate takes. Normally runs automatically every 24h.",
+			"Start a brain refresh cycle (sync entities, detect loops, extract facts, consolidate takes) in the background. Returns { id } immediately — poll get_brain_cycle with it until status is done.",
 		inputSchema: { type: "object", properties: {} },
+	},
+	{
+		name: "get_brain_cycle",
+		description:
+			"Status of a brain cycle run: pass the id from run_brain_cycle, or call with no args for the 10 most recent runs.",
+		inputSchema: {
+			type: "object",
+			properties: { id: { type: "string", description: "run id from run_brain_cycle" } },
+		},
 	},
 	{
 		name: "search_workspace",
@@ -125,6 +137,26 @@ const TOOLS = [
 		description: "List all client companies (for resolving get_entity arguments).",
 		inputSchema: { type: "object", properties: {} },
 	},
+	// ── Voice ──
+	{
+		name: "get_voice_lessons",
+		description:
+			"Collin's voice lessons derived from his real edits. READ BEFORE writing any doc or email for him — then follow them.",
+		inputSchema: {
+			type: "object",
+			properties: { limit: { type: "number", description: "max lessons returned, default 25" } },
+		},
+	},
+	{
+		name: "lint_voice_text",
+		description:
+			"Check text against Collin's voice patterns BEFORE landing it via write_doc or create_email_draft. Returns avoid-violations with the rule and fix example — fix them first; writes return the same lint back.",
+		inputSchema: {
+			type: "object",
+			properties: { text: { type: "string" } },
+			required: ["text"],
+		},
+	},
 	// ── Docs ──
 	{
 		name: "create_doc",
@@ -148,7 +180,7 @@ const TOOLS = [
 	{
 		name: "get_doc",
 		description:
-			"Get a doc's current markdown. Read the corpus docs first when writing for Collin: 'Voice lessons' (rules derived from his real edits) and 'AI-slop rules' (patterns to never ship).",
+			"Get a doc's current markdown. (Collin's voice rules are NOT docs anymore — they live in the brain: query/get_entity surfaces lessons derived from his real edits.)",
 		inputSchema: {
 			type: "object",
 			properties: { doc_id: { type: "string" } },
@@ -158,7 +190,7 @@ const TOOLS = [
 	{
 		name: "write_doc",
 		description:
-			"Write into a markdown doc as an attributed agent edit. mode: append (default) adds a section; replace rewrites the body. Your write lands as an agent version and re-opens the doc for human review (status=draft). Pass chat_uuid = your session id for provenance.",
+			"Write into a markdown doc as an attributed agent edit. mode: append (default) adds a section; replace rewrites the body. The response includes voice-lint violations — read get_voice_lessons first, fix every avoid-violation, and rewrite. Your write lands as an agent version and re-opens the doc for human review (status=draft). Pass chat_uuid = your session id for provenance.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -215,7 +247,7 @@ const TOOLS = [
 	{
 		name: "create_email_draft",
 		description:
-			"Create an email for Collin to review in the dashboard outbox. Read 'Voice lessons' AND 'AI-slop rules' (get_doc via list_docs) FIRST and write like the corrected examples. The human sends; you never send. Pass chat_uuid = your session id for provenance.",
+			"Create an email for Collin to review in the dashboard outbox. Read get_voice_lessons FIRST and check your text with lint_voice_text; the response includes voice-lint violations — fix every avoid-violation and resubmit. The human sends; you never send. Pass chat_uuid = your session id for provenance.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -307,9 +339,19 @@ export async function POST(event: APIEvent) {
 							.limit(50);
 						break;
 					}
-					case "run_brain_cycle":
-						result = await runCycle();
+					case "run_brain_cycle": {
+						const { startCycle } = await import("~/routes/api/brain/cycle");
+						result = await startCycle({ slack: true });
 						break;
+					}
+					case "get_brain_cycle": {
+						const cid = toolArgs.id ? String(toolArgs.id) : null;
+						const runs = cid
+							? await db.select().from(brainJobs).where(eq(brainJobs.id, cid)).limit(1)
+							: await db.select().from(brainJobs).where(eq(brainJobs.phase, "cycle")).orderBy(desc(brainJobs.createdAt)).limit(10);
+						result = runs.map((r) => ({ id: r.id, status: r.status, result: r.status === "done" ? r.payload : null, error: r.error, startedAt: r.createdAt }));
+						break;
+					}
 					case "search_workspace":
 						result = await searchWorkspace(String(toolArgs.query ?? ""));
 						break;
@@ -324,7 +366,13 @@ export async function POST(event: APIEvent) {
 						result = { clients: rows };
 						break;
 					}
-					case "create_doc": {
+					case "get_voice_lessons":
+					result = await getVoiceLessons(toolArgs.limit ? Number(toolArgs.limit) : undefined);
+					break;
+				case "lint_voice_text":
+					result = await lintVoiceText(String(toolArgs.text ?? ""));
+					break;
+				case "create_doc": {
 						const d = await createDoc(String(toolArgs.title ?? "Untitled"), toolArgs.markdown ? String(toolArgs.markdown) : "");
 						result = { id: d.id, title: d.title, version: d.version };
 						break;

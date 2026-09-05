@@ -1,7 +1,7 @@
 // Self-check for gmail payload parsing + mime building (pure functions).
 // Run: DATABASE_URL=postgres://dummy bun test src/lib/gmail.test.ts
 import { describe, expect, test } from "bun:test";
-import { buildMime, extractText, addr } from "./gmail";
+import { buildMime, extractText, addr, latestMessage, isTrashed } from "./gmail";
 
 const part = (mimeType: string, data: string): any => ({
 	mimeType,
@@ -61,5 +61,34 @@ describe("buildMime", () => {
 		expect(mime).toContain("Subject: Hi");
 		expect(mime).toContain("text/plain");
 		expect(mime).toContain("\r\n\r\nline one\nline two");
+	});
+});
+
+describe("latestMessage", () => {
+	const m = (id: string, internalDate: string, labelIds: string[] = []): any => ({
+		id,
+		internalDate,
+		labelIds,
+	});
+
+	test("picks last by date, not array order (sent mail stored after a newer reply)", () => {
+		const msgs = [m("reply", "1700001000000"), m("mine", "1700009000000")];
+		expect(latestMessage(msgs)?.id).toBe("mine");
+	});
+
+	test("empty array → undefined", () => {
+		expect(latestMessage([])).toBeUndefined();
+	});
+});
+
+describe("isTrashed", () => {
+	test("every message TRASH → true", () => {
+		expect(isTrashed({ messages: [{ labelIds: ["TRASH"] }, { labelIds: ["TRASH", "UNREAD"] }] as any })).toBe(true);
+	});
+	test("any message still live → false", () => {
+		expect(isTrashed({ messages: [{ labelIds: ["INBOX"] }, { labelIds: ["TRASH"] }] as any })).toBe(false);
+	});
+	test("no messages → false", () => {
+		expect(isTrashed({})).toBe(false);
 	});
 });

@@ -23,6 +23,7 @@ import {
 import { chunkText, factHash, slugify } from "./core";
 import { syncEntities, syncPersons, syncProspects, detectLoops, backfillTimeline, recomputeWeight } from "./ingest";
 import { embedPending } from "./embed";
+import { addVoicePatterns, type PatternCandidate } from "~/lib/voice-lint";
 import { syncSlack } from "~/lib/slack";
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
@@ -130,12 +131,12 @@ export function findPairs(versions: VersionRow[]): LessonPair[] {
 }
 
 const LESSONS_SYSTEM = `You derive durable writing lessons from editing pairs.
-Input: pairs of (agent draft, Collin's final text). For each pair output the LESSONS a writing agent should learn:
-[{"lesson": "<one durable rule, stated as a preference>", "entity": "<client/topic name it applies to, or 'voice' if universal>"}]
-Rules: lessons are general ("Cut the throat-clearing opener", "Use 'Glad' not 'Sounds like'"), never quote the whole text. 0-2 lessons per pair — skip pairs with nothing to learn. Output ONLY the JSON array.`;
+Input: pairs of (agent draft, Collin's final text). For each pair output what a writing agent should learn:
+[{"lesson": "<one durable rule, stated as a preference>", "entity": "<client/topic it applies to, or 'voice' if universal>", "patterns": [{"rule": "<the rule in one short phrase>", "pattern": "<literal phrase or regex to find it>", "type": "literal|regex", "direction": "avoid|prefer", "before": "<example violating text>", "after": "<example fixed text>"}]}]
+Rules: lessons are general ("Cut the throat-clearing opener", "Use 'Glad' not 'Sounds like'"), never quote the whole text. 0-2 lessons per pair; add patterns only when the edit is mechanically detectable (a phrase Collin removes or prefers) — max 2 per lesson, and only when the diff clearly shows it. Skip pairs with nothing to learn. Output ONLY the JSON array.`;
 
 /** Learn from diffs: agent write → human edit pairs become lesson facts. */
-export async function extractLessons(opts: { maxPairs?: number; maxChars?: number } = {}): Promise<{ pairs: number; lessons: number }> {
+export async function extractLessons(opts: { maxPairs?: number; maxChars?: number } = {}): Promise<{ pairs: number; lessons: number; patterns: number }> {
 	const maxPairs = opts.maxPairs ?? 8;
 	const maxChars = opts.maxChars ?? 2000;
 	const since = await getCursor("extract_lessons");
@@ -162,10 +163,11 @@ export async function extractLessons(opts: { maxPairs?: number; maxChars?: numbe
 	if (pairs.length === 0) {
 		const last = rows.at(-1)?.createdAt;
 		if (last) await setCursor("extract_lessons", last.toISOString());
-		return { pairs: 0, lessons: 0 };
+		return { pairs: 0, lessons: 0, patterns: 0 };
 	}
 
 	let lessons = 0;
+	let patterns = 0;
 	let newest: Date | null = null;
 	for (const p of pairs) {
 		const prompt = `PAIR — agent draft:
@@ -173,7 +175,11 @@ ${p.agent.content.slice(0, maxChars)}
 
 Collin's final:
 ${p.human.content.slice(0, maxChars)}`;
-		const out = parseJsonArray(await llm(LESSONS_SYSTEM, prompt)) as { lesson?: string; entity?: string }[];
+		const out = parseJsonArray(await llm(LESSONS_SYSTEM, prompt)) as {
+			lesson?: string;
+			entity?: string;
+			patterns?: PatternCandidate[];
+		}[];
 		for (const item of out) {
 			if (!item?.lesson) continue;
 			await insertFacts(
@@ -181,11 +187,14 @@ ${p.human.content.slice(0, maxChars)}`;
 				{ sourceTable: "text_versions", sourceId: p.human.id, surface: surfaceForPair(p.entity) },
 			);
 			lessons++;
+			if (item.patterns?.length) {
+				patterns += await addVoicePatterns(item.patterns, item.lesson);
+			}
 		}
 		if (!newest || p.human.createdAt > newest) newest = p.human.createdAt;
 	}
 	if (newest) await setCursor("extract_lessons", newest.toISOString());
-	return { pairs: pairs.length, lessons };
+	return { pairs: pairs.length, lessons, patterns };
 }
 
 // ── extract_facts ──────────────────────────────────────────────────
