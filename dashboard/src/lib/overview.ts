@@ -1,5 +1,5 @@
 import { query, redirect } from "@solidjs/router";
-import { eq, and, inArray, desc, sql, getTableColumns } from "drizzle-orm";
+import { eq, and, inArray, desc, sql, getTableColumns, count } from "drizzle-orm";
 import { Resend } from "resend";
 import { getAuthedClient } from "./session";
 import { db } from "~/db";
@@ -8,6 +8,9 @@ import {
 	projects,
 	companies,
 	invoices,
+	emailAccounts,
+	emailThreads,
+	docs,
 } from "~/db/schema";
 import type {
 	Deliverable,
@@ -176,6 +179,13 @@ export interface OverviewData {
 		outstandingTotal: number;
 	};
 	companies: { total: number };
+	email: {
+		connected: boolean;
+		unread: number;
+		total: number;
+		lastSyncAt: Date | null;
+	};
+	docs: { total: number };
 	external: {
 		posthog: ExternalResult<{
 			pageviews30d: number;
@@ -206,7 +216,7 @@ export const getOverviewQuery = query(async (): Promise<OverviewData> => {
 	const supabase = await getAuthedClient();
 	if (!supabase) throw redirect("/admin/login");
 
-	const [delivRows, invRows, companyRows, posthog, resend, linear] = await Promise.all([
+	const [delivRows, invRows, companyRows, accountRows, threadRows, docsRows, posthog, resend, linear] = await Promise.all([
 		db
 			.select({
 				...getTableColumns(deliverables),
@@ -224,6 +234,16 @@ export const getOverviewQuery = query(async (): Promise<OverviewData> => {
 			.innerJoin(projects, eq(projects.id, invoices.projectId))
 			.where(inArray(invoices.status, ["sent", "draft"])),
 		db.select({ id: companies.id }).from(companies),
+		// email tile — never select the full account row here: refreshToken
+		// would serialize to the client
+		db.select({ email: emailAccounts.email, lastSyncAt: emailAccounts.lastSyncAt }).from(emailAccounts).limit(1),
+		db
+			.select({
+				total: count(),
+				unread: sql<number>`count(*) filter (where ${emailThreads.unread})`.mapWith(Number),
+			})
+			.from(emailThreads),
+		db.select({ total: count() }).from(docs),
 		posthogStats(),
 		resendLeads(),
 		linearIssues(),
@@ -252,6 +272,13 @@ export const getOverviewQuery = query(async (): Promise<OverviewData> => {
 		},
 		invoices: { outstanding: invRows, outstandingTotal },
 		companies: { total: companyRows.length },
+		email: {
+			connected: accountRows.length > 0,
+			unread: threadRows[0]?.unread ?? 0,
+			total: threadRows[0]?.total ?? 0,
+			lastSyncAt: accountRows[0]?.lastSyncAt ?? null,
+		},
+		docs: { total: docsRows[0]?.total ?? 0 },
 		external: { posthog, resend, linear },
 	};
 }, "overview");
