@@ -1,6 +1,6 @@
 // Self-check for the pure lint core. Run: DATABASE_URL=postgres://dummy@localhost:5/dummy bun test src/lib/voice-lint.test.ts
 import { describe, expect, test } from "bun:test";
-import { lintAgainstPatterns, type PatternRow } from "./voice-lint";
+import { lintAgainstPatterns, normalizePattern, type PatternRow } from "./voice-lint";
 
 const pat = (over: Partial<PatternRow>): PatternRow => ({
 	id: over.id ?? "p1",
@@ -34,5 +34,28 @@ describe("lintAgainstPatterns", () => {
 	});
 	test("prefer match is not a violation", () => {
 		expect(lintAgainstPatterns("I'm happy to make it work.", [pat({ pattern: "happy to", direction: "prefer" })]).length).toBe(0);
+	});
+});
+
+describe("normalizePattern", () => {
+	test("valid literal passes through", () => {
+		const p = normalizePattern({ rule: "No throat-clearing", pattern: "Here's the thing" });
+		expect(p?.patternType).toBe("literal");
+		expect(p?.direction).toBe("avoid");
+	});
+	test("invalid regex rejected", () => {
+		expect(normalizePattern({ rule: "r", pattern: "([unclosed", type: "regex" })).toBeNull();
+	});
+	test("empty rule/pattern rejected", () => {
+		expect(normalizePattern({ rule: "", pattern: "x" })).toBeNull();
+		expect(normalizePattern({ rule: "r", pattern: "  " })).toBeNull();
+	});
+	test("unknown type/direction fall back to defaults", () => {
+		const p = normalizePattern({ rule: "r", pattern: "x", type: "yaml", direction: "maybe" });
+		expect(p?.patternType).toBe("literal");
+		expect(p?.direction).toBe("avoid");
+	});
+	test("oversized rule rejected", () => {
+		expect(normalizePattern({ rule: "x".repeat(301), pattern: "x" })).toBeNull();
 	});
 });

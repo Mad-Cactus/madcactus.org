@@ -117,6 +117,58 @@ function descConfidence() {
 	return sql`${brainFacts.confidence} desc`;
 }
 
+export type PatternCandidate = {
+	rule: string;
+	pattern: string;
+	type?: string;
+	direction?: string;
+	before?: string;
+	after?: string;
+};
+
+/** Validate + normalize an LLM-proposed pattern. Returns null when unusable
+ *  (empty, unknown type/direction, or a regex that doesn't compile). */
+export function normalizePattern(c: PatternCandidate): Omit<PatternRow, "id"> | null {
+	const rule = (c.rule ?? "").trim();
+	const pattern = (c.pattern ?? "").trim();
+	const type = c.type === "regex" ? "regex" : "literal";
+	const direction = c.direction === "prefer" ? "prefer" : "avoid";
+	if (!rule || !pattern || rule.length > 300 || pattern.length > 300) return null;
+	if (type === "regex") {
+		try {
+			new RegExp(pattern, "i");
+		} catch {
+			return null;
+		}
+	}
+	return {
+		rule,
+		pattern,
+		patternType: type,
+		direction,
+		beforeText: c.before?.slice(0, 500) ?? null,
+		afterText: c.after?.slice(0, 500) ?? null,
+	};
+}
+
+/** Insert LLM-proposed patterns from a lesson pair. Duplicates (rule+pattern
+ *  unique index) are skipped; cache cleared so the lint sees them at once. */
+export async function addVoicePatterns(candidates: PatternCandidate[], lessonText: string): Promise<number> {
+	let added = 0;
+	for (const c of candidates.slice(0, 3)) {
+		const p = normalizePattern(c);
+		if (!p) continue;
+		const res = await db
+			.insert(voicePatterns)
+			.values({ ...p, lessonText: lessonText.slice(0, 500), confidence: 0.6, enabled: true })
+			.onConflictDoNothing({ target: [voicePatterns.rule, voicePatterns.pattern] })
+			.returning({ id: voicePatterns.id });
+		if (res.length) added++;
+	}
+	if (added) clearVoiceLintCache();
+	return added;
+}
+
 /** Human sent a draft despite its violations — record which patterns were
  *  overridden. That's the long-term signal for which rules are too strict. */
 export async function recordLintOverrides(patternIds: string[], outboxId?: string) {

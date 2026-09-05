@@ -1,9 +1,11 @@
 -- Voice lint: machine-checkable rules seeded from the derived-pattern
--- corpus (62 rules, from real agent-draft -> human-edit pairs). Companion to
+-- corpus (from real agent-draft -> human-edit pairs). Companion to
 -- the prose lessons in brain_facts (kind='lesson'). Consumed by
 -- src/lib/voice-lint.ts; agents get violations back on write_doc /
 -- create_email_draft, and the email send gate blocks on avoid-violations
 -- (overridable — overrides are recorded as adaptation signal).
+-- extractLessons also adds new patterns here as pairs are processed;
+-- (rule, pattern) is unique so LLM re-derivations don't duplicate.
 
 CREATE TABLE "voice_patterns" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
@@ -84,10 +86,6 @@ INSERT INTO "voice_patterns" ("id","rule","pattern","pattern_type","direction","
 ('a1599c1f-bbd5-4fa8-b715-3c8a703833d2','Prefer concrete transformation phrasing like ''turns our notes into'' over abstract processing language','turns our notes into','literal','prefer','wording',NULL,NULL,'Replace vague abstraction (''leverage our learnings to deliver value'') with a concrete subject-verb-object statement of what turns into what (''turns our notes into better products'') — name the input, the mechanism, and the output.','0.6','true'),
 ('02725f10-704c-440e-8791-1102ea3fd019','Don''t use the jargon noun ''learnings'' — name the concrete artifact (notes, docs, data)','learnings','literal','avoid','wording',NULL,NULL,'Replace corporate jargon nouns like ''learnings'' with the concrete thing they refer to — the human swapped ''our learnings'' for ''our notes'', naming the actual artifact.','0.6','true'),
 ('5270923c-e997-4c17-a768-cdf3926848be','State product capability in present tense, not ''platform will <verb>''','platform will','literal','avoid','tone',NULL,NULL,'Describe what a product does in present tense (''turns our notes into''), not future tense — the human cut ''will'' from the platform description, making the claim direct instead of promissory.','0.6','true'),
-('b00b52e8-9646-4872-9578-4b57004e510b','Avoid codename+version doc titles; title should describe the outcome','PoC v2','literal','avoid','structure',NULL,NULL,'Don''t title documents with internal codenames plus version numbers (''G-Brain PoC v2'') — the human retitled to a plain sentence stating what the platform does, so the title carries information instead of an internal label.','0.6','true'),
-('839427bf-d823-4864-87c4-0a4d798e1789','No em-dashes in client emails',' — ','literal','avoid','punctuation',NULL,NULL,'Replace em-dashes with periods or commas. Every em-dash in the agent draft was removed: ''response — this is'' became ''response. This is''; ''customers as well — they''re'' became ''customers makes sense, they''re''. Collin does not use em-dashes in client emails. (Confirms lesson 5 — promote from unconfirmed.)','1','true'),
-('7bcbc7f1-35af-4f97-b484-ad12cf7b0721','Cut closing enthusiasm lines like ''Looking forward to getting started.''','Looking forward to','literal','avoid','style',NULL,NULL,'Don''t summarize or preview what the attached document says. "Here''s the revised proposal as a fixed-price project. It reflects what we discussed: customer and prospect conversations as the primary focus, campaigns and measurement built from real findings, mentoring through doing the work together." was replaced with "I''ve attached the revised proposal to this email." The attachment speaks for itself — point to it, don''t restate its contents. (Confirms lessons 7 and 10.)','1','true'),
-('be7d544d-9fe6-4f72-83e2-8f7bed17f52a','Don''t summarize/preview what the attached document says','It reflects what we discussed','literal','avoid','style',NULL,NULL,'Don''t summarize or preview what the attached document says. "Here''s the revised proposal as a fixed-price project. It reflects what we discussed: customer and prospect conversations as the primary focus, campaigns and measurement built from real findings, mentoring through doing the work together." was replaced with "I''ve attached the revised proposal to this email." The attachment speaks for itself — point to it, don''t restate its contents. (Confirms lessons 7 and 10.)','0.6','true'),
-('1aa1e5a3-d5b1-4f4a-bba4-fbccd809e137','Defer scheduling preference to future, accommodate current meeting','( so |, so )(could|can) we (start|move|shift|begin)','regex','avoid','structure',NULL,NULL,NULL,'0.6','true'),
-('a34c3fd0-64ce-4bab-ba8c-f799c3989216','Cut explicit availability confirmation at opener','Yes, I''m available','literal','avoid','style',NULL,NULL,NULL,'0.6','true'),
-('762eeae8-be96-49de-85b7-e4e9e6c9033a','Use ''stand-up meeting'' not ''standing meeting''','standing meeting','literal','avoid','factual',NULL,NULL,NULL,'0.6','true');
+('b00b52e8-9646-4872-9578-4b57004e510b','Avoid codename+version doc titles; title should describe the outcome','PoC v2','literal','avoid','structure',NULL,NULL,'Don''t title documents with internal codenames plus version numbers (''G-Brain PoC v2'') — the human retitled to a plain sentence stating what the platform does, so the title carries information instead of an internal label.','0.6','true');
+--> statement-breakpoint
+CREATE UNIQUE INDEX "voice_patterns_rule_pattern_uq" ON "voice_patterns" ("rule", "pattern");
