@@ -3,8 +3,7 @@ FROM oven/bun:1.4 AS builder
 WORKDIR /app
 
 COPY package.json bun.lock* bun.lockb* ./
-# npmrc comes in as a BuildKit secret so the @aspectrr token never lands in a layer
-RUN --mount=type=secret,id=npmrc,target=/root/.npmrc bun install
+RUN bun install
 
 COPY . .
 RUN bun run build
