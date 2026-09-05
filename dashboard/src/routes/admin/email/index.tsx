@@ -123,19 +123,29 @@ export default function AdminEmail() {
 		flash(lastErr ? `${op}: ${ok}/${ids.length} ok — last error: ${lastErr}` : `${op}: ${ok} threads`, 8000);
 	};
 
-	const sendDraft = async (outboxId: string) => {
+	// draft id currently blocked by the voice send gate — its Send button
+	// becomes "Send anyway", and overriding feeds the pattern-adaptation signal
+	const [lintBlockedDraft, setLintBlockedDraft] = createSignal<string | null>(null);
+	const sendDraft = async (outboxId: string, overrideLint = false) => {
 		setSendStatus("sending…");
 		const res = await fetch(`/api/email/drafts/${outboxId}`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ op: "send", body: editBody()[outboxId] }),
+			body: JSON.stringify({ op: "send", body: editBody()[outboxId], overrideLint }),
 		});
 		const r = await res.json();
 		if (r.ok) {
+			setLintBlockedDraft(null);
 			setSendStatus("sent");
 			setTimeout(() => setSendStatus(""), 5000);
 			void revalidate("email-inbox"); // move the row from drafts to Sent immediately
+		} else if (r.blocked === "voice_lint") {
+			const first = r.violations?.[0]?.rule ?? "voice issues";
+			const more = (r.violations?.length ?? 1) - 1;
+			setLintBlockedDraft(outboxId);
+			setSendStatus(`voice lint: ${first}${more > 0 ? ` (+${more} more)` : ""} — fix the draft or send anyway`);
 		} else {
+			setLintBlockedDraft(null);
 			setSendStatus(`failed: ${r.error}`);
 		}
 	};
@@ -479,7 +489,9 @@ export default function AdminEmail() {
 									<button type="button" class="btn btn-sm" classList={{ active: openDraftHistory() === d.id }} onClick={() => void toggleDraftHistory(d.id)}>
 										History
 									</button>
-									<button type="button" class="btn btn-primary btn-sm" onClick={() => sendDraft(d.id)}>Send</button>
+									<Show when={lintBlockedDraft() === d.id} fallback={<button type="button" class="btn btn-primary btn-sm" onClick={() => sendDraft(d.id)}>Send</button>}>
+										<button type="button" class="btn btn-sm" style={{ "border-color": "#a33", color: "#a33" }} onClick={() => sendDraft(d.id, true)}>Send anyway (ignores voice lint)</button>
+									</Show>
 									<button type="button" class="btn btn-sm" onClick={() => discardDraft(d.id)}>Discard</button>
 								</div>
 								<textarea

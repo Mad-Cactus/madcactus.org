@@ -6,6 +6,7 @@ import { apiKeys, companies } from "~/db/schema";
 import { brainQuery, entityFacts } from "~/lib/brain/search";
 import { brainJobs } from "~/db/schema";
 import { agentWrite, createDoc, getDoc, getDocVersionDiff, listDocVersions, listDocs } from "~/lib/docs";
+import { getVoiceLessons, lintVoiceText } from "~/lib/voice-lint";
 import { searchWorkspace, recentActivity } from "~/lib/brain/workspace-search";
 import { maybeRunCycle } from "~/lib/brain/distill";
 
@@ -136,6 +137,26 @@ const TOOLS = [
 		description: "List all client companies (for resolving get_entity arguments).",
 		inputSchema: { type: "object", properties: {} },
 	},
+	// ── Voice ──
+	{
+		name: "get_voice_lessons",
+		description:
+			"Collin's voice lessons derived from his real edits. READ BEFORE writing any doc or email for him — then follow them.",
+		inputSchema: {
+			type: "object",
+			properties: { limit: { type: "number", description: "max lessons returned, default 25" } },
+		},
+	},
+	{
+		name: "lint_voice_text",
+		description:
+			"Check text against Collin's voice patterns BEFORE landing it via write_doc or create_email_draft. Returns avoid-violations with the rule and fix example — fix them first; writes return the same lint back.",
+		inputSchema: {
+			type: "object",
+			properties: { text: { type: "string" } },
+			required: ["text"],
+		},
+	},
 	// ── Docs ──
 	{
 		name: "create_doc",
@@ -169,7 +190,7 @@ const TOOLS = [
 	{
 		name: "write_doc",
 		description:
-			"Write into a markdown doc as an attributed agent edit. mode: append (default) adds a section; replace rewrites the body. Your write lands as an agent version and re-opens the doc for human review (status=draft). Pass chat_uuid = your session id for provenance.",
+			"Write into a markdown doc as an attributed agent edit. mode: append (default) adds a section; replace rewrites the body. The response includes voice-lint violations — read get_voice_lessons first, fix every avoid-violation, and rewrite. Your write lands as an agent version and re-opens the doc for human review (status=draft). Pass chat_uuid = your session id for provenance.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -226,7 +247,7 @@ const TOOLS = [
 	{
 		name: "create_email_draft",
 		description:
-			"Create an email for Collin to review in the dashboard outbox. Read Collin's voice lessons FIRST — query the brain (lessons are derived from his real agent-draft → human-edit pairs) and write like the corrected examples. The human sends; you never send. Pass chat_uuid = your session id for provenance.",
+			"Create an email for Collin to review in the dashboard outbox. Read get_voice_lessons FIRST and check your text with lint_voice_text; the response includes voice-lint violations — fix every avoid-violation and resubmit. The human sends; you never send. Pass chat_uuid = your session id for provenance.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -345,7 +366,13 @@ export async function POST(event: APIEvent) {
 						result = { clients: rows };
 						break;
 					}
-					case "create_doc": {
+					case "get_voice_lessons":
+					result = await getVoiceLessons(toolArgs.limit ? Number(toolArgs.limit) : undefined);
+					break;
+				case "lint_voice_text":
+					result = await lintVoiceText(String(toolArgs.text ?? ""));
+					break;
+				case "create_doc": {
 						const d = await createDoc(String(toolArgs.title ?? "Untitled"), toolArgs.markdown ? String(toolArgs.markdown) : "");
 						result = { id: d.id, title: d.title, version: d.version };
 						break;

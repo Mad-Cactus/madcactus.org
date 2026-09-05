@@ -13,6 +13,7 @@ import { getAuthedClient } from "~/lib/session";import {
 	sendGmail,
 } from "~/lib/gmail";
 import { trackText } from "~/lib/crdt-text";
+import { lintVoiceText, recordLintOverrides, type LintViolation } from "~/lib/voice-lint";
 
 async function requireAdmin() {
 	const supabase = await getAuthedClient();
@@ -108,14 +109,19 @@ export const unreadEmailAction = action(async (formData: FormData) => {
 
 export type SendResult =
 	| { ok: true; gmailMessageId: string }
-	| { ok: false; error: string };
+	| { ok: false; error: string }
+	| { ok: false; blocked: "voice_lint"; violations: LintViolation[] };
 
 /**
  * Send an outbox draft: the body is LINTED against voice patterns first —
  * avoid-violations BLOCK the send (the gate). If the draft came from an agent
  * Agent drafts land here via createEmailDraft; the human edits (or not).
  */
-export async function sendOutboxDraft(outboxId: string, bodyOverride?: string): Promise<SendResult> {
+export async function sendOutboxDraft(
+	outboxId: string,
+	bodyOverride?: string,
+	opts: { overrideLint?: boolean } = {},
+): Promise<SendResult | { ok: false; blocked: "voice_lint"; violations: Awaited<ReturnType<typeof lintVoiceText>>["violations"] }> {
 	"use server"; // file also exports client-imported query()/action() stubs — keep db chain out of the client bundle
 	const [row] = await db.select().from(emailOutbox).where(eq(emailOutbox.id, outboxId));
 	if (!row) return { ok: false, error: "draft not found" };
@@ -125,6 +131,16 @@ export async function sendOutboxDraft(outboxId: string, bodyOverride?: string): 
 
 	const account = await getPrimaryAccount();
 	if (!account) return { ok: false, error: "NO_ACCOUNT: connect Gmail first" };
+
+	// voice send gate: un-fixed avoid-violations block the send. The human can
+	// override — that override is recorded as signal for adapting the rules.
+	const lint = await lintVoiceText(body);
+	if (lint.avoidCount > 0 && !opts.overrideLint) {
+		return { ok: false, blocked: "voice_lint", violations: lint.violations };
+	}
+	if (lint.avoidCount > 0 && opts.overrideLint) {
+		await recordLintOverrides(lint.violations.map((v) => v.patternId), outboxId);
+	}
 
 	// reply threading: find the last message in the thread
 	let inReplyToGmailId: string | undefined;
@@ -200,7 +216,7 @@ export async function createEmailDraft(input: {
 	chatUuid: string;
 	threadId?: string;
 	context?: string;
-}): Promise<{ outboxId: string }> {
+}): Promise<{ outboxId: string; lint: Awaited<ReturnType<typeof lintVoiceText>> }> {
 	"use server"; // without this the db chain lands in the client bundle → "Buffer is not defined"
 	const [outbox] = await db
 		.insert(emailOutbox)
@@ -220,7 +236,9 @@ export async function createEmailDraft(input: {
 			.set({ loroSnapshot: tracked.loroSnapshot, version: tracked.version })
 			.where(eq(emailOutbox.id, outbox.id));
 	}
-	return { outboxId: outbox.id };
+	// advisory: the agent gets voice violations back and can revise + resubmit
+	const lint = await lintVoiceText(input.body);
+	return { outboxId: outbox.id, lint };
 }
 
 /**

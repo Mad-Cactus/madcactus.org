@@ -429,6 +429,35 @@ export const textVersions = pgTable(
 
 export const brainEntityKind = pgEnum("brain_entity_kind", ["company", "person", "project", "topic", "prospect"]);
 export const brainFactKind = pgEnum("brain_fact_kind", ["event", "preference", "commitment", "belief", "fact", "idea", "lesson"]);
+
+// ── Voice lint (machine-checkable rules; prose lessons live in brain_facts) ──
+
+export const voicePatterns = pgTable("voice_patterns", {
+	id: uuid("id").primaryKey().defaultRandom(),
+	rule: text("rule").notNull(),
+	pattern: text("pattern").notNull(),
+	patternType: text("pattern_type").notNull().default("literal"), // "literal" | "regex"
+	direction: text("direction").notNull().default("avoid"), // "avoid" | "prefer"
+	category: text("category").notNull().default("style"),
+	beforeText: text("before_text"),
+	afterText: text("after_text"),
+	lessonText: text("lesson_text"), // originating lesson, for traceability
+	confidence: real("confidence").notNull().default(1),
+	enabled: boolean("enabled").notNull().default(true),
+	overrideCount: integer("override_count").notNull().default(0),
+	createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// a human sending a draft despite its violations = signal the pattern is too
+// strict; recorded per pattern so lessons can be adapted over time
+export const voiceLintOverrides = pgTable("voice_lint_overrides", {
+	id: uuid("id").primaryKey().defaultRandom(),
+	patternId: uuid("pattern_id")
+		.notNull()
+		.references(() => voicePatterns.id, { onDelete: "cascade" }),
+	outboxId: uuid("outbox_id"),
+	createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
 export const brainVisibility = pgEnum("brain_visibility", ["private", "world"]);
 export const brainNotability = pgEnum("brain_notability", ["high", "medium", "low"]);
 export const brainLoopType = pgEnum("brain_loop_type", [

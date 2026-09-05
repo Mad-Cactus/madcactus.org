@@ -54,8 +54,8 @@ export const PUT = async (event: APIEvent) => {
 
 export const POST = async (event: APIEvent) => {
 	if (!(await getAuthedClient())) return json({ error: "Unauthorized" }, 401);
-	const body = (await event.request.json().catch(() => ({}))) as { op?: string; body?: string };
-	if (body.op === "send") return json(await sendOutboxDraft(event.params.id, body.body));
+	const body = (await event.request.json().catch(() => ({}))) as { op?: string; body?: string; overrideLint?: boolean };
+	if (body.op === "send") return json(await sendOutboxDraft(event.params.id, body.body, { overrideLint: body.overrideLint === true }));
 	if (body.op === "discard") {
 		await deleteTextVersions("email_draft", event.params.id);
 		await db.delete(emailOutbox).where(eq(emailOutbox.id, event.params.id));

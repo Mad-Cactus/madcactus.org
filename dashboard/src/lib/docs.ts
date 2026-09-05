@@ -9,6 +9,7 @@ import { desc, eq } from "drizzle-orm";
 import { randomBytes } from "crypto";
 import { db } from "~/db";
 import { docs, type Doc } from "~/db/schema";
+import { lintVoiceText } from "~/lib/voice-lint";
 import { trackText, listTextVersions, getTextVersionDiff } from "~/lib/crdt-text";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -121,7 +122,7 @@ export async function agentWrite(input: {
 	content: string;
 	chatUuid: string;
 	mode?: "append" | "replace";
-}): Promise<{ docId: string; version: number }> {
+}): Promise<{ docId: string; version: number; lint: Awaited<ReturnType<typeof lintVoiceText>> }> {
 	const row = await getDoc(input.docId);
 	if (!row) throw new Error(`doc not found: ${input.docId}`);
 
@@ -131,5 +132,7 @@ export async function agentWrite(input: {
 			: (row.markdown ? row.markdown.replace(/\n*$/, "\n\n") : "") + input.content + "\n";
 
 	const version = await saveDocMarkdown(input.docId, next, "agent", input.chatUuid);
-	return { docId: input.docId, version };
+	// advisory: violations ride back to the agent so it rewrites before finishing
+	const lint = await lintVoiceText(next);
+	return { docId: input.docId, version, lint };
 }
