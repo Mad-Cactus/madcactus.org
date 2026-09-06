@@ -44,13 +44,13 @@ export async function publishDoc(doc: Doc): Promise<string> {
 
 async function sendNewsletter(doc: Doc): Promise<string> {
 	const key = process.env.RESEND_API_KEY;
-	const audienceId = process.env.RESEND_AUDIENCE_ID;
+	const segmentId = process.env.RESEND_SEGMENT_ID;
 	if (!key) throw new Error("RESEND_API_KEY not configured");
-	if (!audienceId) throw new Error("RESEND_AUDIENCE_ID not configured");
+	if (!segmentId) throw new Error("RESEND_SEGMENT_ID not configured");
 	const resend = new Resend(key);
 	const { data, error } = await resend.broadcasts.create({
 		name: doc.title,
-		audienceId,
+		segmentId,
 		from: NEWSLETTER_FROM,
 		subject: newsletterSubject(doc),
 		html: markdownToHtml(doc.markdown),
