@@ -85,7 +85,7 @@ export const outreachProspects = pgTable(
 		company: text("company").notNull(),
 		contactName: text("contact_name"),
 		email: text("email"),
-		stage: text("stage").notNull().default("sent"),
+		stage: text("stage").notNull().default("proposed"),
 		nextActionAt: timestamp("next_action_at", { withTimezone: true }),
 		nextActionNote: text("next_action_note"),
 		brainUrl: text("brain_url"),
@@ -93,6 +93,8 @@ export const outreachProspects = pgTable(
 		// here, not in an env secret — one row per prospect, editable in the UI.
 		brainActivityKey: text("brain_activity_key"),
 		videoUrl: text("video_url"),
+		// what to say about the video in the email / why it exists (agent- or human-written)
+		videoDescription: text("video_description"),
 		// email link points at /v/:id → 302 here after logging the click
 		videoViewCount: integer("video_view_count").notNull().default(0),
 		videoFirstViewedAt: timestamp("video_first_viewed_at", { withTimezone: true }),

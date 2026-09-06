@@ -9,6 +9,7 @@ import {
 	setOutreachStageAction,
 	setOutreachNextActionAction,
 	setOutreachBrainAction,
+	setOutreachVideoAction,
 	getBrainDigestQuery,
 	getBrainActivityQuery,
 	type BrainActivity,
@@ -167,6 +168,7 @@ function BoardCard(props: { prospect: OutreachProspect; due: boolean; onDragStar
 	const p = () => props.prospect;
 	const setStage = useAction(setOutreachStageAction);
 	const setBrain = useAction(setOutreachBrainAction);
+	const setVideo = useAction(setOutreachVideoAction);
 	const setNextAction = useAction(setOutreachNextActionAction);
 	const [editing, setEditing] = createSignal(false);
 	const [error, setError] = createSignal("");
@@ -203,15 +205,19 @@ function BoardCard(props: { prospect: OutreachProspect; due: boolean; onDragStar
 		}
 		const brainUrl = String(fd.get("brain_url") || "").trim();
 		const brainKey = String(fd.get("brain_activity_key") || "").trim();
-		const videoUrl = String(fd.get("video_url") || "").trim();
-		if (
-			brainUrl !== (p().brainUrl ?? "") ||
-			brainKey !== (p().brainActivityKey ?? "") ||
-			videoUrl !== (p().videoUrl ?? "")
-		) {
+		if (brainUrl !== (p().brainUrl ?? "") || brainKey !== (p().brainActivityKey ?? "")) {
 			const r2 = (await setBrain(fd)) as { error?: string };
 			if (r2.error) {
 				setError(r2.error);
+				return;
+			}
+		}
+		const videoUrl = String(fd.get("video_url") || "").trim();
+		const videoDesc = String(fd.get("video_description") || "").trim();
+		if (videoUrl !== (p().videoUrl ?? "") || videoDesc !== (p().videoDescription ?? "")) {
+			const r3 = (await setVideo(fd)) as { error?: string };
+			if (r3.error) {
+				setError(r3.error);
 				return;
 			}
 		}
@@ -257,7 +263,8 @@ function BoardCard(props: { prospect: OutreachProspect; due: boolean; onDragStar
 							onClick={() => navigator.clipboard.writeText(`${location.origin}/v/${p().id}`)}
 						>
 							copy email link
-						</button>
+						</button>{" "}
+						<a href={`/v/${p().id}?test=1`} target="_blank" rel="noreferrer">test ↗</a>
 						<Show when={videoSummary(p())}>
 							<div style={{ color: "var(--orange)" }}>{videoSummary(p())}</div>
 						</Show>
@@ -296,6 +303,12 @@ function BoardCard(props: { prospect: OutreachProspect; due: boolean; onDragStar
 					</select>
 					<input type="datetime-local" name="next_action_at" value={toInputValue(p().nextActionAt)} />
 					<input type="url" name="video_url" placeholder="Video URL (cap.so share link)" value={p().videoUrl ?? ""} />
+					<input
+						type="text"
+						name="video_description"
+						placeholder="Video description (what it shows / why)"
+						value={p().videoDescription ?? ""}
+					/>
 					<input type="text" name="next_action_note" placeholder="Next action note" value={p().nextActionNote ?? ""} />
 					<button type="submit" class="btn btn-primary btn-sm">Save</button>
 				</form>
