@@ -36,37 +36,38 @@ export const getEmailStatusQuery = query(async () => {
 /** Account ids with a sync currently running (see getInboxQuery). */
 const syncingAccounts = new Set<string>();
 
-export const getInboxQuery = query(async (opts: { q?: string; folder?: "inbox" | "drafts" | "sent" } = {}) => {
+export const getInboxQuery = query(async (opts: { q?: string } = {}) => {
 	"use server";
 	await requireAdmin();
 	const account = await getPrimaryAccount();
 	if (!account) return { connected: false as const, threads: [], drafts: [], sent: [] };
-	// sync on read if stale >2min — no background worker at this volume.
+	// sync on read if stale >10min — no background worker at this volume.
 	// Fire-and-forget: awaiting it here blocks SSR for the whole first sync
 	// (50 threads × round-trips) and renders a white page. The email route
 	// polls revalidate() until the rows land. In-flight guard keeps repeated
 	// reads from stacking concurrent syncs (lastSyncAt only updates at the end).
-	const stale = !account.lastSyncAt || Date.now() - account.lastSyncAt.getTime() > 2 * 60_000;
+	// This query's only caller is the email page, so syncs only fire while
+	// you're there — and at most every 10 minutes.
+	const stale = !account.lastSyncAt || Date.now() - account.lastSyncAt.getTime() > 10 * 60_000;
 	if (stale && !syncingAccounts.has(account.id)) {
 		syncingAccounts.add(account.id);
 		void syncAccount(account)
 			.catch(() => {})
 			.finally(() => syncingAccounts.delete(account.id));
 	}
-	// Gmail's search index covers the whole mailbox — scope matches to the
-	// active tab so a Sent search never lands in the Inbox list.
-	let threads = await listInbox(account, { q: opts.q });
-	if (opts.q && opts.folder !== "sent") threads = threads.filter((t) => !t.archived);
+	// Gmail's search index covers the whole mailbox — non-archived matches stay
+	// in `threads` (Inbox tab), sent matches ride along in `sent` (Sent tab).
+	const matches = await listInbox(account, { q: opts.q });
+	const threads = opts.q ? matches.filter((t) => !t.archived) : matches;
 	const drafts = await db
 		.select()
 		.from(emailOutbox)
 		.where(eq(emailOutbox.status, "draft"))
 		.orderBy(desc(emailOutbox.createdAt));
 	let sent = await listSent(account);
-	if (opts.q && opts.folder === "sent") {
-		const hits = new Set(threads.map((t) => t.id));
+	if (opts.q) {
+		const hits = new Set(matches.map((t) => t.id));
 		sent = sent.filter((s) => hits.has(s.thread.id));
-		threads = []; // sent matches belong to the Sent tab, not the Inbox badge
 	}
 	return { connected: true as const, threads, drafts, sent };
 }, "email-inbox");
