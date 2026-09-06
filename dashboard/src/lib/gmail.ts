@@ -79,15 +79,35 @@ export async function accessTokenForRefresh(refreshToken: string): Promise<strin
 	return body.access_token;
 }
 
-async function gmail<T>(account: EmailAccount, path: string, init?: RequestInit): Promise<T> {
+/** One authenticated Gmail call with per-user rate-limit backoff. Exported for tests. */
+export async function gmail<T>(account: EmailAccount, path: string, init?: RequestInit): Promise<T> {
 	const token = await accessToken(account);
-	const res = await fetch(`${GMAIL_API}${path}`, {
-		...init,
-		headers: { Authorization: `Bearer ${token}`, ...(init?.headers ?? {}) },
-	});
-	if (!res.ok) throw new Error(`gmail ${path}: ${(await res.text()).slice(0, 300)}`);
-	const text = await res.text();
-	return (text ? JSON.parse(text) : null) as T; // DELETE returns 204 empty
+	const once = () =>
+		fetch(`${GMAIL_API}${path}`, {
+			...init,
+			headers: { Authorization: `Bearer ${token}`, ...(init?.headers ?? {}) },
+		});
+	// Sync bursts ~200 thread GETs through an 8-wide pool and Google throttles
+	// per-user: 429/5xx, and 403 carrying a quota/rate reason. Back off and
+	// retry instead of failing the whole sync/op. A 403 without that reason
+	// (scopes, permission) is permanent and fails fast; 5xx is only retried on
+	// GET — a retried POST that half-landed could double-send.
+	let res = await once();
+	for (let attempt = 0; ; attempt++) {
+		const text = await res.text();
+		const quota403 = res.status === 403 && /quota|rate/i.test(text);
+		const retryable =
+			res.status === 429 ||
+			quota403 ||
+			(res.status >= 500 && (init?.method ?? "GET") === "GET");
+		if (!retryable || attempt === 3) {
+			if (!res.ok) throw new Error(`gmail ${path}: ${text.slice(0, 300)}`);
+			return (text ? JSON.parse(text) : null) as T; // DELETE returns 204 empty
+		}
+		const secs = Number(res.headers.get("Retry-After")) || 2 ** attempt;
+		await new Promise((r) => setTimeout(r, (0.5 + Math.random()) * secs * 1000));
+		res = await once();
+	}
 }
 
 // ── Payload parsing ────────────────────────────────────────────────
