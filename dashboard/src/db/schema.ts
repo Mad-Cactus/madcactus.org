@@ -88,6 +88,9 @@ export const outreachProspects = pgTable(
 		nextActionAt: timestamp("next_action_at", { withTimezone: true }),
 		nextActionNote: text("next_action_note"),
 		brainUrl: text("brain_url"),
+		// secret the brain's /activity endpoint expects (x-activity-key). Lives
+		// here, not in an env secret — one row per prospect, editable in the UI.
+		brainActivityKey: text("brain_activity_key"),
 		videoUrl: text("video_url"),
 		// email link points at /v/:id → 302 here after logging the click
 		videoViewCount: integer("video_view_count").notNull().default(0),

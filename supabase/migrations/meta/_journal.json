@@ -121,6 +121,13 @@
       "tag": "slack_source",
       "breakpoints": true,
       "filename": "0018_slack_source.sql"
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1788723360822,
+      "tag": "0019_outreach_brain_activity_key",
+      "breakpoints": true
     }
   ]
 }

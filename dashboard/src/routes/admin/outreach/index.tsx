@@ -8,6 +8,7 @@ import {
 	createOutreachAction,
 	setOutreachStageAction,
 	setOutreachNextActionAction,
+	setOutreachBrainAction,
 	getBrainDigestQuery,
 	getBrainActivityQuery,
 	type BrainActivity,
@@ -119,8 +120,8 @@ function DigestSection(props: { brainUrl: string }) {
 	);
 }
 
-function ActivityDetails(props: { brainUrl: string }) {
-	const activity = createAsync(() => getBrainActivityQuery(props.brainUrl));
+function ActivityDetails(props: { prospectId: string }) {
+	const activity = createAsync(() => getBrainActivityQuery(props.prospectId));
 	return (
 		<Suspense fallback={<p class="muted" style={{ "font-size": "12px" }}>Loading…</p>}>
 			<Show when={activity()}>
@@ -170,7 +171,7 @@ function ActivityMetrics(props: { activity: BrainActivity }) {
 }
 
 /** Fetches only on first expand — one board render = zero activity calls. */
-function ActivitySection(props: { brainUrl: string }) {
+function ActivitySection(props: { prospectId: string }) {
 	const [open, setOpen] = createSignal(false);
 	return (
 		<div style={{ "font-size": "12px", margin: "5px 0" }}>
@@ -178,7 +179,7 @@ function ActivitySection(props: { brainUrl: string }) {
 				{open() ? "▾ brain activity" : "▸ brain activity"}
 			</button>
 			<Show when={open()}>
-				<ActivityDetails brainUrl={props.brainUrl} />
+				<ActivityDetails prospectId={props.prospectId} />
 			</Show>
 		</div>
 	);
@@ -187,6 +188,7 @@ function ActivitySection(props: { brainUrl: string }) {
 function BoardCard(props: { prospect: OutreachProspect; due: boolean; onDragStart?: (id: string) => void }) {
 	const p = () => props.prospect;
 	const setStage = useAction(setOutreachStageAction);
+	const setBrain = useAction(setOutreachBrainAction);
 	const setNextAction = useAction(setOutreachNextActionAction);
 	const [editing, setEditing] = createSignal(false);
 	const [error, setError] = createSignal("");
@@ -220,6 +222,15 @@ function BoardCard(props: { prospect: OutreachProspect; due: boolean; onDragStar
 		if (res.error) {
 			setError(res.error);
 			return;
+		}
+		const brainUrl = String(fd.get("brain_url") || "").trim();
+		const brainKey = String(fd.get("brain_activity_key") || "").trim();
+		if (brainUrl !== (p().brainUrl ?? "") || brainKey !== (p().brainActivityKey ?? "")) {
+			const r2 = (await setBrain(fd)) as { error?: string };
+			if (r2.error) {
+				setError(r2.error);
+				return;
+			}
 		}
 		setEditing(false);
 	}
@@ -276,7 +287,7 @@ function BoardCard(props: { prospect: OutreachProspect; due: boolean; onDragStar
 
 			<Show when={p().brainUrl}>
 				<DigestSection brainUrl={p().brainUrl!} />
-				<ActivitySection brainUrl={p().brainUrl!} />
+				<ActivitySection prospectId={p().id} />
 			</Show>
 
 			<Show when={p().notes}>
@@ -439,6 +450,7 @@ export default function AdminOutreach() {
 					</div>
 					<div style={{ display: "flex", gap: "8px", "flex-wrap": "wrap" }}>
 						<input type="url" name="brain_url" placeholder="Brain URL (https://…)" />
+						<input type="text" name="brain_activity_key" placeholder="Brain activity key" />
 						<input type="url" name="video_url" placeholder="Video URL" />
 					</div>
 					<div style={{ display: "flex", gap: "8px", "flex-wrap": "wrap" }}>
