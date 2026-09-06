@@ -1,6 +1,6 @@
 import { Title } from "@solidjs/meta";
-import { useParams } from "@solidjs/router";
-import { createResource, Match, Switch } from "solid-js";
+import { useParams, useSearchParams } from "@solidjs/router";
+import { createResource, Match, Show, Switch } from "solid-js";
 import { getTrackedVideo } from "~/lib/watch-video";
 
 // Watch page for tracked outreach video links: the email points at /v/:id.
@@ -18,6 +18,7 @@ function capPlaylistUrl(url: string): string | null {
 
 export default function WatchVideo() {
 	const params = useParams();
+	const [searchParams] = useSearchParams();
 	const [video] = createResource(() => getTrackedVideo(params.id ?? ""));
 
 	return (
@@ -53,7 +54,10 @@ export default function WatchVideo() {
 								)}
 							</Match>
 						</Switch>
-						<script src="/v-watch.js" data-prospect-id={v().id} />
+						{/* test=1 = Collin previewing the video — no tracker, zero metrics */}
+						<Show when={!searchParams.test}>
+							<script src="/v-watch.js" data-prospect-id={v().id} />
+						</Show>
 					</main>
 				)}
 			</Match>

@@ -1,4 +1,5 @@
 import { getCookie, setCookie } from "@solidjs/start/http";
+import { createHmac } from "node:crypto";
 import { supabaseAdmin } from "./supabase";
 import type { User } from "@supabase/supabase-js";
 
@@ -56,6 +57,19 @@ export async function signIn(email: string, password: string) {
 		}
 		setCookie("mc-access-token", data.session.access_token, COOKIE_OPTS);
 		setCookie("mc-refresh-token", data.session.refresh_token, COOKIE_OPTS);
+		// Signed owner cookie on the parent domain: every *.madcactus.org brain
+		// verifies the HMAC and skips tracking for this browser — zero-step
+		// self-exclusion (brains check it against their OWNER_SECRET). Admin
+		// login only; the client portal uses clientLoginAction and must never
+		// mark a prospect's browser as "self".
+		const ownerSecret = process.env.OWNER_SECRET || "";
+		if (ownerSecret) {
+			const exp = Date.now() + 30 * 86_400_000;
+			const sig = createHmac("sha256", ownerSecret).update(String(exp)).digest("hex");
+			const ownerOpts: typeof COOKIE_OPTS & { domain?: string } = { ...COOKIE_OPTS, maxAge: 60 * 60 * 24 * 30 };
+			if (process.env.NODE_ENV === "production") ownerOpts.domain = ".madcactus.org";
+			setCookie("mc_owner", `${exp}.${sig}`, ownerOpts);
+		}
 		return { error: null };
 	} catch (e) {
 		// Log infra detail server-side; never surface it to the client.

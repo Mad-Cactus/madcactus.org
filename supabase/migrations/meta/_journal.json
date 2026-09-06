@@ -12,135 +12,176 @@
     {
       "idx": 1,
       "version": "7",
-      "when": 1786560767170,
+      "when": 1786531240342,
       "tag": "0001_last_old_lace",
       "breakpoints": true
     },
     {
       "idx": 2,
       "version": "7",
-      "when": 1786560800000,
+      "when": 1786531241342,
       "tag": "0002_supplemental",
       "breakpoints": true
     },
     {
       "idx": 3,
       "version": "7",
-      "when": 1786560900000,
+      "when": 1786531242342,
       "tag": "0003_portal_docs_size_limit",
       "breakpoints": true
     },
     {
       "idx": 4,
       "version": "7",
-      "when": 1787197178727,
+      "when": 1786531243342,
       "tag": "0004_flat_flatman",
       "breakpoints": true
     },
     {
       "idx": 5,
       "version": "7",
-      "when": 1788127528506,
+      "when": 1786531244342,
       "tag": "0005_robust_wind_dancer",
       "breakpoints": true
     },
     {
       "idx": 6,
       "version": "7",
-      "when": 1788135661028,
+      "when": 1786531245342,
       "tag": "0006_omniscient_sunspot",
       "breakpoints": true
     },
     {
       "idx": 7,
       "version": "7",
-      "when": 1788136682331,
+      "when": 1786531246342,
       "tag": "0007_white_madripoor",
       "breakpoints": true
     },
     {
       "idx": 8,
       "version": "7",
-      "when": 1788311450328,
+      "when": 1786531247342,
       "tag": "0008_outreach",
       "breakpoints": true
     },
     {
       "idx": 9,
       "version": "7",
-      "when": 1788364236451,
+      "when": 1786531248342,
       "tag": "0009_colossal_slipstream",
       "breakpoints": true
     },
     {
       "idx": 10,
       "version": "7",
-      "when": 1788366153415,
+      "when": 1786531249342,
       "tag": "0010_lyrical_blizzard",
       "breakpoints": true
     },
     {
       "idx": 11,
       "version": "7",
-      "when": 1788375560133,
+      "when": 1786531250342,
       "tag": "0011_foamy_bloodstrike",
       "breakpoints": true
     },
     {
       "idx": 12,
       "version": "7",
-      "when": 1788446136346,
+      "when": 1786531251342,
       "tag": "0012_fixed_marvex",
       "breakpoints": true
     },
     {
       "idx": 13,
       "version": "7",
-      "when": 1788447597934,
+      "when": 1786531252342,
       "tag": "0013_lively_captain_britain",
       "breakpoints": true
     },
     {
       "idx": 14,
       "version": "7",
-      "when": 1788455101113,
+      "when": 1786531253342,
       "tag": "0014_salty_johnny_blaze",
       "breakpoints": true
     },
     {
       "idx": 15,
       "version": "7",
-      "when": 1788542859886,
+      "when": 1786531254342,
       "tag": "0015_company_brain_and_consolidation",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1786531255342,
+      "tag": "0016_seed_writing_lessons",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1786531256342,
+      "tag": "0017_pgvector_embeddings",
       "breakpoints": true
     },
     {
       "idx": 18,
       "version": "7",
-      "when": 1788566493637,
-      "tag": "slack_source",
-      "breakpoints": true,
-      "filename": "0018_slack_source.sql"
+      "when": 1786531257342,
+      "tag": "0018_slack_source",
+      "breakpoints": true
     },
     {
       "idx": 19,
       "version": "7",
-      "when": 1788723360822,
-      "tag": "0019_outreach_brain_activity_key",
+      "when": 1786531258342,
+      "tag": "0023_outreach_brain_activity_key",
       "breakpoints": true
     },
     {
       "idx": 20,
       "version": "7",
-      "when": 1788723360823,
-      "tag": "0021_scheduled_posting",
+      "when": 1786531259342,
+      "tag": "0019_redline_into_text_versions",
       "breakpoints": true
     },
     {
       "idx": 21,
       "version": "7",
-      "when": 1788723360824,
+      "when": 1786531260342,
+      "tag": "0020_voice_lint",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1786531261342,
+      "tag": "0021_scheduled_posting",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1786531262342,
       "tag": "0022_email_schedule_send",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1786531263342,
+      "tag": "0024_outreach_proposed_stage",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1788735803092,
+      "tag": "0025_outreach_video_description",
       "breakpoints": true
     }
   ]
