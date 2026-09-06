@@ -10,7 +10,11 @@ The signup endpoint (`dashboard/src/routes/api/newsletter.ts`) is already built 
 
 1. **Create account** at resend.com
 2. **Verify domain** `madcactus.org` — add the DNS records Resend gives you (SPF, DKIM, DMARC). Takes ~15 min to propagate.
-3. **Create an Audience** — name it "Cactus Dispatch" (or default). Copy the Audience ID.
+3. **Create a Segment** — name it "Cactus Dispatch" (Segments replaced Audiences in Resend's UI). Copy the **Segment ID** and set it on Fly:
+   ```sh
+   flyctl secrets set RESEND_SEGMENT_ID=xxxxxx --app madcactus-dashboard
+   ```
+   Signups via `POST /api/newsletter` are added to this segment automatically (with a `source` property: `newsletter` or `scorecard`).
 4. **Create API key** — scopes: `contacts.write`, `emails.send`
 5. **Set the secret on Fly** (dashboard app):
    ```sh

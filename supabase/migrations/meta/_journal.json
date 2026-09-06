@@ -128,6 +128,20 @@
       "when": 1788723360822,
       "tag": "0019_outreach_brain_activity_key",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1788723360823,
+      "tag": "0021_scheduled_posting",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1788723360824,
+      "tag": "0022_email_schedule_send",
+      "breakpoints": true
     }
   ]
 }

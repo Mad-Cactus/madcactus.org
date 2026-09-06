@@ -1,5 +1,5 @@
 import { query, action, redirect } from "@solidjs/router";
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, ne } from "drizzle-orm";
 import { db } from "~/db";
 import { emailMessages, emailOutbox, emailThreads } from "~/db/schema";
 import { getAuthedClient } from "~/lib/session";import {
@@ -40,7 +40,7 @@ export const getInboxQuery = query(async (opts: { q?: string } = {}) => {
 	"use server";
 	await requireAdmin();
 	const account = await getPrimaryAccount();
-	if (!account) return { connected: false as const, threads: [], drafts: [], sent: [] };
+	if (!account) return { connected: false as const, threads: [], drafts: [], sent: [], outbox: [] };
 	// sync on read if stale >10min — no background worker at this volume.
 	// Fire-and-forget: awaiting it here blocks SSR for the whole first sync
 	// (50 threads × round-trips) and renders a white page. The email route
@@ -64,12 +64,19 @@ export const getInboxQuery = query(async (opts: { q?: string } = {}) => {
 		.from(emailOutbox)
 		.where(eq(emailOutbox.status, "draft"))
 		.orderBy(desc(emailOutbox.createdAt));
+	// Outbox — the scheduled-send queue (status≠sent; sent mail lives in the
+	// Sent tab via Gmail sync). Failed scheduled sends stay visible here.
+	const outbox = await db
+		.select()
+		.from(emailOutbox)
+		.where(and(isNotNull(emailOutbox.sendAt), ne(emailOutbox.status, "sent")))
+		.orderBy(asc(emailOutbox.sendAt));
 	let sent = await listSent(account);
 	if (opts.q) {
 		const hits = new Set(matches.map((t) => t.id));
 		sent = sent.filter((s) => hits.has(s.thread.id));
 	}
-	return { connected: true as const, threads, drafts, sent };
+	return { connected: true as const, threads, drafts, sent, outbox };
 }, "email-inbox");
 
 export const getThreadQuery = query(async (id: string) => {
@@ -114,6 +121,50 @@ export type SendResult =
 	| { ok: false; blocked: "voice_lint"; violations: LintViolation[] };
 
 /**
+ * Schedule an outbox draft for later sending. Same voice-lint gate as Send —
+ * scheduling is the human's final intent, so violations block here (with an
+ * explicit override); the ticker then sends unguarded at fire time.
+ */
+export async function scheduleOutboxDraft(
+	outboxId: string,
+	when: Date,
+	opts: { body?: string; overrideLint?: boolean } = {},
+): Promise<{ ok: true; sendAt: string } | { ok: false; error: string } | { ok: false; blocked: "voice_lint"; violations: LintViolation[] }> {
+	"use server";
+	const [row] = await db.select().from(emailOutbox).where(eq(emailOutbox.id, outboxId));
+	if (!row) return { ok: false, error: "draft not found" };
+	if (row.status === "sent") return { ok: false, error: "already sent" };
+	if (Number.isNaN(when.getTime())) return { ok: false, error: "invalid sendAt" };
+
+	const body = opts.body ?? row.body;
+	if (opts.body !== undefined) await saveDraftBody(outboxId, body);
+
+	const lint = await lintVoiceText(body);
+	if (lint.avoidCount > 0 && !opts.overrideLint) {
+		return { ok: false, blocked: "voice_lint", violations: lint.violations };
+	}
+	if (lint.avoidCount > 0 && opts.overrideLint) {
+		await recordLintOverrides(lint.violations.map((v) => v.patternId), outboxId);
+	}
+
+	await db
+		.update(emailOutbox)
+		.set({ sendAt: when, status: "draft", error: null, body })
+		.where(eq(emailOutbox.id, outboxId));
+	return { ok: true, sendAt: when.toISOString() };
+}
+
+export async function unscheduleOutboxDraft(outboxId: string): Promise<boolean> {
+	"use server";
+	const rows = await db
+		.update(emailOutbox)
+		.set({ sendAt: null })
+		.where(eq(emailOutbox.id, outboxId))
+		.returning({ id: emailOutbox.id });
+	return rows.length > 0;
+}
+
+/**
  * Send an outbox draft: the body is LINTED against voice patterns first —
  * avoid-violations BLOCK the send (the gate). If the draft came from an agent
  * Agent drafts land here via createEmailDraft; the human edits (or not).
@@ -124,6 +175,16 @@ export async function sendOutboxDraft(
 	opts: { overrideLint?: boolean } = {},
 ): Promise<SendResult | { ok: false; blocked: "voice_lint"; violations: Awaited<ReturnType<typeof lintVoiceText>>["violations"] }> {
 	"use server"; // file also exports client-imported query()/action() stubs — keep db chain out of the client bundle
+	return sendOutboxInner(outboxId, bodyOverride, opts);
+}
+
+/** Plain (non-RPC) core — callable from the scheduler ticker, which has no
+ *  request context, unlike "use server" wrappers. */
+export async function sendOutboxInner(
+	outboxId: string,
+	bodyOverride?: string,
+	opts: { overrideLint?: boolean } = {},
+): Promise<SendResult | { ok: false; blocked: "voice_lint"; violations: Awaited<ReturnType<typeof lintVoiceText>>["violations"] }> {
 	const [row] = await db.select().from(emailOutbox).where(eq(emailOutbox.id, outboxId));
 	if (!row) return { ok: false, error: "draft not found" };
 	if (row.status === "sent") return { ok: false, error: "already sent" };

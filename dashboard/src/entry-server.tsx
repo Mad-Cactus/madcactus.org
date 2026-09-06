@@ -1,5 +1,10 @@
 // @refresh reload
 import { createHandler, StartServer } from "@solidjs/start/server";
+import { startScheduler } from "~/lib/scheduler";
+
+// server-only module — entry-server never runs in the browser. GlobalThis
+// guard in startScheduler makes per-request evaluation harmless.
+startScheduler();
 
 export default createHandler(() => (
   <StartServer

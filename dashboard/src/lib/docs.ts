@@ -76,8 +76,15 @@ export async function saveDocMarkdown(
 			markdown,
 			loroSnapshot: tracked.loroSnapshot,
 			version: tracked.version,
-			// human touch = reviewed; agent write re-opens review
-			status: author === "human" ? "final" : "draft",
+			// human touch = reviewed; agent write re-opens review. Publishing
+			// states survive the save — editing a scheduled doc must not
+			// silently unschedule it (the ticker publishes latest markdown).
+			status:
+				author === "human"
+					? row.status === "scheduled" || row.status === "publishing" || row.status === "published"
+						? row.status
+						: "final"
+					: "draft",
 			...(chatUuid ? { chatUuid } : {}),
 		})
 		.where(eq(docs.id, id));
@@ -86,6 +93,23 @@ export async function saveDocMarkdown(
 
 export async function setDocStatus(id: string, status: "draft" | "final") {
 	await db.update(docs).set({ status }).where(eq(docs.id, id));
+}
+
+export async function setDocKind(id: string, kind: "post" | "newsletter" | null) {
+	await db.update(docs).set({ kind }).where(eq(docs.id, id));
+}
+
+/** Queue a doc for the scheduler. Any status is allowed — rescheduling a
+ *  failed or already-published doc is a normal correction. */
+export async function scheduleDoc(id: string, when: Date) {
+	await db
+		.update(docs)
+		.set({ status: "scheduled", scheduledFor: when, publishError: null })
+		.where(eq(docs.id, id));
+}
+
+export async function unscheduleDoc(id: string) {
+	await db.update(docs).set({ status: "final", scheduledFor: null }).where(eq(docs.id, id));
 }
 
 export async function listDocVersions(docId: string) {

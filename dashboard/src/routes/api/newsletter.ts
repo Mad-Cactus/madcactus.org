@@ -31,10 +31,14 @@ export async function POST(event: APIEvent) {
 
 	const resend = new Resend(key);
 
-	// Add to audience (dedup is fine)
+	// Segment membership + source provenance (Resend dashboard → Segments).
+	// Missing segment env = contact still created globally, just unsorted.
+	const segmentId = process.env.RESEND_SEGMENT_ID;
 	await resend.contacts.create({
 		email,
 		unsubscribed: false,
+		...(segmentId ? { segments: [{ id: segmentId }] } : {}),
+		properties: { source: scoreData ? "scorecard" : "newsletter" },
 	}).catch(() => {});
 
 	// If score data present, generate personalized PDF and email it

@@ -987,6 +987,28 @@ input:not(.form-group input):not(.doc-title):focus {
 	color: var(--text-muted);
 }
 .doc-share { font-size: 13px; margin: 0 0 4px; }
+.doc-kind { display: flex; gap: 2px; }
+.doc-kind .btn { padding: 3px 10px; }
+.doc-sched-input {
+	font: inherit;
+	font-size: 12px;
+	color: var(--text);
+	background: var(--bg-elev, #141414);
+	border: 1px solid var(--border, #2a2a2a);
+	border-radius: 6px;
+	padding: 3px 8px;
+}
+.doc-badge.sched { color: var(--accent, #a855f7); }
+.doc-badge.published { color: var(--good, #22c55e); }
+.doc-publish-error {
+	font-size: 13px;
+	color: var(--bad, #ef4444);
+	background: rgba(239, 68, 68, 0.08);
+	border: 1px solid rgba(239, 68, 68, 0.25);
+	border-radius: 6px;
+	padding: 6px 10px;
+	margin: 4px 0 8px;
+}
 .doc-title {
 	font-family: var(--font-sans);
 	font-weight: 700;

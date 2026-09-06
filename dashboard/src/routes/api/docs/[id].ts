@@ -1,6 +1,18 @@
 import type { APIEvent } from "@solidjs/start/server";
 import { getAuthedClient } from "~/lib/session";
-import { renameDoc, createDoc, getDoc, saveDocMarkdown, toggleShare, setDocStatus, listDocVersions, getDocVersionDiff } from "~/lib/docs";
+import {
+	renameDoc,
+	createDoc,
+	getDoc,
+	saveDocMarkdown,
+	toggleShare,
+	setDocStatus,
+	setDocKind,
+	scheduleDoc,
+	unscheduleDoc,
+	listDocVersions,
+	getDocVersionDiff,
+} from "~/lib/docs";
 
 /**
  * Docs item API — admin-session guarded.
@@ -8,7 +20,7 @@ import { renameDoc, createDoc, getDoc, saveDocMarkdown, toggleShare, setDocStatu
  * GET  /api/docs/:id?versions=1 → version list (no content)
  * GET  /api/docs/:id?diff=N → word-diff of version N vs N-1
  * PUT  /api/docs/:id   { markdown } → { version }
- * POST /api/docs/:id   { op: "finalize" | "share", enabled? } → result
+ * POST /api/docs/:id   { op: "finalize" | "share" | "rename" | "set-kind" | "schedule" | "unschedule", ... } → result
  */
 async function requireAdmin() {
 	return (await getAuthedClient()) !== null;
@@ -44,7 +56,13 @@ export const PUT = async (event: APIEvent) => {
 
 export const POST = async (event: APIEvent) => {
 	if (!(await requireAdmin())) return json({ error: "Unauthorized" }, 401);
-	const body = (await event.request.json().catch(() => ({}))) as { op?: string; enabled?: boolean; title?: string };
+	const body = (await event.request.json().catch(() => ({}))) as {
+		op?: string;
+		enabled?: boolean;
+		title?: string;
+		kind?: string;
+		scheduledFor?: string;
+	};
 	try {
 		if (body.op === "rename") return json({ ok: await renameDoc(event.params.id, String(body.title ?? "").trim() || "Untitled") });
 		if (body.op === "finalize") {
@@ -52,6 +70,21 @@ export const POST = async (event: APIEvent) => {
 			return json({ ok: true, status: "final" });
 		}
 		if (body.op === "share") return json({ shareToken: await toggleShare(event.params.id, body.enabled !== false) });
+		if (body.op === "set-kind") {
+			const kind = body.kind === "post" || body.kind === "newsletter" ? body.kind : null;
+			await setDocKind(event.params.id, kind);
+			return json({ ok: true, kind });
+		}
+		if (body.op === "schedule") {
+			const when = new Date(String(body.scheduledFor));
+			if (Number.isNaN(when.getTime())) return json({ error: "Invalid scheduledFor — use an ISO datetime" }, 400);
+			await scheduleDoc(event.params.id, when);
+			return json({ ok: true, status: "scheduled", scheduledFor: when.toISOString() });
+		}
+		if (body.op === "unschedule") {
+			await unscheduleDoc(event.params.id);
+			return json({ ok: true, status: "final" });
+		}
 		return json({ error: "Unknown op" }, 400);
 	} catch (e) {
 		return json({ error: e instanceof Error ? e.message : String(e) }, 400);
