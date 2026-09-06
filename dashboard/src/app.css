@@ -127,6 +127,14 @@
   display: block;
 }
 
+/* Icons only appear on the collapsed rail; expanded nav is text-only. */
+.nav-icon {
+  display: none;
+  width: 18px;
+  height: 18px;
+  margin: 0 auto;
+}
+
 .nav-link:hover {
   color: #fff;
   background: rgba(255, 255, 255, 0.03);
@@ -221,11 +229,10 @@
 
 .layout.collapsed .nav-link {
   padding: 10px 0;
-  text-align: center;
 }
 
-.layout.collapsed .nav-link::before {
-  content: attr(data-short);
+.layout.collapsed .nav-icon {
+  display: block;
 }
 
 .layout.collapsed .sidebar-footer {
@@ -234,11 +241,13 @@
 
 .layout.collapsed .sidebar-footer-actions {
   flex-direction: column;
+  align-items: center;
   gap: 12px;
 }
 
-.layout.collapsed .sidebar-footer-actions button::before {
-  content: attr(data-short);
+.layout.collapsed .sidebar-footer-actions .nav-icon {
+  width: 16px;
+  height: 16px;
 }
 
 /* Package trigger has a bare text label (no .nav-label span / data-short),
