@@ -1,6 +1,6 @@
 {
-  "id": "d8e713a4-323c-4338-8947-6b863859f244",
-  "prevId": "13cda3b9-a9eb-44c1-a632-48186cd7c91d",
+  "id": "e6e77265-2ffe-406c-a854-a797e1f148f2",
+  "prevId": "c5cdc6e3-6b6e-4892-9ee0-7c086ded1df0",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2031,12 +2031,6 @@
           "notNull": true,
           "default": "'draft'"
         },
-        "send_at": {
-          "name": "send_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "gmail_message_id": {
           "name": "gmail_message_id",
           "type": "text",
@@ -2473,6 +2467,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "brain_activity_key": {
+          "name": "brain_activity_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {},

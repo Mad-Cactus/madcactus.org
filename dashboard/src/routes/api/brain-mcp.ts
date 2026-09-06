@@ -1,8 +1,8 @@
 import type { APIEvent } from "@solidjs/start/server";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, ilike } from "drizzle-orm";
 import { hashKey } from "~/lib/crypto";
 import { db } from "~/db";
-import { apiKeys, companies } from "~/db/schema";
+import { apiKeys, companies, outreachProspects } from "~/db/schema";
 import { brainQuery, entityFacts } from "~/lib/brain/search";
 import { brainJobs } from "~/db/schema";
 import { agentWrite, createDoc, getDoc, getDocVersionDiff, listDocVersions, listDocs } from "~/lib/docs";
@@ -136,6 +136,30 @@ const TOOLS = [
 		name: "list_clients",
 		description: "List all client companies (for resolving get_entity arguments).",
 		inputSchema: { type: "object", properties: {} },
+	},
+	// ── Outreach prospects (brain wiring) ──
+	{
+		name: "list_outreach",
+		description:
+			"List outreach prospects with their brain wiring: brain_url and activity key. Use to check which prospect a brain belongs to or to read the current activity key before updating it.",
+		inputSchema: { type: "object", properties: {} },
+	},
+	{
+		name: "set_outreach_brain",
+		description:
+			'Create or update an outreach prospect\'s brain wiring. Matches by company (case-insensitive; creates the prospect if unknown). Set brain_url (e.g. https://<name>.madcactus.org) and brain_activity_key (the brain\'s ACTIVITY_KEY) so the dashboard can pull /activity. Omit brain_activity_key to leave it unchanged.',
+		inputSchema: {
+			type: "object",
+			properties: {
+				company: { type: "string", description: "prospect company name (matched case-insensitively)" },
+				brain_url: { type: "string" },
+				brain_activity_key: { type: "string", description: "omit to leave the existing key unchanged" },
+				contact_name: { type: "string" },
+				email: { type: "string" },
+				notes: { type: "string" },
+			},
+			required: ["company"],
+		},
 	},
 	// ── Voice ──
 	{
@@ -364,6 +388,61 @@ export async function POST(event: APIEvent) {
 							.from(companies)
 							.orderBy(companies.name);
 						result = { clients: rows };
+						break;
+					}
+					case "list_outreach":
+						result = await db
+							.select({
+								id: outreachProspects.id,
+								company: outreachProspects.company,
+								stage: outreachProspects.stage,
+								contactName: outreachProspects.contactName,
+								email: outreachProspects.email,
+								brainUrl: outreachProspects.brainUrl,
+								brainActivityKey: outreachProspects.brainActivityKey,
+							})
+							.from(outreachProspects)
+							.orderBy(outreachProspects.company);
+						break;
+					case "set_outreach_brain": {
+						const company = String(toolArgs.company ?? "").trim();
+						if (!company) {
+							result = { error: "company is required" };
+							break;
+						}
+						const brainUrl = String(toolArgs.brain_url ?? "").trim() || null;
+						const activityKey = String(toolArgs.brain_activity_key ?? "").trim();
+						const [existing] = await db
+							.select({ id: outreachProspects.id })
+							.from(outreachProspects)
+							.where(ilike(outreachProspects.company, company))
+							.limit(1);
+						if (existing) {
+							await db
+								.update(outreachProspects)
+								.set({
+									...(brainUrl !== null ? { brainUrl } : {}),
+									...(activityKey ? { brainActivityKey: activityKey } : {}),
+									...(toolArgs.contact_name ? { contactName: String(toolArgs.contact_name) } : {}),
+									...(toolArgs.email ? { email: String(toolArgs.email) } : {}),
+									...(toolArgs.notes ? { notes: String(toolArgs.notes) } : {}),
+								})
+								.where(eq(outreachProspects.id, existing.id));
+							result = { id: existing.id, company, updated: true };
+						} else {
+							const [created] = await db
+								.insert(outreachProspects)
+								.values({
+									company,
+									brainUrl,
+									brainActivityKey: activityKey || null,
+									contactName: toolArgs.contact_name ? String(toolArgs.contact_name) : null,
+									email: toolArgs.email ? String(toolArgs.email) : null,
+									notes: toolArgs.notes ? String(toolArgs.notes) : null,
+								})
+								.returning({ id: outreachProspects.id });
+							result = { id: created.id, company, created: true };
+						}
 						break;
 					}
 					case "get_voice_lessons":

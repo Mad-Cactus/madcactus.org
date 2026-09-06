@@ -1,0 +1,9 @@
+#!/bin/sh
+# Pre-push gate: run dashboard tests before anything reaches the remote.
+# Complements the branch-protection paywall (free org plan): CI-gated pushes
+# enforced locally. Bypass with --no-verify only for deliberate exceptions.
+set -e
+cd "$(git rev-parse --show-toplevel)/dashboard"
+echo "pre-push: running dashboard tests + typecheck…"
+bun run test
+bun run typecheck

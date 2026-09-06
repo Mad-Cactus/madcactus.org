@@ -724,6 +724,7 @@ export const createOutreachAction = action(async (formData: FormData) => {
 		contactName: String(formData.get("contact_name") || "").trim() || null,
 		email: String(formData.get("email") || "").trim() || null,
 		brainUrl: String(formData.get("brain_url") || "").trim() || null,
+		brainActivityKey: String(formData.get("brain_activity_key") || "").trim() || null,
 		videoUrl: String(formData.get("video_url") || "").trim() || null,
 		stage: String(formData.get("stage") || "sent") as OutreachStage,
 		// Client converts datetime-local to ISO+Z in the browser's tz before
@@ -748,6 +749,22 @@ export const setOutreachStageAction = action(async (formData: FormData) => {
 	await revalidate(getOutreachQuery.key);
 	return { success: `Stage → ${stage}.` };
 }, "setOutreachStage");
+
+// Brain URL + activity key for an existing prospect (formerly a Fly env secret).
+export const setOutreachBrainAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const id = String(formData.get("id"));
+	await db
+		.update(outreachProspects)
+		.set({
+			brainUrl: String(formData.get("brain_url") || "").trim() || null,
+			brainActivityKey: String(formData.get("brain_activity_key") || "").trim() || null,
+		})
+		.where(eq(outreachProspects.id, id));
+	await revalidate(getOutreachQuery.key);
+	return { success: "Brain settings saved." };
+}, "setOutreachBrain");
 
 export const setOutreachNextActionAction = action(async (formData: FormData) => {
 	"use server";
@@ -820,28 +837,23 @@ export interface BrainActivity {
 	tools: string[];
 }
 
-// Activity keys are per brain host: BRAIN_ACTIVITY_KEYS="host1=key1,host2=key2".
-function activityKeyFor(brainUrl: string): string {
-	let host: string;
-	try {
-		host = new URL(brainUrl).host;
-	} catch {
-		return "";
-	}
-	for (const pair of String(process.env.BRAIN_ACTIVITY_KEYS ?? "").split(",")) {
-		const eq = pair.indexOf("=");
-		if (eq > 0 && pair.slice(0, eq).trim() === host) return pair.slice(eq + 1).trim();
-	}
-	return "";
-}
-
-// Same fail-soft contract as the digest: engagement stats must never block
-// the board. No key for this host is "no data", not an error.
-export const getBrainActivityQuery = query(async (brainUrl: string) => {
+// Activity key lives on the prospect row (brain_activity_key column) —
+// no more comma-separated env secret.
+export const getBrainActivityQuery = query(async (prospectId: string) => {
 	"use server";
 	await requireAdmin();
-	const key = activityKeyFor(brainUrl);
+	const [row] = await db
+		.select({ brainUrl: outreachProspects.brainUrl, key: outreachProspects.brainActivityKey })
+		.from(outreachProspects)
+		.where(eq(outreachProspects.id, prospectId))
+		.limit(1);
+	if (!row?.brainUrl) return { error: "no key" as const };
+	const key = row.key ?? "";
 	if (!key) return { error: "no key" as const };
+	const brainUrl = row.brainUrl;
+
+	// Same fail-soft contract as the digest: engagement stats must never block
+	// the board. No key for this prospect is "no data", not an error.
 	try {
 		const res = await fetch(`${brainUrl.replace(/\/+$/, "")}/activity`, {
 			headers: { accept: "application/json", "x-activity-key": key },

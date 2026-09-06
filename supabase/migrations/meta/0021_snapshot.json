@@ -1,6 +1,6 @@
 {
-  "id": "c5cdc6e3-6b6e-4892-9ee0-7c086ded1df0",
-  "prevId": "32a3aa8c-5e32-47b0-9b75-279cb23093d8",
+  "id": "4ce06a88-5001-45f8-943f-8fa3b35ebf17",
+  "prevId": "e6e77265-2ffe-406c-a854-a797e1f148f2",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1582,6 +1582,31 @@
           "notNull": true,
           "default": "'final'"
         },
+        "kind": {
+          "name": "kind",
+          "type": "doc_kind",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "scheduled_for": {
+          "name": "scheduled_for",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "published_at": {
+          "name": "published_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "publish_error": {
+          "name": "publish_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "chat_uuid": {
           "name": "chat_uuid",
           "type": "text",
@@ -2031,6 +2056,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "send_at": {
+          "name": "send_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -2371,12 +2402,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "brain_activity_key": {
-          "name": "brain_activity_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "video_url": {
           "name": "video_url",
           "type": "text",
@@ -2448,6 +2473,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "brain_activity_key": {
+          "name": "brain_activity_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {},
@@ -2837,6 +2868,78 @@
           "nullsNotDistinct": false,
           "columns": [
             "slack_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.social_accounts": {
+      "name": "social_accounts",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "member_urn": {
+          "name": "member_urn",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "access_token": {
+          "name": "access_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "refresh_token": {
+          "name": "refresh_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "social_accounts_provider_unique": {
+          "name": "social_accounts_provider_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "provider"
           ]
         }
       },
@@ -3351,12 +3454,24 @@
         "blocked"
       ]
     },
+    "public.doc_kind": {
+      "name": "doc_kind",
+      "schema": "public",
+      "values": [
+        "post",
+        "newsletter"
+      ]
+    },
     "public.doc_status": {
       "name": "doc_status",
       "schema": "public",
       "values": [
         "draft",
-        "final"
+        "final",
+        "scheduled",
+        "publishing",
+        "published",
+        "failed"
       ]
     },
     "public.document_type": {
