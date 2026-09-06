@@ -155,6 +155,7 @@ const TOOLS = [
 				brain_url: { type: "string" },
 				brain_activity_key: { type: "string", description: "omit to leave the existing key unchanged" },
 				video_url: { type: "string", description: "CAP share URL for the outreach video; empty string clears it" },
+				video_description: { type: "string", description: "what the video shows / why it exists; shown in the dashboard" },
 				stage: { type: "string", enum: [...OUTREACH_STAGES], description: "omit to leave unchanged" },
 				contact_name: { type: "string" },
 				email: { type: "string" },
@@ -401,6 +402,7 @@ export async function POST(event: APIEvent) {
 								contactName: outreachProspects.contactName,
 								email: outreachProspects.email,
 								videoUrl: outreachProspects.videoUrl,
+								videoDescription: outreachProspects.videoDescription,
 								brainUrl: outreachProspects.brainUrl,
 								brainActivityKey: outreachProspects.brainActivityKey,
 							})
@@ -416,6 +418,8 @@ export async function POST(event: APIEvent) {
 						const brainUrl = String(toolArgs.brain_url ?? "").trim() || null;
 						const activityKey = String(toolArgs.brain_activity_key ?? "").trim();
 						const videoUrl = toolArgs.video_url !== undefined ? String(toolArgs.video_url).trim() || null : null;
+						const videoDescription =
+							toolArgs.video_description !== undefined ? String(toolArgs.video_description).trim() || null : null;
 						let stage: string | null = null;
 						if (toolArgs.stage !== undefined) {
 							stage = String(toolArgs.stage);
@@ -436,6 +440,7 @@ export async function POST(event: APIEvent) {
 									...(brainUrl !== null ? { brainUrl } : {}),
 									...(activityKey ? { brainActivityKey: activityKey } : {}),
 									...(toolArgs.video_url !== undefined ? { videoUrl } : {}),
+									...(toolArgs.video_description !== undefined ? { videoDescription } : {}),
 									...(stage ? { stage } : {}),
 									...(toolArgs.contact_name ? { contactName: String(toolArgs.contact_name) } : {}),
 									...(toolArgs.email ? { email: String(toolArgs.email) } : {}),
@@ -451,6 +456,7 @@ export async function POST(event: APIEvent) {
 									brainUrl,
 									brainActivityKey: activityKey || null,
 									videoUrl,
+									videoDescription,
 									...(stage ? { stage } : {}),
 									contactName: toolArgs.contact_name ? String(toolArgs.contact_name) : null,
 									email: toolArgs.email ? String(toolArgs.email) : null,

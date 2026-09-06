@@ -751,8 +751,7 @@ export const setOutreachStageAction = action(async (formData: FormData) => {
 	return { success: `Stage → ${stage}.` };
 }, "setOutreachStage");
 
-// Brain URL + activity key + video link for an existing prospect.
-// video_url: empty string clears — the edit form always submits the field.
+// Brain URL + activity key for an existing prospect (formerly a Fly env secret).
 export const setOutreachBrainAction = action(async (formData: FormData) => {
 	"use server";
 	await requireAdmin();
@@ -762,12 +761,30 @@ export const setOutreachBrainAction = action(async (formData: FormData) => {
 		.set({
 			brainUrl: String(formData.get("brain_url") || "").trim() || null,
 			brainActivityKey: String(formData.get("brain_activity_key") || "").trim() || null,
-			videoUrl: String(formData.get("video_url") || "").trim() || null,
 		})
 		.where(eq(outreachProspects.id, id));
 	await revalidate(getOutreachQuery.key);
 	return { success: "Brain settings saved." };
 }, "setOutreachBrain");
+
+// Video link + description. Empty video_url clears the video. "Empty string
+// clears, absent leaves unchanged" via has(): the card edit form always
+// submits both fields; the Videos page form posts exactly these keys too.
+export const setOutreachVideoAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const id = String(formData.get("id"));
+	if (!id) return { error: "id is required" };
+	await db
+		.update(outreachProspects)
+		.set({
+			videoUrl: String(formData.get("video_url") || "").trim() || null,
+			videoDescription: String(formData.get("video_description") || "").trim() || null,
+		})
+		.where(eq(outreachProspects.id, id));
+	await revalidate(getOutreachQuery.key);
+	return { success: "Video saved." };
+}, "setOutreachVideo");
 
 export const setOutreachNextActionAction = action(async (formData: FormData) => {
 	"use server";
@@ -793,16 +810,16 @@ export interface BrainDigestItem {
 }
 
 // ponytail: fail-soft by design — the digest only drafts manual email
-// content, so any failure (network, non-200, slow >5s, bad JSON) degrades
+// content, so any failure (network, non-200, slow, bad JSON) degrades
 // to "brain unreachable" and never blocks the page. Timeout via
-// AbortSignal.timeout (Node 18+).
+// AbortSignal.timeout (Node 18+). 15s: Fly machines auto-stop; cold start ≫ warm latency.
 export const getBrainDigestQuery = query(async (brainUrl: string) => {
 	"use server";
 	await requireAdmin();
 	try {
 		const res = await fetch(`${brainUrl.replace(/\/+$/, "")}/digest`, {
 			headers: { accept: "application/json" },
-			signal: AbortSignal.timeout(5_000),
+			signal: AbortSignal.timeout(15_000),
 		});
 		if (!res.ok) return { error: "brain unreachable" as const };
 		const json: unknown = await res.json();
@@ -860,7 +877,7 @@ export const getBrainActivityQuery = query(async (prospectId: string) => {
 	try {
 		const res = await fetch(`${brainUrl.replace(/\/+$/, "")}/activity`, {
 			headers: { accept: "application/json", "x-activity-key": key },
-			signal: AbortSignal.timeout(5_000),
+			signal: AbortSignal.timeout(15_000),
 		});
 		if (!res.ok) return { error: "brain unreachable" as const };
 		const j = (await res.json()) as Partial<BrainActivity>;
