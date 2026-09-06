@@ -15,8 +15,10 @@ import {
 	type BrainDigestItem,
 } from "~/lib/admin-queries";
 import { OUTREACH_STAGES, type OutreachProspect, type OutreachStage } from "~/db/schema";
+import { fmtDate, fmtDur, videoSummary } from "~/lib/video-summary";
 
 const STAGE_COLOR: Record<string, string> = {
+	proposed: "#8e7cc3",
 	sent: "var(--text-subtle)",
 	watching: "var(--orange)",
 	replied: "#2980b9",
@@ -25,37 +27,6 @@ const STAGE_COLOR: Record<string, string> = {
 	shutdown: "var(--red)",
 };
 
-function fmtDate(d: Date | null): string {
-	if (!d) return "—";
-	return new Date(d).toLocaleString(undefined, {
-		month: "short",
-		day: "numeric",
-		hour: "numeric",
-		minute: "2-digit",
-	});
-}
-
-/** 272 → "4m 32s" */
-function fmtDur(secs: number | null): string {
-	if (!secs) return "";
-	const m = Math.floor(secs / 60);
-	const s = secs % 60;
-	return m ? `${m}m ${s}s` : `${s}s`;
-}
-
-/** "viewed 2x · 78% · 3m 41s played · last …" — null while unopened. */
-function videoSummary(p: OutreachProspect): string | null {
-	if (p.videoViewCount === 0) return null;
-	const parts = [`viewed ${p.videoViewCount}x`];
-	if (p.videoCompleted) parts.push("finished");
-	else if (p.videoDurationSeconds) {
-		const pct = Math.min(100, Math.round((p.videoMaxPosition / p.videoDurationSeconds) * 100));
-		if (pct > 0) parts.push(`${pct}%`);
-	}
-	if (p.videoWatchSeconds > 0) parts.push(`${fmtDur(p.videoWatchSeconds)} played`);
-	parts.push(`last ${fmtDate(p.videoLastViewedAt)}`);
-	return parts.join(" · ");
-}
 
 /** datetime-local value for an existing date (local wall clock). */
 function toInputValue(d: Date | null): string {
@@ -185,6 +156,13 @@ function ActivitySection(props: { prospectId: string }) {
 	);
 }
 
+/** Opening the brain from here auto-sets the me-cookie (?key=) so Collin's
+ * demo visits never pollute prospect tracking — no ritual to forget. */
+function brainHref(p: OutreachProspect): string {
+	const base = (p.brainUrl ?? "").replace(/\/+$/, "");
+	return p.brainActivityKey ? `${base}/?key=${p.brainActivityKey}` : base;
+}
+
 function BoardCard(props: { prospect: OutreachProspect; due: boolean; onDragStart?: (id: string) => void }) {
 	const p = () => props.prospect;
 	const setStage = useAction(setOutreachStageAction);
@@ -225,7 +203,12 @@ function BoardCard(props: { prospect: OutreachProspect; due: boolean; onDragStar
 		}
 		const brainUrl = String(fd.get("brain_url") || "").trim();
 		const brainKey = String(fd.get("brain_activity_key") || "").trim();
-		if (brainUrl !== (p().brainUrl ?? "") || brainKey !== (p().brainActivityKey ?? "")) {
+		const videoUrl = String(fd.get("video_url") || "").trim();
+		if (
+			brainUrl !== (p().brainUrl ?? "") ||
+			brainKey !== (p().brainActivityKey ?? "") ||
+			videoUrl !== (p().videoUrl ?? "")
+		) {
 			const r2 = (await setBrain(fd)) as { error?: string };
 			if (r2.error) {
 				setError(r2.error);
@@ -280,7 +263,7 @@ function BoardCard(props: { prospect: OutreachProspect; due: boolean; onDragStar
 						</Show>
 					</Show>
 					<Show when={p().brainUrl}>
-						<a href={p().brainUrl!} target="_blank" rel="noreferrer">brain ↗</a>
+						<a href={brainHref(p())} target="_blank" rel="noreferrer">brain ↗</a>
 					</Show>
 				</div>
 			</Show>
@@ -312,6 +295,7 @@ function BoardCard(props: { prospect: OutreachProspect; due: boolean; onDragStar
 						<For each={OUTREACH_STAGES}>{(s) => <option value={s}>{s}</option>}</For>
 					</select>
 					<input type="datetime-local" name="next_action_at" value={toInputValue(p().nextActionAt)} />
+					<input type="url" name="video_url" placeholder="Video URL (cap.so share link)" value={p().videoUrl ?? ""} />
 					<input type="text" name="next_action_note" placeholder="Next action note" value={p().nextActionNote ?? ""} />
 					<button type="submit" class="btn btn-primary btn-sm">Save</button>
 				</form>

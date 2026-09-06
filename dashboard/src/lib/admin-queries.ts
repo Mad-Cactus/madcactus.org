@@ -24,6 +24,7 @@ import type {
 	OutreachStage,
 } from "~/db/schema";
 import { generateApiKey, hashKey, keyPrefix } from "~/lib/crypto";
+import { normalizeBrainTools } from "~/lib/brain-activity";
 
 // ── Auth guard ────────────────────────────────────────────────────
 
@@ -726,7 +727,7 @@ export const createOutreachAction = action(async (formData: FormData) => {
 		brainUrl: String(formData.get("brain_url") || "").trim() || null,
 		brainActivityKey: String(formData.get("brain_activity_key") || "").trim() || null,
 		videoUrl: String(formData.get("video_url") || "").trim() || null,
-		stage: String(formData.get("stage") || "sent") as OutreachStage,
+		stage: String(formData.get("stage") || "proposed") as OutreachStage,
 		// Client converts datetime-local to ISO+Z in the browser's tz before
 		// submitting, so this parses to the intended instant regardless of
 		// the server's TZ (prod runs UTC).
@@ -750,7 +751,8 @@ export const setOutreachStageAction = action(async (formData: FormData) => {
 	return { success: `Stage → ${stage}.` };
 }, "setOutreachStage");
 
-// Brain URL + activity key for an existing prospect (formerly a Fly env secret).
+// Brain URL + activity key + video link for an existing prospect.
+// video_url: empty string clears — the edit form always submits the field.
 export const setOutreachBrainAction = action(async (formData: FormData) => {
 	"use server";
 	await requireAdmin();
@@ -760,6 +762,7 @@ export const setOutreachBrainAction = action(async (formData: FormData) => {
 		.set({
 			brainUrl: String(formData.get("brain_url") || "").trim() || null,
 			brainActivityKey: String(formData.get("brain_activity_key") || "").trim() || null,
+			videoUrl: String(formData.get("video_url") || "").trim() || null,
 		})
 		.where(eq(outreachProspects.id, id));
 	await revalidate(getOutreachQuery.key);
@@ -871,7 +874,7 @@ export const getBrainActivityQuery = query(async (prospectId: string) => {
 				maxDepth: j.maxDepth ?? 0,
 				clicks: j.clicks ?? 0,
 				maxDwell: j.maxDwell ?? 0,
-				tools: Array.isArray(j.tools) ? j.tools.map(String) : [],
+				tools: normalizeBrainTools(j.tools),
 			} satisfies BrainActivity,
 		};
 	} catch {
