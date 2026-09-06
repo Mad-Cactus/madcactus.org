@@ -92,3 +92,85 @@ describe("isTrashed", () => {
 		expect(isTrashed({})).toBe(false);
 	});
 });
+
+// ── Rate-limit backoff (fetch stubbed; token endpoint answers too) ──
+import { gmail } from "./gmail";
+
+const account = { id: "a1", refreshToken: "r" } as any;
+const json = (body: any, status = 200) =>
+	new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+const QUOTA_403 = () =>
+	json(
+		{ error: { code: 403, message: "Quota exceeded for quota metric 'Total Query Cost' and limit 'Units per minute per user'" } },
+		403,
+	);
+
+// stub fetch: token endpoint always OK; gmail endpoint replays `api` responses,
+// then 200s with `final()`. api/final are factories — Response bodies are single-use.
+function stubFetch(api: Response[], final: () => Response) {
+	const paths: string[] = [];
+	const real = globalThis.fetch;
+	globalThis.fetch = (async (url: any) => {
+		if (String(url).includes("gmail.googleapis.com")) {
+			paths.push(String(url).replace(/^.*gmail\/v1\/users\/me/, ""));
+			return api.length ? api.shift()! : final();
+		}
+		return json({ access_token: "at", expires_in: 3600 });
+	}) as any;
+	return { paths, restore: () => (globalThis.fetch = real) };
+}
+
+describe("gmail backoff", () => {
+	test("quota 403 → retries → succeeds", async () => {
+		const { paths, restore } = stubFetch([QUOTA_403()], () => json({ id: "t1", historyId: "1" }));
+		try {
+			const out = await gmail<{ id: string }>(account, "/threads/x", { method: "POST" });
+			expect(out.id).toBe("t1");
+			expect(paths).toEqual(["/threads/x", "/threads/x"]);
+		} finally {
+			restore();
+		}
+	});
+
+	test("plain 403 (permission) → fails fast, no retry", async () => {
+		const { paths, restore } = stubFetch([json({ error: { code: 403, message: "The user is not authorized" } }, 403)], () => json({}));
+		try {
+			await expect(gmail(account, "/threads/x")).rejects.toThrow(/403|not authorized/);
+			expect(paths).toEqual(["/threads/x"]);
+		} finally {
+			restore();
+		}
+	});
+
+	test("GET 5xx → retries; POST 5xx → fails fast", async () => {
+		const get = stubFetch([json({ error: { code: 500 } }, 500)], () => json({ id: "g1" }));
+		try {
+			const out = await gmail<{ id: string }>(account, "/threads/x");
+			expect(out.id).toBe("g1");
+			expect(get.paths.length).toBe(2);
+		} finally {
+			get.restore();
+		}
+		const post = stubFetch([json({ error: { code: 500 } }, 500)], () => json({}));
+		try {
+			await expect(gmail(account, "/messages/send", { method: "POST" })).rejects.toThrow();
+			expect(post.paths.length).toBe(1);
+		} finally {
+			post.restore();
+		}
+	});
+
+	test(
+		"gives up after 3 retries on persistent throttling",
+		async () => {
+			const { paths, restore } = stubFetch([], QUOTA_403);
+			try {
+				await expect(gmail(account, "/threads/x")).rejects.toThrow(/Quota/);
+				expect(paths.length).toBe(4); // 1 + 3 retries
+			} finally {
+				restore();
+			}
+		},
+		15_000, // backoff sleeps 1+2+4s + jitter
+	);
+});
