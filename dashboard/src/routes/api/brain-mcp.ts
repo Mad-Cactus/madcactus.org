@@ -2,7 +2,7 @@ import type { APIEvent } from "@solidjs/start/server";
 import { eq, and, desc, sql, ilike } from "drizzle-orm";
 import { hashKey } from "~/lib/crypto";
 import { db } from "~/db";
-import { apiKeys, companies, outreachProspects } from "~/db/schema";
+import { apiKeys, companies, outreachProspects, OUTREACH_STAGES } from "~/db/schema";
 import { brainQuery, entityFacts } from "~/lib/brain/search";
 import { brainJobs } from "~/db/schema";
 import { agentWrite, createDoc, getDoc, getDocVersionDiff, listDocVersions, listDocs } from "~/lib/docs";
@@ -141,19 +141,21 @@ const TOOLS = [
 	{
 		name: "list_outreach",
 		description:
-			"List outreach prospects with their brain wiring: brain_url and activity key. Use to check which prospect a brain belongs to or to read the current activity key before updating it.",
+			"List outreach prospects with their brain wiring: brain_url, activity key, and video_url. Use to check which prospect a brain belongs to, to read the current activity key before updating it, or to see which prospects have outreach videos linked.",
 		inputSchema: { type: "object", properties: {} },
 	},
 	{
 		name: "set_outreach_brain",
 		description:
-			'Create or update an outreach prospect\'s brain wiring. Matches by company (case-insensitive; creates the prospect if unknown). Set brain_url (e.g. https://<name>.madcactus.org) and brain_activity_key (the brain\'s ACTIVITY_KEY) so the dashboard can pull /activity. Omit brain_activity_key to leave it unchanged.',
+			'Create or update an outreach prospect\'s brain wiring. Matches by company (case-insensitive; creates the prospect if unknown). Set brain_url (e.g. https://<name>.madcactus.org) and brain_activity_key (the brain\'s ACTIVITY_KEY) so the dashboard can pull /activity. Set video_url to the CAP share link once the outreach video is recorded (the dashboard then serves the tracked /v/:id email link). Omit brain_activity_key / video_url to leave them unchanged. Omit stage to leave it unchanged; stages: ' + OUTREACH_STAGES.join(" → ") + ".",
 		inputSchema: {
 			type: "object",
 			properties: {
 				company: { type: "string", description: "prospect company name (matched case-insensitively)" },
 				brain_url: { type: "string" },
 				brain_activity_key: { type: "string", description: "omit to leave the existing key unchanged" },
+				video_url: { type: "string", description: "CAP share URL for the outreach video; empty string clears it" },
+				stage: { type: "string", enum: [...OUTREACH_STAGES], description: "omit to leave unchanged" },
 				contact_name: { type: "string" },
 				email: { type: "string" },
 				notes: { type: "string" },
@@ -398,6 +400,7 @@ export async function POST(event: APIEvent) {
 								stage: outreachProspects.stage,
 								contactName: outreachProspects.contactName,
 								email: outreachProspects.email,
+								videoUrl: outreachProspects.videoUrl,
 								brainUrl: outreachProspects.brainUrl,
 								brainActivityKey: outreachProspects.brainActivityKey,
 							})
@@ -412,6 +415,15 @@ export async function POST(event: APIEvent) {
 						}
 						const brainUrl = String(toolArgs.brain_url ?? "").trim() || null;
 						const activityKey = String(toolArgs.brain_activity_key ?? "").trim();
+						const videoUrl = toolArgs.video_url !== undefined ? String(toolArgs.video_url).trim() || null : null;
+						let stage: string | null = null;
+						if (toolArgs.stage !== undefined) {
+							stage = String(toolArgs.stage);
+							if (!(OUTREACH_STAGES as readonly string[]).includes(stage)) {
+								result = { error: `unknown stage "${stage}" — valid: ${OUTREACH_STAGES.join(", ")}` };
+								break;
+							}
+						}
 						const [existing] = await db
 							.select({ id: outreachProspects.id })
 							.from(outreachProspects)
@@ -423,6 +435,8 @@ export async function POST(event: APIEvent) {
 								.set({
 									...(brainUrl !== null ? { brainUrl } : {}),
 									...(activityKey ? { brainActivityKey: activityKey } : {}),
+									...(toolArgs.video_url !== undefined ? { videoUrl } : {}),
+									...(stage ? { stage } : {}),
 									...(toolArgs.contact_name ? { contactName: String(toolArgs.contact_name) } : {}),
 									...(toolArgs.email ? { email: String(toolArgs.email) } : {}),
 									...(toolArgs.notes ? { notes: String(toolArgs.notes) } : {}),
@@ -436,6 +450,8 @@ export async function POST(event: APIEvent) {
 									company,
 									brainUrl,
 									brainActivityKey: activityKey || null,
+									videoUrl,
+									...(stage ? { stage } : {}),
 									contactName: toolArgs.contact_name ? String(toolArgs.contact_name) : null,
 									email: toolArgs.email ? String(toolArgs.email) : null,
 									notes: toolArgs.notes ? String(toolArgs.notes) : null,

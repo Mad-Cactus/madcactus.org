@@ -67,6 +67,7 @@ export const invoiceStatus = pgEnum("invoice_status", [
 // Single source of truth for stage values — the column default, the check
 // constraint, and the UI advance buttons all derive from this array.
 export const OUTREACH_STAGES = [
+	"proposed",
 	"sent",
 	"watching",
 	"replied",
