@@ -1,9 +1,9 @@
 import type { APIEvent } from "@solidjs/start/server";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { getAuthedClient } from "~/lib/session";
 import { db } from "~/db";
 import { emailOutbox } from "~/db/schema";
-import { sendOutboxDraft, saveDraftBody } from "~/lib/email-queries";
+import { sendOutboxDraft, saveDraftBody, scheduleOutboxDraft, unscheduleOutboxDraft } from "~/lib/email-queries";
 import { listTextVersions, getTextVersionDiff, deleteTextVersions } from "~/lib/crdt-text";
 
 /**
@@ -12,6 +12,8 @@ import { listTextVersions, getTextVersionDiff, deleteTextVersions } from "~/lib/
  * GET  ?diff=N               → word-diff of version N vs N-1
  * PUT  { body?, subject?, to? } → update draft (body is CRDT-tracked)
  * POST { op: "send", body? }             → lint-gated send (agent drafts → pair)
+ * POST { op: "schedule", sendAt, body?, overrideLint? } → lint-gated schedule
+ * POST { op: "unschedule" }              → back to plain draft
  * POST { op: "discard" }                 → delete
  */
 function json(body: unknown, status = 200) {
@@ -54,8 +56,23 @@ export const PUT = async (event: APIEvent) => {
 
 export const POST = async (event: APIEvent) => {
 	if (!(await getAuthedClient())) return json({ error: "Unauthorized" }, 401);
-	const body = (await event.request.json().catch(() => ({}))) as { op?: string; body?: string; overrideLint?: boolean };
+	const body = (await event.request.json().catch(() => ({}))) as {
+		op?: string;
+		body?: string;
+		overrideLint?: boolean;
+		sendAt?: string;
+	};
 	if (body.op === "send") return json(await sendOutboxDraft(event.params.id, body.body, { overrideLint: body.overrideLint === true }));
+	if (body.op === "schedule") {
+		if (!body.sendAt) return json({ error: "sendAt required" }, 400);
+		return json(
+			await scheduleOutboxDraft(event.params.id, new Date(body.sendAt), {
+				body: body.body,
+				overrideLint: body.overrideLint === true,
+			}),
+		);
+	}
+	if (body.op === "unschedule") return json({ ok: await unscheduleOutboxDraft(event.params.id) });
 	if (body.op === "discard") {
 		await deleteTextVersions("email_draft", event.params.id);
 		await db.delete(emailOutbox).where(eq(emailOutbox.id, event.params.id));

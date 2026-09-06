@@ -22,9 +22,9 @@ export default function AdminEmail() {
 	const status = createAsync(() => getEmailStatusQuery(), { deferStream: true });
 	const [searchParams, setSearchParams] = useSearchParams();
 	// folder lives in the URL so a search keeps the tab it was typed in
-	const folder = (): "inbox" | "drafts" | "sent" =>
-		searchParams.folder === "drafts" || searchParams.folder === "sent" ? searchParams.folder : "inbox";
-	const setFolder = (f: "inbox" | "drafts" | "sent") => setSearchParams({ folder: f === "inbox" ? undefined : f });
+	const folder = (): "inbox" | "drafts" | "outbox" | "sent" =>
+		searchParams.folder === "drafts" || searchParams.folder === "outbox" || searchParams.folder === "sent" ? searchParams.folder : "inbox";
+	const setFolder = (f: "inbox" | "drafts" | "outbox" | "sent") => setSearchParams({ folder: f === "inbox" ? undefined : f });
 	const activeQ = () => (typeof searchParams.q === "string" && searchParams.q ? searchParams.q : undefined);
 	const inbox = createAsync(() => getInboxQuery({ q: activeQ() }), { deferStream: true });
 	const sync = useAction(syncEmailAction);
@@ -190,6 +190,9 @@ export default function AdminEmail() {
 	// draft id currently blocked by the voice send gate — its Send button
 	// becomes "Send anyway", and overriding feeds the pattern-adaptation signal
 	const [lintBlockedDraft, setLintBlockedDraft] = createSignal<string | null>(null);
+	// per-draft schedule-send state — mirrors sendDraft's lint-gate UX
+	const [schedInput, setSchedInput] = createSignal<Record<string, string>>({});
+	const [lintBlockedSched, setLintBlockedSched] = createSignal<string | null>(null);
 	const sendDraft = async (outboxId: string, overrideLint = false) => {
 		setSendStatus("sending…");
 		const res = await fetch(`/api/email/drafts/${outboxId}`, {
@@ -219,6 +222,42 @@ export default function AdminEmail() {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ op: "discard" }),
+		});
+		void revalidate("email-inbox");
+	};
+
+	const scheduleDraft = async (outboxId: string, overrideLint = false) => {
+		const raw = schedInput()[outboxId];
+		const when = raw ? new Date(raw) : null;
+		if (!when || Number.isNaN(when.getTime())) {
+			setSendStatus("pick a date/time first");
+			return;
+		}
+		const res = await fetch(`/api/email/drafts/${outboxId}`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ op: "schedule", sendAt: when.toISOString(), body: editBody()[outboxId], overrideLint }),
+		});
+		const r = await res.json();
+		if (r.ok) {
+			setLintBlockedSched(null);
+			setSendStatus(`scheduled for ${when.toLocaleString()}`);
+			setTimeout(() => setSendStatus(""), 5000);
+			void revalidate("email-inbox");
+		} else if (r.blocked === "voice_lint") {
+			const first = r.violations?.[0]?.rule ?? "voice issues";
+			setLintBlockedSched(outboxId);
+			setSendStatus(`voice lint: ${first} — fix the draft or schedule anyway`);
+		} else {
+			setSendStatus(`failed: ${r.error}`);
+		}
+	};
+
+	const unscheduleDraft = async (outboxId: string) => {
+		await fetch(`/api/email/drafts/${outboxId}`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ op: "unschedule" }),
 		});
 		void revalidate("email-inbox");
 	};
@@ -387,7 +426,7 @@ export default function AdminEmail() {
 			// h/l cycle the folder tabs (wrap) — works on every tab
 			if (e.key === "h" || e.key === "l") {
 				e.preventDefault();
-				const folders = ["inbox", "drafts", "sent"] as const;
+				const folders = ["inbox", "drafts", "outbox", "sent"] as const;
 				const i = folders.indexOf(folder());
 				setFolder(folders[(i + (e.key === "l" ? 1 : -1) + folders.length) % folders.length]);
 				setSelected(null);
@@ -534,6 +573,9 @@ export default function AdminEmail() {
 				<button type="button" classList={{ active: folder() === "drafts" }} onClick={() => setFolder("drafts")}>
 					Drafts<Show when={inbox()?.drafts?.length}> · {inbox()!.drafts.length}</Show>
 				</button>
+				<button type="button" classList={{ active: folder() === "outbox" }} onClick={() => setFolder("outbox")}>
+					Outbox<Show when={inbox()?.outbox?.length}> · {inbox()!.outbox.length}</Show>
+				</button>
 				<button type="button" classList={{ active: folder() === "sent" }} onClick={() => setFolder("sent")}>
 					Sent
 				</button>
@@ -549,12 +591,40 @@ export default function AdminEmail() {
 								<div style={{ display: "flex", gap: "12px", "align-items": "baseline" }}>
 									<strong style={{ "font-size": "14px" }}>{d.subject}</strong>
 									<span class="muted" style={{ "font-size": "13px" }}>to {d.toEmail} · v{d.version}</span>
+									<Show when={d.status === "failed"}>
+										<span style={{ "font-size": "12px", color: "#a33" }}>send failed: {d.error}</span>
+									</Show>
 									<div style={{ flex: 1 }} />
 									<button type="button" class="btn btn-sm" classList={{ active: openDraftHistory() === d.id }} onClick={() => void toggleDraftHistory(d.id)}>
 										History
 									</button>
 									<Show when={lintBlockedDraft() === d.id} fallback={<button type="button" class="btn btn-primary btn-sm" onClick={() => sendDraft(d.id)}>Send</button>}>
 										<button type="button" class="btn btn-sm" style={{ "border-color": "#a33", color: "#a33" }} onClick={() => sendDraft(d.id, true)}>Send anyway (ignores voice lint)</button>
+									</Show>
+									<Show
+										when={lintBlockedSched() === d.id}
+										fallback={
+											<Show
+												when={!d.sendAt}
+												fallback={
+													<>
+														<span class="muted" style={{ "font-size": "12px" }}>Scheduled {new Date(d.sendAt!).toLocaleString()}</span>
+														<button type="button" class="btn btn-sm" onClick={() => void unscheduleDraft(d.id)}>Unschedule</button>
+													</>
+												}
+											>
+												<input
+													type="datetime-local"
+													class="doc-sched-input"
+													aria-label="Send at"
+													value={schedInput()[d.id] ?? ""}
+													onChange={(e) => setSchedInput({ ...schedInput(), [d.id]: e.currentTarget.value })}
+												/>
+												<button type="button" class="btn btn-sm" onClick={() => void scheduleDraft(d.id)}>Schedule</button>
+											</Show>
+										}
+									>
+										<button type="button" class="btn btn-sm" style={{ "border-color": "#a33", color: "#a33" }} onClick={() => void scheduleDraft(d.id, true)}>Schedule anyway (ignores voice lint)</button>
 									</Show>
 									<button type="button" class="btn btn-sm" onClick={() => discardDraft(d.id)}>Discard</button>
 								</div>
@@ -592,6 +662,38 @@ export default function AdminEmail() {
 										</Show>
 									</div>
 								</Show>
+							</div>
+						)}
+					</For>
+				</Show>
+			</Show>
+
+			<Show when={folder() === "outbox"}>
+				{/* Outbox — scheduled sends; the scheduler ticker fires these at send_at.
+				    Failed sends stay here with their error until retried or discarded */}
+				<Show when={inbox()?.outbox?.length} fallback={<div class="muted">Nothing queued. Schedule a draft from the Drafts tab.</div>}>
+					<For each={inbox()!.outbox}>
+						{(d) => (
+							<div class="card" style={{ padding: "14px 18px", "margin-bottom": "10px" }}>
+								<div style={{ display: "flex", gap: "12px", "align-items": "baseline" }}>
+									<strong style={{ "font-size": "14px" }}>{d.subject}</strong>
+									<span class="muted" style={{ "font-size": "13px" }}>to {d.toEmail}</span>
+									<Show when={d.status === "failed"}>
+										<span style={{ "font-size": "12px", color: "#a33" }}>failed: {d.error}</span>
+									</Show>
+									<Show when={d.status === "sending"}>
+										<span class="muted" style={{ "font-size": "12px" }}>sending…</span>
+									</Show>
+									<div style={{ flex: 1 }} />
+									<button type="button" class="btn btn-sm" onClick={() => sendDraft(d.id)}>Send now</button>
+									<button type="button" class="btn btn-sm" onClick={() => void unscheduleDraft(d.id)}>Unschedule</button>
+									<button type="button" class="btn btn-sm" onClick={() => discardDraft(d.id)}>Discard</button>
+								</div>
+								<div class="muted" style={{ "font-size": "13px", "margin-top": "4px" }}>
+									<Show when={d.status === "failed"} fallback={<>fires {new Date(d.sendAt!).toLocaleString()}</>}>
+										was scheduled for {new Date(d.sendAt!).toLocaleString()}
+									</Show>
+								</div>
 							</div>
 						)}
 					</For>

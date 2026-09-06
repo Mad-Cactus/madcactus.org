@@ -121,6 +121,20 @@
       "tag": "slack_source",
       "breakpoints": true,
       "filename": "0018_slack_source.sql"
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1788718825767,
+      "tag": "0021_scheduled_posting",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1788720045696,
+      "tag": "0022_email_schedule_send",
+      "breakpoints": true
     }
   ]
 }

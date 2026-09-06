@@ -368,7 +368,11 @@ export const monthlyHoursByProject = pgView("monthly_hours_by_project").as(
 			),
 );
 
-export const docStatus = pgEnum("doc_status", ["draft", "final"]);
+// publishing = scheduler claimed it and is dispatching; failed = dispatch
+// errored (publish_error holds why) and stays visible for retry
+export const docStatus = pgEnum("doc_status", ["draft", "final", "scheduled", "publishing", "published", "failed"]);
+// null kind = plain doc; "post" = LinkedIn post, "newsletter" = Cactus Dispatch issue
+export const docKind = pgEnum("doc_kind", ["post", "newsletter"]);
 
 // ── Docs (CRDT markdown documents + version history) ───────────────
 
@@ -384,6 +388,11 @@ export const docs = pgTable(
 		version: integer("version").notNull().default(0),
 		// draft = awaiting human review (agent-pushed), final = human-approved
 		status: docStatus("status").notNull().default("final"),
+		// post/newsletter → Finalize button becomes Schedule; null → plain doc
+		kind: docKind("kind"),
+		scheduledFor: timestamp("scheduled_for", { withTimezone: true }),
+		publishedAt: timestamp("published_at", { withTimezone: true }),
+		publishError: text("publish_error"),
 		chatUuid: text("chat_uuid"),
 		// set = publicly viewable at /share/<token>
 		shareToken: text("share_token").unique(),
@@ -394,6 +403,22 @@ export const docs = pgTable(
 			.$onUpdate(() => new Date()),
 	},
 );
+
+// OAuth tokens for scheduled publishing targets (LinkedIn). One row per
+// provider — access tokens are short-lived (~60d) and refreshed on use.
+export const socialAccounts = pgTable("social_accounts", {
+	id: uuid("id").primaryKey().defaultRandom(),
+	provider: text("provider").notNull().unique(), // "linkedin"
+	memberUrn: text("member_urn"), // urn:li:person:xxxx
+	accessToken: text("access_token").notNull(),
+	refreshToken: text("refresh_token"),
+	expiresAt: timestamp("expires_at", { withTimezone: true }),
+	createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp("updated_at", { withTimezone: true })
+		.notNull()
+		.defaultNow()
+		.$onUpdate(() => new Date()),
+});
 
 // Change history for any tracked text surface (docs, email drafts, …).
 // Coalesced edit sessions — a row per save burst, not per autosave. The Loro
@@ -744,7 +769,9 @@ export const emailOutbox = pgTable(
 		loroSnapshot: text("loro_snapshot").notNull().default(""),
 		version: integer("version").notNull().default(0),
 		chatUuid: text("chat_uuid"),
-		status: text("status").notNull().default("draft"), // draft|sent|failed
+		status: text("status").notNull().default("draft"), // draft|sending|sent|failed (sending = scheduler claimed)
+		// set + status=draft = scheduled send — ticker fires via sendOutboxDraft
+		sendAt: timestamp("send_at", { withTimezone: true }),
 		gmailMessageId: text("gmail_message_id"),
 		error: text("error"),
 		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

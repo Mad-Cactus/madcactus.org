@@ -14,6 +14,11 @@ type VersionRow = {
 };
 type DiffPart = { added?: boolean; removed?: boolean; value: string };
 
+const toLocalInput = (d: Date) => {
+	const p = (n: number) => String(n).padStart(2, "0");
+	return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
 const Doc = (props: { id: string; doc: NonNullable<Awaited<ReturnType<typeof getDocQuery>>> }) => {
 	const doc = () => props.doc;
 	const [markdown, setMarkdown] = createSignal("");
@@ -24,6 +29,13 @@ const Doc = (props: { id: string; doc: NonNullable<Awaited<ReturnType<typeof get
 	const [versions, setVersions] = createSignal<VersionRow[]>([]);
 	const [sel, setSel] = createSignal<number | null>(null);
 	const [diff, setDiff] = createSignal<DiffPart[] | null>(null);
+	// scheduling state — kind null = plain doc (Finalize), post/newsletter = Schedule
+	const [kind, setKind] = createSignal<"post" | "newsletter" | null>(doc().kind ?? null);
+	const [docStatus, setDocStatus] = createSignal(doc().status as string);
+	const [schedFor, setSchedFor] = createSignal<string | null>(doc().scheduledFor?.toISOString() ?? null);
+	const [publishError, setPublishError] = createSignal(doc().publishError ?? null);
+	const [schedInput, setSchedInput] = createSignal("");
+	const [liConnected, setLiConnected] = createSignal<boolean | null>(null);
 	let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
 	// seed once when the doc resource resolves
@@ -33,9 +45,14 @@ const Doc = (props: { id: string; doc: NonNullable<Awaited<ReturnType<typeof get
 			if (d) {
 				setMarkdown(d.markdown);
 				if (d.shareToken) setShareUrl(`${location.origin}/share/${d.shareToken}`);
+				if (d.status === "scheduled" && d.scheduledFor) setSchedInput(toLocalInput(new Date(d.scheduledFor)));
 				clearInterval(stop);
 			}
 		}, 50);
+		// LinkedIn connect state only gates kind=post; null = still checking
+		void fetch("/api/social/linkedin")
+			.then((r) => (r.ok ? r.json() : { connected: false }))
+			.then((s: { connected: boolean }) => setLiConnected(Boolean(s.connected)));
 	});
 
 	const loadVersions = async () => {
@@ -78,7 +95,32 @@ const Doc = (props: { id: string; doc: NonNullable<Awaited<ReturnType<typeof get
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify(body),
 		});
-		return res.json();
+		return res.json() as Promise<{ ok?: boolean; error?: string; kind?: string | null; status?: string; scheduledFor?: string; shareToken?: string | null }>;
+	};
+
+	const schedule = async () => {
+		const when = new Date(schedInput());
+		if (Number.isNaN(when.getTime())) {
+			setStatus("pick a valid date/time");
+			return;
+		}
+		await save(props.id, markdown());
+		const r = await post(props.id, { op: "schedule", scheduledFor: when.toISOString() });
+		if (r.ok) {
+			setDocStatus("scheduled");
+			setSchedFor(r.scheduledFor ?? when.toISOString());
+			setPublishError(null);
+			setStatus(`scheduled for ${when.toLocaleString()}`);
+		} else setStatus(r.error ?? "schedule failed");
+	};
+
+	const unschedule = async () => {
+		const r = await post(props.id, { op: "unschedule" });
+		if (r.ok) {
+			setDocStatus("final");
+			setSchedFor(null);
+			setStatus("unscheduled");
+		} else setStatus(r.error ?? "unschedule failed");
 	};
 
 	return (
@@ -89,8 +131,34 @@ const Doc = (props: { id: string; doc: NonNullable<Awaited<ReturnType<typeof get
 			{/* macro-style: slim chrome row, then the title reads as the first
 			    line of the document itself */}
 			<div class="doc-topbar">
-				<span>{status() || `v${verNum()}`}</span>
+				<span>
+					<Show when={docStatus() === "scheduled" && schedFor()}>
+						<span class="doc-badge sched">Scheduled {new Date(schedFor()!).toLocaleString()} · </span>
+					</Show>
+					<Show when={docStatus() === "published" && schedFor()}>
+						<span class="doc-badge published">Published {new Date(schedFor()!).toLocaleString()} · </span>
+					</Show>
+					{status() || `v${verNum()}`}
+				</span>
 				<div style={{ flex: 1 }} />
+				<div class="doc-kind" role="group" aria-label="Doc kind">
+					<For each={[null, "post", "newsletter"] as const}>
+						{(k) => (
+							<button
+								type="button"
+								class="btn btn-sm"
+								classList={{ active: kind() === k }}
+								onClick={() => {
+									setKind(k);
+									if (!schedInput()) setSchedInput(toLocalInput(new Date(Date.now() + 3600e3)));
+									void post(props.id, { op: "set-kind", kind: k });
+								}}
+							>
+								{k === null ? "Doc" : k === "post" ? "Post" : "Newsletter"}
+							</button>
+						)}
+					</For>
+				</div>
 				<button type="button" class="btn btn-sm" classList={{ active: showHistory() }} onClick={toggleHistory}>
 					History
 				</button>
@@ -110,14 +178,46 @@ const Doc = (props: { id: string; doc: NonNullable<Awaited<ReturnType<typeof get
 				}}>
 					Export .md
 				</button>
-				<button type="button" class="btn btn-primary btn-sm" onClick={async () => {
-					await save(props.id, markdown());
-					const r = await post(props.id, { op: "finalize" });
-					setStatus(r.ok ? "marked final" : r.error);
-				}}>
-					Finalize
-				</button>
+				<Show
+					when={kind()}
+					fallback={
+						<button type="button" class="btn btn-primary btn-sm" onClick={async () => {
+							await save(props.id, markdown());
+							const r = await post(props.id, { op: "finalize" });
+							setStatus(r.ok ? "marked final" : (r.error ?? "finalize failed"));
+						}}>
+							Finalize
+						</button>
+					}
+				>
+					<Show when={kind() === "post" && liConnected() !== true} fallback={
+						<>
+							<input
+								type="datetime-local"
+								class="doc-sched-input"
+								aria-label="Publish at"
+								value={schedInput()}
+								onChange={(e) => setSchedInput(e.currentTarget.value)}
+							/>
+							<button type="button" class="btn btn-primary btn-sm" onClick={() => void schedule()}>
+								{docStatus() === "scheduled" ? "Reschedule" : "Schedule"}
+							</button>
+							<Show when={docStatus() === "scheduled"}>
+								<button type="button" class="btn btn-sm" onClick={() => void unschedule()}>
+									Unschedule
+								</button>
+							</Show>
+						</>
+					}>
+						<a class="btn btn-sm" href="/api/social/linkedin?start=1">Connect LinkedIn to schedule</a>
+					</Show>
+				</Show>
 			</div>
+			<Show when={docStatus() === "failed" && publishError()}>
+				<p class="doc-publish-error" role="alert">
+					Publish failed: {publishError()} — reschedule to retry.
+				</p>
+			</Show>
 			<Show when={shareUrl()}>
 				<p class="muted doc-share">
 					Public: <a href={shareUrl()}>{shareUrl()}</a>
