@@ -19,4 +19,7 @@ ALTER TABLE "docs" ADD COLUMN "kind" "doc_kind";--> statement-breakpoint
 ALTER TABLE "docs" ADD COLUMN "scheduled_for" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "docs" ADD COLUMN "published_at" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "docs" ADD COLUMN "publish_error" text;--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "idx_docs_scheduled" ON "docs" ("scheduled_for") WHERE "status" = 'scheduled';
+-- ponytail: no partial-index predicate — WHERE status='scheduled' uses the enum value
+-- added above in this same transaction → PG12+ "unsafe use of new value" → supabase
+-- auto-apply rolls the whole migration back. Re-add the WHERE once this is its own migration.
+CREATE INDEX IF NOT EXISTS "idx_docs_scheduled" ON "docs" ("scheduled_for");
