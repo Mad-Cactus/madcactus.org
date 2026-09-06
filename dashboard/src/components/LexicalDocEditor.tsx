@@ -9,6 +9,7 @@ import { onCleanup, onMount, createEffect, createSignal, Show } from "solid-js";
 import {
 	createEditor,
 	FORMAT_TEXT_COMMAND,
+	INSERT_PARAGRAPH_COMMAND,
 	KEY_DOWN_COMMAND,
 	KEY_ENTER_COMMAND,
 	BEFORE_INPUT_COMMAND,
@@ -36,15 +37,9 @@ import {
 	TEXT_FORMAT_TRANSFORMERS,
 	TEXT_MATCH_TRANSFORMERS,
 } from "@lexical/markdown";
-import {
-	HeadingNode,
-	QuoteNode,
-	$isHeadingNode,
-	$isQuoteNode,
-	$createHeadingNode,
-	$createQuoteNode,
-} from "@lexical/rich-text";
+import { registerRichText, HeadingNode, QuoteNode, $isHeadingNode, $isQuoteNode, $createHeadingNode, $createQuoteNode } from "@lexical/rich-text";
 import { ListNode, ListItemNode, INSERT_UNORDERED_LIST_COMMAND, registerList, $isListItemNode } from "@lexical/list";
+import { registerHistory, createEmptyHistoryState } from "@lexical/history";
 import { CodeNode, CodeHighlightNode, $isCodeNode } from "@lexical/code";
 import { LinkNode, AutoLinkNode, TOGGLE_LINK_COMMAND, toggleLink } from "@lexical/link";
 import { $setBlocksType } from "@lexical/selection";
@@ -108,23 +103,18 @@ export default function LexicalDocEditor(props: {
 		registerMarkdownShortcuts(ed, DOC_TRANSFORMERS);
 		// Vanilla Lexical ships commands without implementations — the React
 		// plugins normally register these. Solid app: register them ourselves.
+		// registerRichText: paste (PASTE_COMMAND), select-all (SELECT_ALL),
+		// copy/cut, and the delete/format/insert-paragraph impls.
+		// registerHistory: UNDO/REDO impls so ⌘Z / ⇧⌘Z work — core's keydown
+		// handler dispatches those commands; without registration they no-op.
 		registerList(ed);
+		registerRichText(ed);
+		registerHistory(ed, createEmptyHistoryState(), 1000);
 		ed.registerCommand(
 			TOGGLE_LINK_COMMAND,
 			(url) => {
 				ed.update(() => {
 					toggleLink(url as string);
-				});
-				return true;
-			},
-			COMMAND_PRIORITY_EDITOR,
-		);
-		ed.registerCommand(
-			FORMAT_TEXT_COMMAND,
-			(format) => {
-				ed.update(() => {
-					const sel = $getSelection();
-					if ($isRangeSelection(sel)) sel.formatText(format);
 				});
 				return true;
 			},
@@ -259,9 +249,16 @@ export default function LexicalDocEditor(props: {
 					case "insertParagraph":
 					case "insertLineBreak": {
 						event.preventDefault();
-						controlled((s) =>
-							event.inputType === "insertParagraph" ? s.insertParagraph() : s.insertLineBreak(),
-						);
+						if (event.inputType === "insertParagraph") {
+							// Route through the command, not s.insertParagraph():
+							// registerList's INSERT_PARAGRAPH handler (LOW priority)
+							// unwraps an empty list item into a paragraph — Enter on
+							// an empty "- " exits the bullet. s.insertParagraph()
+							// copies the empty item instead, spawning endless bullets.
+							ed.dispatchCommand(INSERT_PARAGRAPH_COMMAND, undefined);
+						} else {
+							controlled((s) => s.insertLineBreak());
+						}
 						return true;
 					}
 					case "deleteContentBackward":
