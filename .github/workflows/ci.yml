@@ -3,6 +3,10 @@ name: CI
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: [main]
+    # deploy gate: Fly Deploy (dashboard) fires only after this succeeds
+    paths: ['dashboard/**']
 
 jobs:
   test:
