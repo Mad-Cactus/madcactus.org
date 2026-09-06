@@ -229,6 +229,17 @@ async function upsertThread(
 	return threadRow;
 }
 
+/** Run fn over items with a small concurrency pool — Gmail round-trips are
+ *  I/O-bound, so 8 in flight cuts a 150-call sync from ~1min sequential to ~8s. */
+async function pooled<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
+	let i = 0;
+	await Promise.all(
+		Array.from({ length: Math.min(limit, items.length) }, async () => {
+			while (i < items.length) await fn(items[i++]);
+		}),
+	);
+}
+
 /** Fetch full threads for gmail ids not yet local, capped per call so the
  *  first-ever sync backfills over several background syncs instead of one
  *  API-storming request. Returns how many were fetched. */
@@ -239,14 +250,11 @@ async function fetchMissingThreads(account: EmailAccount, ids: string[], max: nu
 		.from(emailThreads)
 		.where(inArray(emailThreads.gmailThreadId, ids));
 	const knownSet = new Set(known.map((r) => r.gmailThreadId));
-	let fetched = 0;
-	for (const id of ids) {
-		if (fetched >= max) break;
-		if (knownSet.has(id)) continue;
+	const missing = ids.filter((id) => !knownSet.has(id)).slice(0, max);
+	await pooled(missing, 8, async (id) => {
 		await upsertThread(account, await fetchFullThread(account, id));
-		fetched++;
-	}
-	return fetched;
+	});
+	return missing.length;
 }
 
 /** List every thread id carrying a label (paginated). ponytail: capped at
@@ -278,19 +286,23 @@ export async function syncAccount(account: EmailAccount): Promise<{ synced: numb
 
 	let synced = await fetchMissingThreads(account, allIds, 100);
 
-	for (const id of inboxIds.slice(0, 50)) {
+	let freshInbox = 0;
+	await pooled(inboxIds.slice(0, 50), 8, async (id) => {
 		const row = await upsertThread(account, await fetchFullThread(account, id), false);
-		if (row) synced++;
-	}
+		if (row) freshInbox++;
+	});
+	synced += freshInbox;
 
 	// Re-fetch the 50 most recent SENT threads too — fetchMissingThreads skips
 	// known ids, so replies sent from the Gmail UI on threads we already have
 	// locally never landed until this loop existed.
 	const sentFresh = sentIds.filter((id) => !inboxSet.has(id)).slice(0, 50);
-	for (const id of sentFresh) {
+	let freshSent = 0;
+	await pooled(sentFresh, 8, async (id) => {
 		const row = await upsertThread(account, await fetchFullThread(account, id));
-		if (row) synced++;
-	}
+		if (row) freshSent++;
+	});
+	synced += freshSent;
 
 	const setArchived = async (ids: string[], archived: boolean) => {
 		for (let i = 0; i < ids.length; i += 500) {
@@ -550,8 +562,10 @@ export async function threadWithMessages(account: EmailAccount, threadRowId: str
 /** Sent view: every thread with at least one message I sent, newest send
  *  first, carrying the recipient of its latest sent message. */
 export async function listSent(account: EmailAccount) {
+	// only the two sent-message fields the dedupe needs — selecting bodyText
+	// for every sent message made each inbox revalidate haul thousands of rows
 	const rows = await db
-		.select({ thread: emailThreads, msg: emailMessages })
+		.select({ thread: emailThreads, msg: { toEmails: emailMessages.toEmails, date: emailMessages.date } })
 		.from(emailThreads)
 		.innerJoin(emailMessages, and(eq(emailMessages.threadId, emailThreads.id), eq(emailMessages.isSent, true)))
 		.where(eq(emailThreads.accountId, account.id))

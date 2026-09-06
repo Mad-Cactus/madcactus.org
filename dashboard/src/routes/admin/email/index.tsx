@@ -26,12 +26,18 @@ export default function AdminEmail() {
 		searchParams.folder === "drafts" || searchParams.folder === "sent" ? searchParams.folder : "inbox";
 	const setFolder = (f: "inbox" | "drafts" | "sent") => setSearchParams({ folder: f === "inbox" ? undefined : f });
 	const activeQ = () => (typeof searchParams.q === "string" && searchParams.q ? searchParams.q : undefined);
-	const inbox = createAsync(() => getInboxQuery({ q: activeQ(), folder: folder() }), { deferStream: true });
+	const inbox = createAsync(() => getInboxQuery({ q: activeQ() }), { deferStream: true });
 	const sync = useAction(syncEmailAction);
 
 	const [q, setQ] = createSignal(String(searchParams.q ?? ""));
 	const [selected, setSelected] = createSignal<ThreadFull | null>(null);
 	const [selIdx, setSelIdx] = createSignal(0);
+	// optimistic triage state — ops mutate these instead of refetching the
+	// whole list; the next sync (≤10min or the Sync button) reconciles
+	const [hiddenIds, setHiddenIds] = createSignal<Set<string>>(new Set());
+	const [readOverride, setReadOverride] = createSignal<Record<string, boolean>>({});
+	const visibleThreads = () => (inbox()?.threads ?? []).filter((t) => !hiddenIds().has(t.id));
+	const isUnread = (t: EmailThread) => readOverride()[t.id] ?? t.unread;
 	// confirmation modal for destructive macros (spam / delete / unsubscribe)
 	const [pending, setPending] = createSignal<{ title: string; body: string; confirm: string; danger: boolean; run: () => Promise<unknown> } | null>(null);
 	// visual multi-select (V): range = anchor..cursor, ops apply to the range
@@ -41,7 +47,7 @@ export default function AdminEmail() {
 	const visRangeIds = (): string[] => {
 		if (!visMode()) return [];
 		const [a, b] = visRangeIdx();
-		return (inbox()?.threads ?? []).slice(a, b + 1).map((t) => t.id);
+		return visibleThreads().slice(a, b + 1).map((t) => t.id);
 	};
 	const [compose, setCompose] = createSignal<{ to: string; subject: string; body: string; threadId?: string } | null>(null);
 	// client-side windowing over the full local corpus — no server pagination
@@ -55,19 +61,65 @@ export default function AdminEmail() {
 	const [draftDiff, setDraftDiff] = createSignal<{ id: string; parts: DraftDiffPart[] | null } | null>(null);
 	const draftSaveTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 
+	// Linear/Superhuman trick: the pane paints from an in-memory thread cache
+	// and neighbors are prefetched after each move — j/k almost always hits
+	// memory. Session-scoped; ponytail: cached threads never refresh in the
+	// background — a reply landing mid-session appears on next reload/sync.
+	const threadCache = new Map<string, ThreadFull>();
+	const cacheThread = (d: ThreadFull) => {
+		if (threadCache.size > 100) threadCache.clear();
+		threadCache.set(d.thread.id, d);
+	};
+	const prefetch = (t?: EmailThread) => {
+		if (!t || threadCache.has(t.id)) return;
+		void fetch(`/api/email/threads/${t.id}`)
+			.then((r) => (r.ok ? (r.json() as Promise<ThreadFull>) : null))
+			.then((d) => d && cacheThread(d))
+			.catch(() => {});
+	};
+	// fast j/j/j fires overlapping fetches — abort the stale one so a slow
+	// earlier response can't overwrite the newer selection (out-of-order race)
+	let threadAbort: AbortController | null = null;
 	const loadThread = async (t: EmailThread, i?: number) => {
-		const res = await fetch(`/api/email/threads/${t.id}`);
-		const data = (await res.json()) as ThreadFull;
 		if (i !== undefined) setSelIdx(i);
-		setSelected(data);
-		const row = document.querySelectorAll("[data-thread-row]")[i ?? selIdx()];
-		row?.scrollIntoView({ block: "nearest" });
-		if (t.unread) {
-			await fetch(`/api/email/threads/${t.id}`, {
+		const idx = i ?? selIdx();
+		const list = visibleThreads();
+		prefetch(list[idx - 1]);
+		prefetch(list[idx + 1]);
+		const paint = (data: ThreadFull) => {
+			setSelected(data);
+			const row = document.querySelectorAll("[data-thread-row]")[idx];
+			row?.scrollIntoView({ block: "nearest" });
+		};
+		const markRead = (ac?: AbortController) => {
+			if (!isUnread(t)) return;
+			setReadOverride({ ...readOverride(), [t.id]: false }); // dim the dot now
+			void fetch(`/api/email/threads/${t.id}`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ op: "read" }),
+				signal: ac?.signal,
 			});
+		};
+		const hit = threadCache.get(t.id);
+		if (hit) {
+			paint(hit);
+			markRead();
+			return;
+		}
+		threadAbort?.abort();
+		const ac = new AbortController();
+		threadAbort = ac;
+		try {
+			const res = await fetch(`/api/email/threads/${t.id}`, { signal: ac.signal });
+			if (!res.ok) return;
+			const data = (await res.json()) as ThreadFull;
+			if (ac.signal.aborted) return;
+			cacheThread(data);
+			paint(data);
+			markRead(ac);
+		} catch (e) {
+			if ((e as Error).name !== "AbortError") throw e;
 		}
 	};
 
@@ -93,9 +145,17 @@ export default function AdminEmail() {
 			return false;
 		}
 		const removing = op === "archive" || op === "spam" || op === "delete";
-		if (removing) cursorToRestore = Math.max(selIdx() - 1, 0);
+		if (removing) {
+			cursorToRestore = Math.max(selIdx() - 1, 0);
+			setHiddenIds(new Set([...hiddenIds(), id]));
+		} else if (op === "unread") {
+			setReadOverride({ ...readOverride(), [id]: true });
+		} else if (op === "unarchive") {
+			const next = new Set(hiddenIds());
+			next.delete(id); // brings the row back into the inbox list
+			setHiddenIds(next);
+		}
 		setSelected(null);
-		void revalidate("email-inbox"); // drop archived/marked rows from the list immediately
 		return true;
 	};
 
@@ -116,10 +176,14 @@ export default function AdminEmail() {
 		}
 		if (op === "archive" || op === "spam" || op === "delete") {
 			cursorToRestore = Math.max(visRangeIdx()[0] - 1, 0);
+			setHiddenIds(new Set([...hiddenIds(), ...ids]));
+		} else if (op === "unread") {
+			const overrides = { ...readOverride() };
+			for (const id of ids) overrides[id] = true;
+			setReadOverride(overrides);
 		}
 		setVisMode(false);
 		setSelected(null);
-		void revalidate("email-inbox");
 		flash(lastErr ? `${op}: ${ok}/${ids.length} ok — last error: ${lastErr}` : `${op}: ${ok} threads`, 8000);
 	};
 
@@ -304,7 +368,7 @@ export default function AdminEmail() {
 				}
 				return;
 			}
-			const threads = inbox()?.threads ?? [];
+			const threads = visibleThreads();
 			if (e.key === "/") {
 				e.preventDefault();
 				searchEl?.focus();
@@ -400,8 +464,8 @@ export default function AdminEmail() {
 	});
 
 	createEffect(() => {
-		const threads = inbox()?.threads;
-		if (cursorToRestore === null || !threads?.length) return;
+		const threads = visibleThreads();
+		if (cursorToRestore === null || !threads.length) return;
 		// the removed row's slot opened — land on the thread above it
 		const i = Math.min(cursorToRestore, threads.length - 1);
 		cursorToRestore = null;
@@ -465,7 +529,7 @@ export default function AdminEmail() {
 			{/* folder tabs */}
 			<div class="folder-tabs">
 				<button type="button" classList={{ active: folder() === "inbox" }} onClick={() => setFolder("inbox")}>
-					Inbox<Show when={inbox()?.threads?.length}> · {inbox()!.threads.length}</Show>
+					Inbox<Show when={visibleThreads().length}> · {visibleThreads().length}</Show>
 				</button>
 				<button type="button" classList={{ active: folder() === "drafts" }} onClick={() => setFolder("drafts")}>
 					Drafts<Show when={inbox()?.drafts?.length}> · {inbox()!.drafts.length}</Show>
@@ -575,8 +639,8 @@ export default function AdminEmail() {
 							visual — {visRangeIds().length} selected · j/k extend · e done · u unread · ! spam · # delete · esc cancel
 						</div>
 					</Show>
-					<Show when={inbox()?.threads?.length} fallback={<div class="muted">{inbox()?.connected ? (searchParams.q ? "No matches." : "Inbox zero.") : "Connect Gmail to load your inbox."}</div>}>
-						<For each={inbox()?.threads.slice(0, visibleCount())}>
+					<Show when={visibleThreads().length} fallback={<div class="muted">{inbox()?.connected ? (searchParams.q ? "No matches." : "Inbox zero.") : "Connect Gmail to load your inbox."}</div>}>
+						<For each={visibleThreads().slice(0, visibleCount())}>
 							{(t, i) => (
 								<div
 									data-thread-row=""
@@ -585,7 +649,7 @@ export default function AdminEmail() {
 										padding: "12px 16px",
 										"margin-bottom": "8px",
 										cursor: "pointer",
-										opacity: t.unread ? 1 : 0.75,
+										opacity: isUnread(t) ? 1 : 0.75,
 										// selected-row tint matches the palette's selection color;
 										// rows inside the visual range get a stronger wash
 										background:
@@ -597,9 +661,10 @@ export default function AdminEmail() {
 										transition: "background 120ms",
 									}}
 									onClick={() => loadThread(t, i())}
+									onpointerover={() => prefetch(t)}
 								>
 									<div style={{ display: "flex", gap: "10px", "align-items": "baseline" }}>
-										<Show when={t.unread}><span style={{ color: "#bc9c5c" }}>●</span></Show>
+										<Show when={isUnread(t)}><span style={{ color: "#bc9c5c" }}>●</span></Show>
 										<strong style={{ "font-size": "14px", flex: 1 }}>{t.subject}</strong>
 										<span class="muted" style={{ "font-size": "12px" }}>{new Date(t.lastMessageAt).toLocaleDateString()}</span>
 									</div>
@@ -609,9 +674,9 @@ export default function AdminEmail() {
 								</div>
 							)}
 						</For>
-						<Show when={(inbox()?.threads.length ?? 0) > visibleCount()}>
+						<Show when={visibleThreads().length > visibleCount()}>
 							<button type="button" class="btn btn-sm" style={{ "margin-top": "8px" }} onClick={() => setVisibleCount((c) => c + 100)}>
-								Load older mail ({inbox()!.threads.length - visibleCount()} more)…
+								Load older mail ({visibleThreads().length - visibleCount()} more)…
 							</button>
 						</Show>
 					</Show>
