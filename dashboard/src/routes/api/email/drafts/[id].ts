@@ -3,8 +3,8 @@ import { eq, inArray } from "drizzle-orm";
 import { getAuthedClient } from "~/lib/session";
 import { db } from "~/db";
 import { emailOutbox } from "~/db/schema";
-import { sendOutboxDraft, saveDraftBody, scheduleOutboxDraft, unscheduleOutboxDraft } from "~/lib/email-queries";
-import { listTextVersions, getTextVersionDiff, deleteTextVersions } from "~/lib/crdt-text";
+import { sendOutboxDraft, saveDraftBody, scheduleOutboxDraft, unscheduleOutboxDraft } from "~/lib/email-outbox";
+import { listTextVersions, getTextVersionDiff, deleteTextVersions } from "~/lib/crdt-text-db";
 
 /**
  * /api/email/drafts/:id
