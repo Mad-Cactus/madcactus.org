@@ -2,7 +2,7 @@ import type { APIEvent } from "@solidjs/start/server";
 import { eq, and, inArray, desc, gt } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import { hashKey } from "~/lib/crypto";
-import { db } from "~/db";
+import { db, raw } from "~/db";
 import {
 	apiKeys,
 	clientMembers,
@@ -350,7 +350,7 @@ async function getDailyBriefing(ctx: AuthedMember) {
 async function searchDocuments(ctx: AuthedMember, params: { query: string }) {
 	if (ctx.projectIds.length === 0 || !params.query?.trim()) return [];
 
-	const results = await db.execute<{
+	const results = await raw<{
 		title: string;
 		type: string;
 		url: string | null;

@@ -4,7 +4,7 @@ import { getTableColumns } from "drizzle-orm";
 import { getClient, clientSignIn, setClientSessionCookie } from "./client-session";
 import { supabaseAdmin, supabaseService } from "./supabase";
 import { generateApiKey, hashKey, keyPrefix } from "./crypto";
-import { db } from "~/db";
+import { db, raw } from "~/db";
 import {
 	projects,
 	companies,
@@ -158,7 +158,7 @@ export const searchDocumentsQuery = query(async (q: string): Promise<SearchHit[]
 	const projectIds = memberProjects.map((p) => p.id);
 	if (projectIds.length === 0) return [];
 
-	const results = await db.execute<{
+	const results = await raw<{
 		id: string;
 		title: string;
 		type: string;

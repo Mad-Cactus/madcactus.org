@@ -1,5 +1,4 @@
 import { and, eq, sql } from "drizzle-orm";
-import { createHash } from "crypto";
 import { db } from "~/db";
 import { apiKeys } from "~/db/schema";
 
@@ -9,7 +8,7 @@ import { apiKeys } from "~/db/schema";
 export async function checkApiKey(request: Request): Promise<boolean> {
 	const auth = request.headers.get("authorization") || "";
 	if (!auth.startsWith("Bearer mc_")) return false;
-	const keyHash = createHash("sha256").update(auth.slice(7)).digest("hex");
+	const keyHash = new Bun.CryptoHasher("sha256").update(auth.slice(7)).digest("hex");
 	const [keyRow] = await db
 		.select({ id: apiKeys.id })
 		.from(apiKeys)

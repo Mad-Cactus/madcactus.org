@@ -3,12 +3,11 @@
 // degrades to a no-op without an embeddings key or without pgvector (local dev),
 // and search falls back to pure FTS. Backfill is content-hash based — rechunk
 // or edit a text and it re-embeds on the next cycle.
-import { createHash } from "crypto";
 import { sql } from "drizzle-orm";
-import { db } from "~/db";
+import { db, raw } from "~/db";
 
 export function textHash(text: string): string {
-	return createHash("md5").update(text).digest("hex");
+	return new Bun.CryptoHasher("md5").update(text).digest("hex");
 }
 
 async function embedBatch(texts: string[]): Promise<number[][]> {
@@ -55,7 +54,7 @@ export async function embedPending(opts: { batchSize?: number } = {}): Promise<R
 	if (!embeddingsEnabled()) return { skipped: "no embeddings key set" };
 	const batch = opts.batchSize ?? 32;
 	try {
-		const chunks = await db.execute<{ id: string; chunk_text: string }>(sql`
+		const chunks = await raw<{ id: string; chunk_text: string }>(sql`
 			SELECT id, chunk_text FROM brain_chunks
 			WHERE embedding IS NULL OR embedded_text_hash IS DISTINCT FROM md5(chunk_text)
 			LIMIT ${batch}
@@ -70,7 +69,7 @@ export async function embedPending(opts: { batchSize?: number } = {}): Promise<R
 				`);
 			}
 		}
-		const facts = await db.execute<{ id: string; fact: string }>(sql`
+		const facts = await raw<{ id: string; fact: string }>(sql`
 			SELECT id, fact FROM brain_facts
 			WHERE expired_at IS NULL AND (embedding IS NULL OR embedded_at IS NULL)
 			LIMIT ${batch}

@@ -6,7 +6,7 @@ import { apiKeys, companies, outreachProspects, OUTREACH_STAGES } from "~/db/sch
 import { brainQuery, entityFacts } from "~/lib/brain/search";
 import { brainJobs } from "~/db/schema";
 import { agentWrite, createDoc, getDoc, getDocVersionDiff, listDocVersions, listDocs } from "~/lib/docs";
-import { getVoiceLessons, lintVoiceText } from "~/lib/voice-lint";
+import { getVoiceLessons, lintVoiceText } from "~/lib/voice-lint-db";
 import { searchWorkspace, recentActivity } from "~/lib/brain/workspace-search";
 import { maybeRunCycle } from "~/lib/brain/distill";
 
@@ -527,7 +527,7 @@ export async function POST(event: APIEvent) {
 						break;
 					}
 					case "create_email_draft": {
-						const { createEmailDraft } = await import("~/lib/email-queries");
+						const { createEmailDraft } = await import("~/lib/email-outbox");
 						result = await createEmailDraft({
 							to: String(toolArgs.to ?? ""),
 							subject: String(toolArgs.subject ?? ""),

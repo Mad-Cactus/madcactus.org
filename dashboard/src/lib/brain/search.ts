@@ -3,7 +3,7 @@
 // configured, facts by entity + text, open loops. Raw workspace records stay
 // in workspace-search.ts.
 import { sql, desc, eq, and, isNull } from "drizzle-orm";
-import { db } from "~/db";
+import { db, raw } from "~/db";
 import { brainChunks, brainFacts, brainOpenLoops, brainPages } from "~/db/schema";
 import { embedQuery } from "./embed";
 
@@ -28,7 +28,7 @@ export async function brainQuery(query: string): Promise<BrainQueryResult> {
 	if (vec) {
 		try {
 			// raw SQL: the embedding columns exist only on pgvector DBs (migration 0017)
-			semantic = await db.execute<{ slug: string; title: string; snippet: string }>(sql`
+			semantic = await raw<{ slug: string; title: string; snippet: string }>(sql`
 				SELECT p.slug, p.title, left(c.chunk_text, 400) AS snippet
 				FROM brain_chunks c
 				JOIN brain_pages p ON p.id = c.page_id

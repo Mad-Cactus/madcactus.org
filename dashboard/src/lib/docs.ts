@@ -6,11 +6,11 @@
 // merges instead of clobbering. The markdown column is the projection: search,
 // export, lint, pairs.
 import { desc, eq } from "drizzle-orm";
-import { randomBytes } from "crypto";
+import { randomHex } from "~/lib/crypto";
 import { db } from "~/db";
 import { docs, type Doc } from "~/db/schema";
-import { lintVoiceText } from "~/lib/voice-lint";
-import { trackText, listTextVersions, getTextVersionDiff } from "~/lib/crdt-text";
+import { lintVoiceText } from "~/lib/voice-lint-db";
+import { trackText, listTextVersions, getTextVersionDiff } from "~/lib/crdt-text-db";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -128,7 +128,7 @@ export async function renameDoc(id: string, title: string) {
 }
 
 export async function toggleShare(id: string, enabled: boolean): Promise<string | null> {
-	const token = enabled ? randomBytes(12).toString("hex") : null;
+	const token = enabled ? randomHex(12) : null;
 	await db.update(docs).set({ shareToken: token }).where(eq(docs.id, id));
 	return token;
 }
