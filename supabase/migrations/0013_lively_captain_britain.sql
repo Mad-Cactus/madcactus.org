@@ -1,1 +1,0 @@
-ALTER TABLE "outreach_prospects" ADD COLUMN "video_watch_seconds" integer DEFAULT 0 NOT NULL;

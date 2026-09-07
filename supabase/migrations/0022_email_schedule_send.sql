@@ -1,1 +1,0 @@
-ALTER TABLE "email_outbox" ADD COLUMN "send_at" timestamp with time zone;
