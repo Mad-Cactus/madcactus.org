@@ -1,7 +1,7 @@
 // Brain admin — queries + actions for the /admin/brain page.
 import { query, action } from "@solidjs/router";
 import { desc, eq, sql } from "drizzle-orm";
-import { db } from "~/db";
+import { db, raw } from "~/db";
 import {
 	brainFacts,
 	brainOpenLoops,
@@ -32,7 +32,7 @@ export const getBrainStatsQuery = query(async () => {
 		.select({ n: sql<number>`count(*)::int` })
 		.from(brainOpenLoops)
 		.where(eq(brainOpenLoops.status, "open"));
-	const [cursor] = await db.execute<{ at: string | null }>(sql`
+	const [cursor] = await raw<{ at: string | null }>(sql`
 		SELECT value->>'at' AS at FROM brain_state WHERE key = 'last_cycle_at'
 	`);
 	return {

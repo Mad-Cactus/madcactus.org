@@ -23,7 +23,8 @@ import {
 import { chunkText, factHash, slugify } from "./core";
 import { syncEntities, syncPersons, syncProspects, detectLoops, backfillTimeline, recomputeWeight } from "./ingest";
 import { embedPending } from "./embed";
-import { addVoicePatterns, type PatternCandidate } from "~/lib/voice-lint";
+import { addVoicePatterns } from "~/lib/voice-lint-db";
+import type { PatternCandidate } from "~/lib/voice-lint";
 import { syncSlack } from "~/lib/slack";
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";

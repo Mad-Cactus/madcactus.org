@@ -6,7 +6,7 @@ import { and, eq, inArray, lte } from "drizzle-orm";
 import { db } from "~/db";
 import { docs, emailOutbox } from "~/db/schema";
 import { alertEmail, alertPublishFailure, publishDoc } from "~/lib/publish";
-import { sendOutboxInner } from "~/lib/email-queries";
+import { sendOutboxInner } from "~/lib/email-outbox";
 
 const TICK_MS = 60_000;
 const STALE_MS = 5 * 60_000;

@@ -2,6 +2,7 @@ import type { APIEvent } from "@solidjs/start/server";
 import { Resend } from "resend";
 import { generateScorecardPDF } from "./scorecard-pdf";
 import type { ScoreData } from "./types";
+import { toBase64 } from "~/lib/crypto";
 
 export async function OPTIONS() {
 	return new Response(null, {
@@ -62,7 +63,7 @@ export async function POST(event: APIEvent) {
 				attachments: [
 					{
 						filename: "AI-Readiness-Assessment.pdf",
-						content: pdfBuffer,
+						content: toBase64(pdfBuffer), // resend accepts base64 strings
 					},
 				],
 			});
