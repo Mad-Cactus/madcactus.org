@@ -2,10 +2,11 @@
 // Run: DATABASE_URL=postgres://dummy bun test src/lib/gmail.test.ts
 import { describe, expect, test } from "bun:test";
 import { buildMime, extractText, addr, latestMessage, isTrashed } from "./gmail";
+import { toBase64 } from "./crypto";
 
 const part = (mimeType: string, data: string): any => ({
 	mimeType,
-	body: { data: Buffer.from(data).toString("base64") },
+	body: { data: toBase64(data) },
 	headers: [],
 });
 

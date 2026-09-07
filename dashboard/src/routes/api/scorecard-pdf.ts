@@ -1,11 +1,10 @@
 import type { ScoreData, ContentBlock } from "./types";
 import { CATEGORY_CONTENT } from "./types";
-import { join } from "path";
 
-const FONT_DIR = join(import.meta.dirname, "fonts");
-const FONT_REGULAR = join(FONT_DIR, "PlayfairDisplay.ttf");
-const FONT_ITALIC = join(FONT_DIR, "PlayfairDisplay-Italic.ttf");
-const LOGO = join(import.meta.dirname, "cactus-seal.png");
+const FONT_DIR = `${import.meta.dirname}/fonts`;
+const FONT_REGULAR = `${FONT_DIR}/PlayfairDisplay.ttf`;
+const FONT_ITALIC = `${FONT_DIR}/PlayfairDisplay-Italic.ttf`;
+const LOGO = `${import.meta.dirname}/cactus-seal.png`;
 
 const C = {
     vellum: "#f6f6f6",
@@ -191,7 +190,7 @@ class PageState {
     }
 }
 
-export function generateScorecardPDF(data: ScoreData): Promise<Buffer> {
+export function generateScorecardPDF(data: ScoreData): Promise<Uint8Array<ArrayBuffer>> {
     return new Promise(async (resolve, reject) => {
         try {
             const PDFDocument = (await import("pdfkit")).default;
@@ -200,9 +199,18 @@ export function generateScorecardPDF(data: ScoreData): Promise<Buffer> {
                 margins: { top: 0, bottom: 0, left: 0, right: 0 },
             });
 
-            const chunks: Buffer[] = [];
-            doc.on("data", (c: Buffer) => chunks.push(c));
-            doc.on("end", () => resolve(Buffer.concat(chunks)));
+            const chunks: Uint8Array[] = [];
+            doc.on("data", (c: Uint8Array) => chunks.push(c));
+            doc.on("end", () => {
+                const total = chunks.reduce((n, c) => n + c.length, 0);
+                const out = new Uint8Array(total);
+                let off = 0;
+                for (const c of chunks) {
+                    out.set(c, off);
+                    off += c.length;
+                }
+                resolve(out);
+            });
 
             const tc = tierColor(data.tier);
 

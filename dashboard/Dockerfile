@@ -20,12 +20,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
 
 COPY --from=builder /app/.output ./.output
 
-# ponytail: nitro externals tracing copies loro-crdt's glue to
-# .output/server/_libs/ but not its sibling wasm (loaded via
-# readFileSync(join(__dirname, "loro_wasm_bg.wasm")) at runtime) ->
-# ENOENT 500s on /admin/docs + /admin/email. Remove if nitro traces it.
-COPY --from=builder /app/node_modules/loro-crdt/nodejs/loro_wasm_bg.wasm ./.output/server/_libs/
-
 EXPOSE 3000
 ENV HOST=0.0.0.0 PORT=3000 NODE_ENV=production
 

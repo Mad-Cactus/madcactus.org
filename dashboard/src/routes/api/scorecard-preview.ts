@@ -27,7 +27,7 @@ export async function GET() {
 
 	const pdf = await generateScorecardPDF(sampleData);
 
-	return new Response(new Uint8Array(pdf), {
+	return new Response(pdf, {
 		status: 200,
 		headers: {
 			"Content-Type": "application/pdf",

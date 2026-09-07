@@ -5,7 +5,7 @@
 //   recompute_weight: salience per page
 // These run every cycle; the LLM phases (distill.ts) run after them.
 import { and, desc, eq, gte, isNull, sql } from "drizzle-orm";
-import { db } from "~/db";
+import { db, raw } from "~/db";
 import {
 	brainFacts,
 	brainOpenLoops,
@@ -46,7 +46,7 @@ export async function syncPersons(): Promise<{ created: number }> {
 		}
 	};
 	// meeting speakers (transcript_json blocks)
-	const speakers = await db.execute<{ speaker: string }>(sql`
+	const speakers = await raw<{ speaker: string }>(sql`
 		SELECT DISTINCT t->>'speaker' AS speaker
 		FROM documents, jsonb_array_elements(transcript_json::jsonb) AS t
 		WHERE type = 'transcript' AND transcript_json IS NOT NULL
@@ -54,7 +54,7 @@ export async function syncPersons(): Promise<{ created: number }> {
 	`);
 	for (const r of speakers) await ensure(r.speaker ?? "");
 	// email counterparties (inbound senders)
-	const senders = await db.execute<{ from_email: string | null }>(sql`
+	const senders = await raw<{ from_email: string | null }>(sql`
 		SELECT from_email FROM email_messages WHERE from_email IS NOT NULL
 		GROUP BY from_email ORDER BY count(*) DESC LIMIT 200
 	`);
@@ -73,7 +73,7 @@ export async function syncPersons(): Promise<{ created: number }> {
 		await ensure(m.name);
 	}
 	// slack members (real names only)
-	const slack = await db.execute<{ real_name: string; name: string }>(sql`
+	const slack = await raw<{ real_name: string; name: string }>(sql`
 		SELECT real_name, name FROM slack_users WHERE deleted = false AND is_bot = false LIMIT 500
 	`);
 	for (const r of slack) await ensure(r.real_name || r.name);
@@ -186,7 +186,7 @@ export async function syncEntities(): Promise<{ created: number }> {
 
 /** Deterministic unanswered-inbound detector over email threads. */
 export async function detectLoops(opts: { staleDays?: number } = {}): Promise<{ opened: number; closed: number }> {
-	const rows = await db.execute<{
+	const rows = await raw<{
 		id: string;
 		subject: string;
 		from_email: string | null;
@@ -251,7 +251,7 @@ export async function detectLoops(opts: { staleDays?: number } = {}): Promise<{ 
 /** Timeline entries on company pages from recent thread activity (deduped). */
 export async function backfillTimeline(days = 30): Promise<{ inserted: number }> {
 	const since = new Date(Date.now() - days * 86_400_000).toISOString();
-	const rows = await db.execute<{ company_id: string; company_name: string; thread_id: string; subject: string; last_message_at: Date }>(sql`
+	const rows = await raw<{ company_id: string; company_name: string; thread_id: string; subject: string; last_message_at: Date }>(sql`
 		SELECT c.id AS company_id, c.name AS company_name, t.id AS thread_id, t.subject, t.last_message_at
 		FROM email_threads t
 		JOIN client_members cm ON cm.email = t.from_email

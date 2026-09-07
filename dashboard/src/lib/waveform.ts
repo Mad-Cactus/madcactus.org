@@ -1,7 +1,3 @@
-import { spawn } from "node:child_process";
-import { readFile, mkdtemp, writeFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { query } from "@solidjs/router";
 import { getCurrentUser } from "./session";
 import { supabaseService } from "~/lib/supabase";
@@ -41,29 +37,25 @@ export async function computeWaveform(path: string): Promise<Waveform | null> {
 	const { data: blob, error: dlErr } = await svc.storage.from("portal-docs").download(path);
 	if (dlErr || !blob) return null;
 
-	const dir = await mkdtemp(join(tmpdir(), "mc-wave-"));
+	const dir = `${process.env.TMPDIR ?? "/tmp"}/mc-wave-${Date.now()}-${crypto.randomUUID()}`;
 	try {
-		const inPath = join(dir, "in.audio");
-		const pcmPath = join(dir, "pcm.raw");
-		await writeFile(inPath, Buffer.from(await blob.arrayBuffer()));
+		const inPath = `${dir}/in.audio`;
+		const pcmPath = `${dir}/pcm.raw`;
+		await Bun.write(inPath, blob);
 
-		await new Promise<void>((resolve, reject) => {
-			spawn(
-				"ffmpeg",
-				[
-					"-hide_banner", "-loglevel", "error",
-					"-i", inPath,
-					"-ac", "1", "-ar", String(SAMPLE_RATE),
-					"-f", "s16le", "-acodec", "pcm_s16le",
-					"-y", pcmPath,
-				],
-				{ timeout: 300_000 },
-			).on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`ffmpeg exit ${code}`))))
-				.on("error", reject);
+		// pcmPath is written directly by ffmpeg (stdout redirection via -y)
+		const proc = Bun.spawn({
+			cmd: ["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", inPath, "-ac", "1", "-ar", String(SAMPLE_RATE), "-f", "s16le", "-acodec", "pcm_s16le", "-y", pcmPath],
+			stdout: "ignore",
+			stderr: "pipe",
+			timeout: 300_000,
 		});
+		const code = await proc.exited;
+		if (code !== 0) throw new Error(`ffmpeg exit ${code}: ${(await new Response(proc.stderr).text()).slice(0, 300)}`);
 
-		const pcm = await readFile(pcmPath);
-		const samples = pcm.length / 2; // int16 LE
+		const pcm = await Bun.file(pcmPath).bytes(); // s16le → read via DataView
+		const view = new DataView(pcm.buffer);
+		const samples = Math.floor(pcm.length / 2); // int16 LE
 		const per = Math.max(1, Math.floor(samples / BUCKET_COUNT));
 		const peaks = new Array<number>(BUCKET_COUNT * 2);
 		for (let b = 0; b < BUCKET_COUNT; b++) {
@@ -72,7 +64,7 @@ export async function computeWaveform(path: string): Promise<Waveform | null> {
 			for (let i = 0; i < per; i++) {
 				const off = (b * per + i) * 2;
 				if (off + 1 >= pcm.length) break;
-				const v = pcm.readInt16LE(off) / 32768;
+				const v = view.getInt16(off, true) / 32768;
 				if (v < min) min = v;
 				if (v > max) max = v;
 			}
@@ -93,6 +85,6 @@ export async function computeWaveform(path: string): Promise<Waveform | null> {
 			.catch(() => {});
 		return body;
 	} finally {
-		await rm(dir, { recursive: true, force: true }).catch(() => {});
+		await Bun.$`rm -rf ${dir}`.nothrow().quiet();
 	}
 }

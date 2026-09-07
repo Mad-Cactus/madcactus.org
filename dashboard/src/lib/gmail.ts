@@ -2,6 +2,7 @@
 // body extraction, MIME sending. One account (Collin's), kept deliberately thin.
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "~/db";
+import { fromBase64, toBase64Url } from "~/lib/crypto";
 import { emailAccounts, emailMessages, emailThreads, type EmailAccount, type EmailThread } from "~/db/schema";
 
 const GOOGLE_AUTH = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -120,7 +121,7 @@ type GmailPayload = {
 };
 
 function b64url(data: string): string {
-	return Buffer.from(data, "base64url").toString("utf8");
+	return fromBase64(data);
 }
 
 function header(payload: GmailPayload, name: string): string {
@@ -417,11 +418,7 @@ export async function sendGmail(
 ): Promise<string> {
 	// Gmail threads replies via the threadId param — no In-Reply-To guessing
 	const threadId = input.inReplyToGmailId ? await threadIdOf(account, input.inReplyToGmailId) : undefined;
-	const raw = Buffer.from(buildMime({ to: input.to, subject: input.subject, body: input.body }))
-		.toString("base64")
-		.replace(/\+/g, "-")
-		.replace(/\//g, "_")
-		.replace(/=+$/, "");
+	const raw = toBase64Url(buildMime({ to: input.to, subject: input.subject, body: input.body }));
 	const res = await gmail<{ id: string }>(account, "/messages/send", {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },

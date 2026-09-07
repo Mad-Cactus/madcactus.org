@@ -548,7 +548,7 @@ export const publishMeetingAction = action(async (formData: FormData) => {
 			return { error: `Could not fetch audio: ${dlErr?.message ?? "empty"}` };
 		}
 
-		let bytes: Buffer = Buffer.from(await blob.arrayBuffer());
+		let bytes: Uint8Array = new Uint8Array(await blob.arrayBuffer());
 		if (needsSplice) {
 			const ranges = mergeKeptRanges(blocks);
 			const spliced = await spliceAudio(bytes, ranges);
@@ -587,24 +587,18 @@ export const publishMeetingAction = action(async (formData: FormData) => {
 
 /** ffmpeg keep-list splice: atrim each range, concat. Returns re-encoded mp3. */
 async function spliceAudio(
-	input: Buffer,
+	input: Uint8Array,
 	ranges: Array<[number, number]>,
-): Promise<{ bytes?: Buffer; error?: string }> {
-	const { promises: fsp } = await import("node:fs");
-	const os = await import("node:os");
-	const path = await import("node:path");
-	const { execFile } = await import("node:child_process");
-	const run = (cmd: string, args: string[]) =>
-		new Promise<{ ok: boolean; stderr: string }>((resolve) => {
-			execFile(cmd, args, { timeout: 300_000, maxBuffer: 10 * 1024 * 1024 }, (err, _so, se) =>
-				resolve({ ok: !err, stderr: se || String(err) }),
-			);
-		});
-
-	const dir = await fsp.mkdtemp(path.join(os.tmpdir(), "mc-splice-"));
-	const inPath = path.join(dir, "in.audio");
-	const outPath = path.join(dir, "out.mp3");
-	await fsp.writeFile(inPath, input);
+): Promise<{ bytes?: Uint8Array; error?: string }> {
+	const dir = `${process.env.TMPDIR ?? "/tmp"}/mc-splice-${Date.now()}-${crypto.randomUUID()}`;
+	const inPath = `${dir}/in.audio`;
+	const outPath = `${dir}/out.mp3`;
+	await Bun.write(inPath, input);
+	const run = async (cmd: string[]) => {
+		const proc = Bun.spawn({ cmd, stdout: "ignore", stderr: "pipe", timeout: 300_000, maxBuffer: 10 * 1024 * 1024 });
+		const code = await proc.exited;
+		return { ok: code === 0, stderr: code === 0 ? "" : await new Response(proc.stderr).text() };
+	};
 
 	// Supabase Free caps every object at 50MB — size the bitrate from the
 	// output duration so any meeting length fits (same math as the upload
@@ -619,8 +613,8 @@ async function spliceAudio(
 	);
 	const filter =
 		parts.join(";") + `;${ranges.map((_, i) => `[a${i}]`).join("")}concat=n=${ranges.length}:v=0:a=1[out]`;
-	const res = await run("ffmpeg", [
-		"-hide_banner", "-loglevel", "error",
+	const res = await run([
+		"ffmpeg", "-hide_banner", "-loglevel", "error",
 		"-i", inPath,
 		"-filter_complex", filter,
 		"-map", "[out]",
@@ -630,9 +624,9 @@ async function spliceAudio(
 	if (!res.ok) {
 		return { error: `ffmpeg failed (is it installed?): ${res.stderr.slice(0, 300)}` };
 	}
-	const bytes = await fsp.readFile(outPath);
-	await fsp.rm(dir, { recursive: true, force: true }).catch(() => {});
-	return { bytes };
+	const out = await Bun.file(outPath).bytes();
+	await Bun.$`rm -rf ${dir}`.nothrow().quiet();
+	return { bytes: out };
 }
 
 // ── Admin API keys (memberless — server-to-server, e.g. meeting publisher) ──
