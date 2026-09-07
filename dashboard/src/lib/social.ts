@@ -15,6 +15,16 @@ type Tokens = {
 	memberUrn?: string;
 };
 
+/** Public origin the browser sees. In prod Fly terminates TLS, so url.origin
+ *  is http:// — LinkedIn rejects a redirect_uri that doesn't match the https
+ *  one registered in the app console (OAuth broke exactly this way). */
+export function externalOrigin(req: Request): string {
+	const url = new URL(req.url);
+	const proto = req.headers.get("x-forwarded-proto")?.split(",")[0].trim() ?? url.protocol.replace(":", "");
+	const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? url.host;
+	return `${proto}://${host}`;
+}
+
 export type LinkedInStatus = {
 	configured: boolean;
 	connected: boolean;
@@ -146,4 +156,22 @@ export async function postToLinkedIn(text: string): Promise<string> {
 	if (!res.ok) throw new Error(`linkedin post error ${res.status}: ${await res.text()}`);
 	const postId = res.headers.get("x-restli-id") ?? res.headers.get("X-RestLi-Id") ?? "";
 	return `urn:li:share:${postId}`;
+}
+
+/** Comment on one of our own posts (e.g. the scheduled first comment).
+ *  socialActions is LinkedIn's comment surface for shares/posts. */
+export async function commentOnLinkedIn(postUrn: string, text: string): Promise<void> {
+	const [accessToken, row] = await Promise.all([validAccessToken(), getAccount()]);
+	if (!row?.memberUrn) throw new Error("LinkedIn connected but member URN missing — reconnect required");
+	const res = await fetch(`https://api.linkedin.com/rest/socialActions/${encodeURIComponent(postUrn)}/comments`, {
+		method: "POST",
+		headers: {
+			Authorization: `Bearer ${accessToken}`,
+			"LinkedIn-Version": API_VERSION,
+			"Content-Type": "application/json",
+			"X-Restli-Protocol-Version": "2.0.0",
+		},
+		body: JSON.stringify({ actor: row.memberUrn, object: postUrn, message: { text } }),
+	});
+	if (!res.ok) throw new Error(`linkedin comment error ${res.status}: ${await res.text()}`);
 }

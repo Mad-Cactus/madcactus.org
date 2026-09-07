@@ -1,6 +1,6 @@
 import type { APIEvent } from "@solidjs/start/server";
 import { getAuthedClient } from "~/lib/session";
-import { exchangeCode } from "~/lib/social";
+import { exchangeCode, externalOrigin } from "~/lib/social";
 
 /** OAuth callback — exchanges the code, stores tokens, redirects to the docs
  *  list. State cookie must match what ?start=1 set (CSRF). */
@@ -22,7 +22,7 @@ export const GET = async (event: APIEvent) => {
 	if (url.searchParams.get("error")) return fail(url.searchParams.get("error_description") ?? "consent denied");
 
 	try {
-		await exchangeCode(code, `${url.origin}/api/social/linkedin/callback`);
+		await exchangeCode(code, `${externalOrigin(event.request)}/api/social/linkedin/callback`);
 	} catch (e) {
 		return fail(e instanceof Error ? e.message : String(e));
 	}

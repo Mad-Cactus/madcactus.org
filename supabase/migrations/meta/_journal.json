@@ -183,6 +183,13 @@
       "when": 1788735803092,
       "tag": "0025_outreach_video_description",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1788746176613,
+      "tag": "0026_slippery_rattler",
+      "breakpoints": true
     }
   ]
 }

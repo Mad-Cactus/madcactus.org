@@ -101,10 +101,15 @@ export async function setDocKind(id: string, kind: "post" | "newsletter" | null)
 
 /** Queue a doc for the scheduler. Any status is allowed — rescheduling a
  *  failed or already-published doc is a normal correction. */
-export async function scheduleDoc(id: string, when: Date) {
+export async function scheduleDoc(id: string, when: Date, firstComment?: string | null) {
 	await db
 		.update(docs)
-		.set({ status: "scheduled", scheduledFor: when, publishError: null })
+		.set({
+			status: "scheduled",
+			scheduledFor: when,
+			publishError: null,
+			...(firstComment !== undefined ? { firstComment: firstComment?.trim() || null } : {}),
+		})
 		.where(eq(docs.id, id));
 }
 

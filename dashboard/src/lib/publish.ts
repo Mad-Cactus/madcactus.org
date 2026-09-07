@@ -4,7 +4,7 @@
 import { marked } from "marked";
 import { Resend } from "resend";
 import type { Doc } from "~/db/schema";
-import { postToLinkedIn } from "~/lib/social";
+import { postToLinkedIn, commentOnLinkedIn } from "~/lib/social";
 
 const ALERT_EMAIL = process.env.ALERT_EMAIL ?? "cpfeifer@madcactus.org";
 const NEWSLETTER_FROM = process.env.NEWSLETTER_FROM ?? "Collin Pfeifer <dispatch@madcactus.org>";
@@ -37,7 +37,20 @@ export function markdownToHtml(md: string): string {
 }
 
 export async function publishDoc(doc: Doc): Promise<string> {
-	if (doc.kind === "post") return postToLinkedIn(markdownToPostText(doc.markdown));
+	if (doc.kind === "post") {
+		const urn = await postToLinkedIn(markdownToPostText(doc.markdown));
+		// The post is already live — a failed first comment must not mark the
+		// doc failed (a retry would double-post). Alert instead.
+		const fc = doc.firstComment?.trim();
+		if (fc) {
+			try {
+				await commentOnLinkedIn(urn, fc);
+			} catch (err) {
+				await alertEmail(`LinkedIn first comment failed: ${doc.title}`, `<p>The post published, but the first comment could not be added.</p><pre>${err instanceof Error ? err.message : String(err)}</pre><p>Comment manually: <strong>${fc}</strong></p>`);
+			}
+		}
+		return urn;
+	}
 	if (doc.kind === "newsletter") return sendNewsletter(doc);
 	throw new Error(`doc ${doc.id} has no publishable kind`);
 }

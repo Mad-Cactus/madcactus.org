@@ -35,6 +35,7 @@ const Doc = (props: { id: string; doc: NonNullable<Awaited<ReturnType<typeof get
 	const [schedFor, setSchedFor] = createSignal<string | null>(doc().scheduledFor?.toISOString() ?? null);
 	const [publishError, setPublishError] = createSignal(doc().publishError ?? null);
 	const [schedInput, setSchedInput] = createSignal("");
+	const [firstComment, setFirstComment] = createSignal("");
 	const [liConnected, setLiConnected] = createSignal<boolean | null>(null);
 	let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -46,6 +47,7 @@ const Doc = (props: { id: string; doc: NonNullable<Awaited<ReturnType<typeof get
 				setMarkdown(d.markdown);
 				if (d.shareToken) setShareUrl(`${location.origin}/share/${d.shareToken}`);
 				if (d.status === "scheduled" && d.scheduledFor) setSchedInput(toLocalInput(new Date(d.scheduledFor)));
+				setFirstComment(d.firstComment ?? "");
 				clearInterval(stop);
 			}
 		}, 50);
@@ -105,7 +107,7 @@ const Doc = (props: { id: string; doc: NonNullable<Awaited<ReturnType<typeof get
 			return;
 		}
 		await save(props.id, markdown());
-		const r = await post(props.id, { op: "schedule", scheduledFor: when.toISOString() });
+		const r = await post(props.id, { op: "schedule", scheduledFor: when.toISOString(), firstComment: firstComment() });
 		if (r.ok) {
 			setDocStatus("scheduled");
 			setSchedFor(r.scheduledFor ?? when.toISOString());
@@ -199,6 +201,16 @@ const Doc = (props: { id: string; doc: NonNullable<Awaited<ReturnType<typeof get
 								value={schedInput()}
 								onChange={(e) => setSchedInput(e.currentTarget.value)}
 							/>
+							<Show when={kind() === "post"}>
+								<input
+									type="text"
+									class="doc-sched-input"
+									aria-label="First comment (posted right after publish)"
+									placeholder="First comment (optional)"
+									value={firstComment()}
+									onChange={(e) => setFirstComment(e.currentTarget.value)}
+								/>
+							</Show>
 							<button type="button" class="btn btn-primary btn-sm" onClick={() => void schedule()}>
 								{docStatus() === "scheduled" ? "Reschedule" : "Schedule"}
 							</button>
@@ -209,7 +221,7 @@ const Doc = (props: { id: string; doc: NonNullable<Awaited<ReturnType<typeof get
 							</Show>
 						</>
 					}>
-						<a class="btn btn-sm" href="/api/social/linkedin?start=1">Connect LinkedIn to schedule</a>
+						<a class="btn btn-sm" target="_top" href="/api/social/linkedin?start=1">Connect LinkedIn to schedule</a>
 					</Show>
 				</Show>
 			</div>

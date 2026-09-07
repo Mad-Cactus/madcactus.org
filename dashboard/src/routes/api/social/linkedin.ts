@@ -1,6 +1,6 @@
 import type { APIEvent } from "@solidjs/start/server";
 import { getAuthedClient } from "~/lib/session";
-import { authUrl, linkedInStatus } from "~/lib/social";
+import { authUrl, externalOrigin, linkedInStatus } from "~/lib/social";
 import { randomHex } from "~/lib/crypto";
 
 /**
@@ -21,8 +21,9 @@ export const GET = async (event: APIEvent) => {
 
 	if ((await linkedInStatus()).configured === false) return json({ error: "LINKEDIN_CLIENT_ID/SECRET not configured" }, 500);
 	const state = randomHex(16);
+	const callback = `${externalOrigin(event.request)}/api/social/linkedin/callback`;
 	const headers = new Headers({
-		Location: authUrl(`${url.origin}/api/social/linkedin/callback`, state),
+		Location: authUrl(callback, state),
 		"Set-Cookie": `li_oauth_state=${state}; Path=/; HttpOnly; SameSite=Lax; Max-Age=600`,
 	});
 	return new Response(null, { status: 302, headers });

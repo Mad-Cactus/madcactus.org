@@ -62,6 +62,7 @@ export const POST = async (event: APIEvent) => {
 		title?: string;
 		kind?: string;
 		scheduledFor?: string;
+		firstComment?: string;
 	};
 	try {
 		if (body.op === "rename") return json({ ok: await renameDoc(event.params.id, String(body.title ?? "").trim() || "Untitled") });
@@ -78,7 +79,7 @@ export const POST = async (event: APIEvent) => {
 		if (body.op === "schedule") {
 			const when = new Date(String(body.scheduledFor));
 			if (Number.isNaN(when.getTime())) return json({ error: "Invalid scheduledFor — use an ISO datetime" }, 400);
-			await scheduleDoc(event.params.id, when);
+			await scheduleDoc(event.params.id, when, body.firstComment);
 			return json({ ok: true, status: "scheduled", scheduledFor: when.toISOString() });
 		}
 		if (body.op === "unschedule") {

@@ -396,6 +396,9 @@ export const docs = pgTable(
 		status: docStatus("status").notNull().default("final"),
 		// post/newsletter → Finalize button becomes Schedule; null → plain doc
 		kind: docKind("kind"),
+		// post → optional first comment published by the author right after the
+		// post goes live (the “comment below” growth move),
+		firstComment: text("first_comment"),
 		scheduledFor: timestamp("scheduled_for", { withTimezone: true }),
 		publishedAt: timestamp("published_at", { withTimezone: true }),
 		publishError: text("publish_error"),
