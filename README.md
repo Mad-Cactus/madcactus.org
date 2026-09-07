@@ -4,8 +4,7 @@ Mad Cactus monorepo.
 
 | Path | What | Stack |
 | --- | --- | --- |
-| `dashboard/` | Ops dashboard (app.madcactus.org) — email, docs, redline, meetings | SolidStart + Nitro, Postgres (Supabase), deployed to Fly (`fly deploy` from `dashboard/`) |
-| `marketing/` | Public site + newsletter | Astro |
+| `dashboard/` | The whole site — marketing (madcactus.org, prerendered), app (app.madcactus.org/admin), live Cactus Dispatch issues (SSR from DB) | SolidStart + Nitro, Postgres (Supabase), deployed to Fly (`fly deploy` from `dashboard/`) |
 | `supabase/` | DB config, migrations, seed data | Supabase |
 | `tools/` | Meeting publisher service | Bun |
 

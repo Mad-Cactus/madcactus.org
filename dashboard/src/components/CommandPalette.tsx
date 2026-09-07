@@ -26,6 +26,8 @@ export default function CommandPalette() {
 			go("/admin", "Go to Dashboard"),
 			go("/admin/email", "Go to Email"),
 			go("/admin/docs", "Go to Docs"),
+			go("/admin/posts", "Go to Posts"),
+			go("/admin/newsletters", "Go to Newsletters"),
 			go("/admin/projects", "Go to Projects"),
 			go("/admin/meetings", "Go to Meetings"),
 			go("/admin/outreach", "Go to Outreach"),
@@ -41,6 +43,32 @@ export default function CommandPalette() {
 					});
 					const doc = (await res.json()) as { id: string };
 					navigate(`/admin/docs/${doc.id}`);
+				},
+			},
+			{
+				label: "New LinkedIn post",
+				hint: "posts",
+				run: async () => {
+					const res = await fetch("/api/docs", {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({ title: "Untitled post", kind: "post" }),
+					});
+					const doc = (await res.json()) as { id: string };
+					navigate(`/admin/posts/${doc.id}`);
+				},
+			},
+			{
+				label: "New newsletter issue",
+				hint: "newsletters",
+				run: async () => {
+					const res = await fetch("/api/docs", {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({ title: "Untitled issue", kind: "newsletter" }),
+					});
+					const doc = (await res.json()) as { id: string };
+					navigate(`/admin/newsletters/${doc.id}`);
 				},
 			},
 			{ label: "Compose email", hint: "email · c", run: () => navigate("/admin/email?compose=1") },

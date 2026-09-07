@@ -8,6 +8,7 @@ import {
 	toggleShare,
 	setDocStatus,
 	setDocKind,
+	setDocGenre,
 	scheduleDoc,
 	unscheduleDoc,
 	listDocVersions,
@@ -20,7 +21,7 @@ import {
  * GET  /api/docs/:id?versions=1 → version list (no content)
  * GET  /api/docs/:id?diff=N → word-diff of version N vs N-1
  * PUT  /api/docs/:id   { markdown } → { version }
- * POST /api/docs/:id   { op: "finalize" | "share" | "rename" | "set-kind" | "schedule" | "unschedule", ... } → result
+ * POST /api/docs/:id   { op: "finalize" | "share" | "rename" | "set-kind" | "set-genre" | "schedule" | "unschedule", ... } → result
  */
 async function requireAdmin() {
 	return (await getAuthedClient()) !== null;
@@ -61,6 +62,7 @@ export const POST = async (event: APIEvent) => {
 		enabled?: boolean;
 		title?: string;
 		kind?: string;
+		genre?: string | null;
 		scheduledFor?: string;
 		firstComment?: string;
 	};
@@ -75,6 +77,11 @@ export const POST = async (event: APIEvent) => {
 			const kind = body.kind === "post" || body.kind === "newsletter" ? body.kind : null;
 			await setDocKind(event.params.id, kind);
 			return json({ ok: true, kind });
+		}
+		if (body.op === "set-genre") {
+			const genre = typeof body.genre === "string" && body.genre.trim() ? body.genre : null;
+			await setDocGenre(event.params.id, genre);
+			return json({ ok: true, genre: genre?.trim().toLowerCase() ?? null });
 		}
 		if (body.op === "schedule") {
 			const when = new Date(String(body.scheduledFor));

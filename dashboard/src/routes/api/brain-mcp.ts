@@ -5,8 +5,9 @@ import { db } from "~/db";
 import { apiKeys, companies, outreachProspects, OUTREACH_STAGES } from "~/db/schema";
 import { brainQuery, entityFacts } from "~/lib/brain/search";
 import { brainJobs } from "~/db/schema";
-import { agentWrite, createDoc, getDoc, getDocVersionDiff, listDocVersions, listDocs } from "~/lib/docs";
-import { getVoiceLessons, lintVoiceText } from "~/lib/voice-lint-db";
+import { agentWrite, createDoc, docVoiceScope, getDoc, getDocVersionDiff, listDocVersions, listDocs } from "~/lib/docs";
+import { getVoiceLessons, listKnownGenres, lintVoiceText } from "~/lib/voice-lint-db";
+import type { VoiceScope } from "~/lib/voice-lint";
 import { searchWorkspace, recentActivity } from "~/lib/brain/workspace-search";
 import { maybeRunCycle } from "~/lib/brain/distill";
 
@@ -55,6 +56,34 @@ async function authenticate(request: Request): Promise<boolean> {
 		.limit(1);
 	// brain access is internal: memberless (admin) keys only
 	return !!keyRow && keyRow.memberId === null;
+}
+
+const SURFACES = ["email", "docs", "post", "newsletter"] as const;
+
+/** scope args from a tool call — invalid surface/genre ignored, not fatal */
+function toolScope(toolArgs: Record<string, unknown>): VoiceScope | undefined {
+	const surface = SURFACES.includes(toolArgs.surface as (typeof SURFACES)[number]) ? String(toolArgs.surface) : undefined;
+	const genre = toolArgs.genre ? String(toolArgs.genre).trim().toLowerCase() : undefined;
+	return surface ? { surface, genre: genre ?? null } : undefined;
+}
+
+/** Genre vocabulary gate: agents must REUSE an existing genre or explicitly
+ *  mint a new one (confirm_new_genre=true). Without the gate, typo'd
+ *  near-duplicates ("promo" vs "marketing") fragment the voice scopes into
+ *  islands that lint nothing together. */
+async function gateGenre(
+	toolArgs: Record<string, unknown>,
+): Promise<{ error: string; known_genres: string[] } | { genre: string | null }> {
+	const raw = toolArgs.genre;
+	if (raw === undefined || raw === null || String(raw).trim() === "") return { genre: null };
+	const g = String(raw).trim().toLowerCase();
+	if (toolArgs.confirm_new_genre === true) return { genre: g };
+	const known = await listKnownGenres();
+	if (known.includes(g)) return { genre: g };
+	return {
+		error: `genre "${g}" is not in the vocabulary. REUSE a known_genre if one fits (preferred), or re-call with confirm_new_genre=true to mint "${g}" deliberately.`,
+		known_genres: known,
+	};
 }
 
 async function resolveClient(name: string) {
@@ -168,19 +197,27 @@ const TOOLS = [
 	{
 		name: "get_voice_lessons",
 		description:
-			"Collin's voice lessons derived from his real edits. READ BEFORE writing any doc or email for him — then follow them.",
+			"Collin's voice lessons derived from his real edits. READ BEFORE writing any doc, post, newsletter, or email for him — then follow them. Pass surface (email|docs|post|newsletter) and genre to get the rules that apply to exactly what you're writing plus the global ones. known_genres lists the genre vocabulary — REUSE an existing genre instead of inventing near-duplicates.",
 		inputSchema: {
 			type: "object",
-			properties: { limit: { type: "number", description: "max lessons returned, default 25" } },
+			properties: {
+				limit: { type: "number", description: "max lessons returned, default 25" },
+				surface: { type: "string", enum: ["email", "docs", "post", "newsletter"], description: "what you are writing — scopes the lessons" },
+				genre: { type: "string", description: "freeform subtype within the surface, e.g. marketing|informational|casual — match an existing genre spelling" },
+			},
 		},
 	},
 	{
 		name: "lint_voice_text",
 		description:
-			"Check text against Collin's voice patterns BEFORE landing it via write_doc or create_email_draft. Returns avoid-violations with the rule and fix example — fix them first; writes return the same lint back.",
+			"Check text against Collin's voice patterns BEFORE landing it via write_doc or create_email_draft. Pass surface/genre matching what the text is (post, newsletter, email, plain doc) so only the rules learned for that kind apply. Returns avoid-violations with the rule and fix example — fix them first; writes return the same lint back.",
 		inputSchema: {
 			type: "object",
-			properties: { text: { type: "string" } },
+			properties: {
+				text: { type: "string" },
+				surface: { type: "string", enum: ["email", "docs", "post", "newsletter"] },
+				genre: { type: "string" },
+			},
 			required: ["text"],
 		},
 	},
@@ -188,21 +225,59 @@ const TOOLS = [
 	{
 		name: "create_doc",
 		description:
-			"Create a markdown doc and return its id. doc ids are UUIDs — use this when list_docs has no fitting doc before write_doc.",
+			"Create a plain internal markdown doc (kind=null — NOT a post/newsletter; use create_post/create_newsletter for those) and return its id. doc ids are UUIDs — use this when list_docs has no fitting doc before write_doc.",
 		inputSchema: {
 			type: "object",
 			properties: {
 				title: { type: "string" },
 				markdown: { type: "string", description: "Optional initial body." },
+				genre: { type: "string", description: "Freeform subtype (marketing|informational|…) — scopes the voice rules. MUST be an existing genre from get_voice_lessons known_genres; new ones need confirm_new_genre=true." },
+				confirm_new_genre: { type: "boolean", description: "Set true only when no existing genre fits — mints this genre into the vocabulary." },
+				chat_uuid: { type: "string", description: "Your session id, for provenance." },
 			},
 			required: ["title"],
 		},
 	},
 	{
+		name: "create_post",
+		description:
+			"Create a LinkedIn post draft (kind=post). Read get_voice_lessons with surface=post first and fix every avoid-violation — the response lint is scoped to posts. Collin previews, edits, and schedules it in the dashboard; you never schedule or publish. Drafts only.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				title: { type: "string", description: "Internal title — the post body is the markdown." },
+				markdown: { type: "string", description: "Post body — plain markdown, no headings; it renders as LinkedIn text." },
+				genre: { type: "string", description: "Freeform subtype, e.g. marketing|casual|story — MUST reuse an existing genre from get_voice_lessons known_genres; new ones need confirm_new_genre=true." },
+				confirm_new_genre: { type: "boolean", description: "Set true only when no existing genre fits — mints this genre into the vocabulary." },
+				chat_uuid: { type: "string", description: "Your session id, for provenance." },
+			},
+			required: ["title", "markdown"],
+		},
+	},
+	{
+		name: "create_newsletter",
+		description:
+			"Create a Cactus Dispatch newsletter issue draft (kind=newsletter). Read get_voice_lessons with surface=newsletter first and fix every avoid-violation — the response lint is scoped to newsletters. Collin previews (email + web), edits, and schedules it; you never send. Drafts only.",
+			inputSchema: {
+			type: "object",
+			properties: {
+				title: { type: "string" },
+				markdown: { type: "string", description: "Issue body — first H1 becomes the email subject." },
+				genre: { type: "string", description: "Freeform subtype, e.g. marketing|informational — MUST reuse an existing genre from get_voice_lessons known_genres; new ones need confirm_new_genre=true." },
+				confirm_new_genre: { type: "boolean", description: "Set true only when no existing genre fits — mints this genre into the vocabulary." },
+				chat_uuid: { type: "string", description: "Your session id, for provenance." },
+			},
+			required: ["title", "markdown"],
+		},
+	},
+	{
 		name: "list_docs",
 		description:
-			"List markdown docs (id, title, status, version, updatedAt). status=draft means an agent write awaits human review.",
-		inputSchema: { type: "object", properties: {} },
+			"List markdown docs (id, title, kind, genre, status, version, updatedAt). status=draft means an agent write awaits human review. Pass kind=post|newsletter|docs (docs = plain) to filter.",
+		inputSchema: {
+			type: "object",
+			properties: { kind: { type: "string", enum: ["post", "newsletter", "docs"] } },
+		},
 	},
 	{
 		name: "get_doc",
@@ -217,7 +292,7 @@ const TOOLS = [
 	{
 		name: "write_doc",
 		description:
-			"Write into a markdown doc as an attributed agent edit. mode: append (default) adds a section; replace rewrites the body. The response includes voice-lint violations — read get_voice_lessons first, fix every avoid-violation, and rewrite. Your write lands as an agent version and re-opens the doc for human review (status=draft). Pass chat_uuid = your session id for provenance.",
+			"Write into a markdown doc as an attributed agent edit. mode: append (default) adds a section; replace rewrites the body. The response includes voice-lint violations scoped to the doc's kind+genre — read get_voice_lessons first, fix every avoid-violation, and rewrite. Your write lands as an agent version and re-opens the doc for human review (status=draft). Pass genre to tag/retag the doc (marketing|informational|casual…) so its edits teach and lint under the right scope — reuse an existing genre from get_voice_lessons known_genres. Pass chat_uuid = your session id for provenance.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -225,6 +300,8 @@ const TOOLS = [
 				content: { type: "string" },
 				chat_uuid: { type: "string" },
 				mode: { type: "string", enum: ["append", "replace"] },
+				genre: { type: "string", description: "Tag/retag the doc — scopes which voice rules lint it and which lessons its edits teach. MUST reuse an existing genre; new ones need confirm_new_genre=true." },
+				confirm_new_genre: { type: "boolean", description: "Set true only when no existing genre fits — mints this genre into the vocabulary." },
 			},
 			required: ["doc_id", "content"],
 		},
@@ -467,26 +544,68 @@ export async function POST(event: APIEvent) {
 						}
 						break;
 					}
-					case "get_voice_lessons":
-					result = await getVoiceLessons(toolArgs.limit ? Number(toolArgs.limit) : undefined);
+				case "get_voice_lessons": {
+					const scope = toolScope(toolArgs);
+					result = {
+						lessons: await getVoiceLessons(toolArgs.limit ? Number(toolArgs.limit) : undefined, scope),
+						known_genres: await listKnownGenres(),
+					};
 					break;
-				case "lint_voice_text":
-					result = await lintVoiceText(String(toolArgs.text ?? ""));
+				}
+				case "lint_voice_text": {
+					const scope = toolScope(toolArgs);
+					result = await lintVoiceText(String(toolArgs.text ?? ""), scope);
 					break;
+				}
 				case "create_doc": {
-						const d = await createDoc(String(toolArgs.title ?? "Untitled"), toolArgs.markdown ? String(toolArgs.markdown) : "");
-						result = { id: d.id, title: d.title, version: d.version };
+					const gate = await gateGenre(toolArgs);
+					if ("error" in gate) {
+						result = gate;
 						break;
 					}
-					case "list_docs":
-						result = (await listDocs()).map((d) => ({
+					const d = await createDoc(String(toolArgs.title ?? "Untitled"), toolArgs.markdown ? String(toolArgs.markdown) : "", {
+						author: "agent",
+						chatUuid: toolArgs.chat_uuid ? String(toolArgs.chat_uuid) : undefined,
+						genre: gate.genre,
+					});
+					result = { id: d.id, title: d.title, version: d.version, kind: null, genre: d.genre };
+					break;
+				}
+				case "create_post":
+				case "create_newsletter": {
+					const gate = await gateGenre(toolArgs);
+					if ("error" in gate) {
+						result = gate;
+						break;
+					}
+					const kind = toolName === "create_post" ? ("post" as const) : ("newsletter" as const);
+					const markdown = String(toolArgs.markdown ?? "");
+					const d = await createDoc(String(toolArgs.title ?? "Untitled"), markdown, {
+						author: "agent",
+						kind,
+						genre: gate.genre,
+						chatUuid: toolArgs.chat_uuid ? String(toolArgs.chat_uuid) : undefined,
+					});
+					// scoped lint rides back like write_doc — agent fixes before finishing
+					const lint = await lintVoiceText(markdown, docVoiceScope(d));
+					result = { id: d.id, title: d.title, kind, genre: d.genre, version: d.version, status: d.status, lint };
+					break;
+				}
+				case "list_docs": {
+					const kind = toolArgs.kind === "post" || toolArgs.kind === "newsletter" ? toolArgs.kind : null;
+					result = (await listDocs())
+						.filter((d) => (toolArgs.kind === "docs" ? d.kind === null : kind ? d.kind === kind : true))
+						.map((d) => ({
 							id: d.id,
 							title: d.title,
+							kind: d.kind,
+							genre: d.genre,
 							status: d.status,
 							version: d.version,
 							updatedAt: d.updatedAt,
 						}));
-						break;
+					break;
+				}
 					case "get_doc": {
 						const d = await getDoc(String(toolArgs.doc_id ?? ""));
 						result = d
@@ -494,13 +613,20 @@ export async function POST(event: APIEvent) {
 							: { error: "not found" };
 						break;
 					}
-					case "write_doc":
+					case "write_doc": {
+						const gate = await gateGenre(toolArgs);
+						if ("error" in gate) {
+							result = gate;
+							break;
+						}
 						result = await agentWrite({
 							docId: String(toolArgs.doc_id ?? ""),
 							content: String(toolArgs.content ?? ""),
 							chatUuid: String(toolArgs.chat_uuid ?? ""),
 							mode: toolArgs.mode === "replace" ? "replace" : "append",
+							genre: gate.genre ?? undefined,
 						});
+					}
 						break;
 					case "list_doc_versions":
 						result = { versions: await listDocVersions(String(toolArgs.doc_id ?? "")) };

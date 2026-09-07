@@ -1,40 +1,17 @@
 // Publish dispatch: a doc of kind "post" goes to LinkedIn, "newsletter" goes
 // out as a Resend broadcast to the Cactus Dispatch audience. Failures email
 // the owner — a scheduled publish must never die silently.
-import { marked } from "marked";
+// Pure transforms live in publish-core.ts (client-safe); re-exported here for
+// the scheduler and existing imports.
 import { Resend } from "resend";
 import type { Doc } from "~/db/schema";
 import { postToLinkedIn, commentOnLinkedIn } from "~/lib/social";
+import { markdownToPostText, newsletterSubject, markdownToHtml } from "~/lib/publish-core";
+
+export { markdownToPostText, newsletterSubject, markdownToHtml };
 
 const ALERT_EMAIL = process.env.ALERT_EMAIL ?? "cpfeifer@madcactus.org";
 const NEWSLETTER_FROM = process.env.NEWSLETTER_FROM ?? "Collin Pfeifer <dispatch@madcactus.org>";
-
-/** Markdown → plain text that reads well as a LinkedIn post. */
-export function markdownToPostText(md: string): string {
-	return md
-		.replace(/```[\s\S]*?```/g, (m) => m.replace(/```\w*\n?/g, "").trim())
-		.replace(/^#{1,6}\s+/gm, "")
-		.replace(/!\[[^\]]*\]\([^)]*\)/g, "")
-		.replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 ($2)")
-		.replace(/(\*\*|__)(.*?)\1/g, "$2")
-		.replace(/(\*|_)(.*?)\1/g, "$2")
-		.replace(/`([^`]+)`/g, "$1")
-		.replace(/^>\s?/gm, "")
-		.replace(/^[-*+]\s+/gm, "• ")
-		.replace(/^\|.*\|$/gm, (l) => l.replace(/\|/g, " ").trim())
-		.replace(/\n{3,}/g, "\n\n")
-		.trim();
-}
-
-export function newsletterSubject(doc: Doc): string {
-	const heading = doc.markdown.match(/^#\s+(.+)$/m)?.[1];
-	return (heading ?? doc.title).trim();
-}
-
-export function markdownToHtml(md: string): string {
-	// links open in the email client's browser; marked handles the rest
-	return marked.parse(md, { async: false }) as string;
-}
 
 export async function publishDoc(doc: Doc): Promise<string> {
 	if (doc.kind === "post") {

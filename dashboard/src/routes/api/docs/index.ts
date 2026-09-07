@@ -5,7 +5,7 @@ import { createDoc, listDocs } from "~/lib/docs";
 /**
  * Docs collection API — admin-session guarded.
  * GET  /api/docs  → list
- * POST /api/docs  { title } → doc
+ * POST /api/docs  { title, kind?, genre? } → doc
  */
 async function requireAdmin() {
 	return (await getAuthedClient()) !== null;
@@ -22,6 +22,7 @@ export const GET = async () => {
 
 export const POST = async (event: APIEvent) => {
 	if (!(await requireAdmin())) return json({ error: "Unauthorized" }, 401);
-	const body = (await event.request.json().catch(() => ({}))) as { title?: string };
-	return json(await createDoc(body.title ?? "Untitled"));
+	const body = (await event.request.json().catch(() => ({}))) as { title?: string; kind?: string; genre?: string };
+	const kind = body.kind === "post" || body.kind === "newsletter" ? body.kind : null;
+	return json(await createDoc(body.title ?? "Untitled", "", { kind, genre: body.genre?.trim().toLowerCase() || null }));
 };

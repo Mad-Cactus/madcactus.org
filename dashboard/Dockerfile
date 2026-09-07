@@ -6,6 +6,10 @@ COPY package.json bun.lock* bun.lockb* ./
 RUN bun install
 
 COPY . .
+# dummy url: db/index.ts throws at import without it, which would silently
+# kill the marketing prerender in this build stage (queries fail harmlessly;
+# runtime uses the real fly secret, this env stays in the builder only)
+ENV DATABASE_URL=postgres://dummy@localhost:5/dummy
 RUN bun run build
 
 # ═══ Runner: just the compiled output ═══

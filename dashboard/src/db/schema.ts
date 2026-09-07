@@ -396,6 +396,8 @@ export const docs = pgTable(
 		status: docStatus("status").notNull().default("final"),
 		// post/newsletter → Finalize button becomes Schedule; null → plain doc
 		kind: docKind("kind"),
+		// freeform subtype the voice engine learns per: "marketing", "informational", …
+		genre: text("genre"),
 		// post → optional first comment published by the author right after the
 		// post goes live (the “comment below” growth move),
 		firstComment: text("first_comment"),
@@ -476,6 +478,10 @@ export const voicePatterns = pgTable("voice_patterns", {
 	beforeText: text("before_text"),
 	afterText: text("after_text"),
 	lessonText: text("lesson_text"), // originating lesson, for traceability
+	// scope this pattern lints: null surface = global; "email" | "docs" | "post" |
+	// "newsletter" … — pattern applies iff (surface null or matches) AND (genre null or matches)
+	surface: text("surface"),
+	genre: text("genre"),
 	confidence: real("confidence").notNull().default(1),
 	enabled: boolean("enabled").notNull().default(true),
 	overrideCount: integer("override_count").notNull().default(0),
@@ -575,6 +581,9 @@ export const brainFacts = pgTable(
 		// 'contract' | … — lessons are scoped per surface, global ones derive
 		// from all of them during consolidation
 		surface: text("surface"),
+		// freeform genre within the surface ("marketing" vs "informational" …);
+		// null = applies to every genre on that surface
+		genre: text("genre"),
 		// provenance INTO workspace tables: 'email_messages' | 'text_versions' |
 		// 'documents' | 'manual'
 		sourceTable: text("source_table").notNull(),

@@ -1,12 +1,14 @@
 /* ═══════════════════════════════════════════════════════════════
-   Mad Cactus — Franco Maria Ricci Editore Design System
-   Art Déco gallery catalogue: burnished gold hairlines on vellum
+   Mad Cactus marketing — Franco Maria Ricci Editore design system
+   Ported from marketing/src/styles/global.css. Body-level rules are
+   scoped to :has(.mk-root) so the admin app never inherits the serif
+   vellum treatment, and marketing pages never fight app.css.
    ═══════════════════════════════════════════════════════════════ */
 
 @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600&display=swap');
 
 :root {
-    /* Force light scheme — opts out of Chrome/Edge Auto Dark Theme (belt-and-suspenders with the meta tag, which wins on FOUC) */
+    /* Force light scheme — opts out of Chrome/Edge Auto Dark Theme */
     color-scheme: only light;
 
     /* Colors */
@@ -36,6 +38,7 @@
     /* Spacing */
     --spacing-8: 8px;
     --spacing-16: 16px;
+    --spacing-20: 20px;
     --spacing-24: 24px;
     --spacing-32: 32px;
     --spacing-40: 40px;
@@ -58,19 +61,11 @@
     --surface-letterpress-black: #000000;
 }
 
-*,
-*::before,
-*::after {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-}
-
-html {
+html:has(.mk-root) {
     scroll-behavior: smooth;
 }
 
-body {
+body:has(.mk-root) {
     background: var(--color-vellum-white);
     color: var(--color-letterpress-black);
     font-family: var(--font-serif);
@@ -79,36 +74,37 @@ body {
     line-height: var(--leading-body);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    color-scheme: only light;
 }
 
-::selection {
+.mk-root ::selection {
     background: var(--color-burnished-gold);
     color: var(--color-vellum-white);
 }
 
-a {
+.mk-root a {
     color: inherit;
     text-decoration: none;
 }
 
-img {
+.mk-root img {
     display: block;
     max-width: 100%;
 }
 
 /* ═══ Top Bar (shared across all pages) ═══ */
-.top-bar {
+.mk-root .top-bar {
     padding: var(--spacing-40) var(--spacing-64);
 }
-.top-bar-inner {
+.mk-root .top-bar-inner {
     display: flex;
     justify-content: flex-start;
     align-items: center;
 }
-.logo-link {
+.mk-root .logo-link {
     display: block;
 }
-.top-bar-signin {
+.mk-root .top-bar-signin {
     margin-left: auto;
     font-family: var(--font-sans);
     font-size: var(--text-caption);
@@ -121,20 +117,18 @@ img {
     padding: 8px 18px;
     transition: background 0.2s, color 0.2s, border-color 0.2s;
 }
-.top-bar-signin:hover {
+.mk-root .top-bar-signin:hover {
     background: var(--color-letterpress-black);
     color: var(--color-paper);
 }
-.logo-seal {
+.mk-root .logo-seal {
     width: 64px;
     height: 64px;
     color: var(--color-letterpress-black);
 }
 
 /* ═══ Editorial Components ═══ */
-
-/* Section title — italic serif with gold underline rule */
-.section-title {
+.mk-root .section-title {
     font-family: var(--font-serif);
     font-style: italic;
     font-weight: 400;
@@ -144,7 +138,7 @@ img {
     margin-bottom: var(--spacing-16);
 }
 
-.section-rule {
+.mk-root .section-rule {
     width: 100%;
     height: 1px;
     background: var(--color-burnished-gold);
@@ -152,8 +146,7 @@ img {
     margin-bottom: var(--spacing-48);
 }
 
-/* Editorial CTA — bracketed text link */
-.cta-link {
+.mk-root .cta-link {
     font-family: var(--font-serif);
     font-size: var(--text-body-sm);
     color: var(--color-letterpress-black);
@@ -162,13 +155,12 @@ img {
     display: inline-block;
 }
 
-.cta-link:hover {
+.mk-root .cta-link:hover {
     color: var(--color-burnished-gold);
     border-bottom-color: var(--color-burnished-gold);
 }
 
-/* Bracketed CTAs — bold sans-serif, uppercase, letter-spaced */
-.cta-bracketed {
+.mk-root .cta-bracketed {
     font-family: var(--font-sans);
     font-size: var(--text-body-sm);
     font-weight: 700;
@@ -179,19 +171,99 @@ img {
     white-space: nowrap;
 }
 
-.cta-bracketed:hover {
+.mk-root .cta-bracketed:hover {
     color: var(--color-burnished-gold);
 }
 
-/* Hero CTA — larger variant, no underline */
-.cta-hero {
+.mk-root .cta-hero {
     font-size: var(--text-body);
     letter-spacing: 2.5px;
 }
 
-/* Utility sans label */
-.label-sans {
+.mk-root .label-sans {
     font-family: var(--font-sans);
     font-size: var(--text-caption);
     color: var(--color-silver-wash);
+}
+
+/* ═══ Footer (from Footer.astro scoped style) ═══ */
+.mk-root .site-footer {
+    background: var(--color-gallery-ink);
+    padding: var(--spacing-80) var(--spacing-64) var(--spacing-32);
+}
+.mk-root .footer-brand {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--spacing-32);
+    margin-bottom: var(--spacing-64);
+}
+.mk-root .footer-logo {
+    display: none;
+    width: 108px;
+    height: 108px;
+    flex-shrink: 0;
+    order: 1;
+    filter: brightness(0) invert(1);
+}
+.mk-root .footer-wordmark {
+    font-family: var(--font-serif);
+    font-weight: 400;
+    font-size: clamp(48px, 14vw, 180px);
+    line-height: var(--leading-display);
+    color: #ffffff;
+    letter-spacing: -2px;
+    order: 2;
+    text-align: right;
+}
+.mk-root .footer-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    padding-top: var(--spacing-16);
+}
+.mk-root .footer-meta small {
+    font-family: var(--font-sans);
+    font-size: var(--text-caption);
+    color: rgba(255, 255, 255, 0.3);
+}
+.mk-root .footer-links {
+    display: flex;
+    gap: var(--spacing-24);
+}
+.mk-root .footer-links a {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-size: var(--text-body-sm);
+    color: var(--color-silver-wash);
+    text-decoration: none;
+}
+.mk-root .footer-links a:hover {
+    color: var(--color-burnished-gold);
+}
+
+@media (max-width: 900px) {
+    .mk-root .site-footer {
+        padding: var(--spacing-48) var(--spacing-24) var(--spacing-24);
+    }
+    .mk-root .footer-brand {
+        justify-content: center;
+    }
+    .mk-root .footer-wordmark {
+        font-size: clamp(40px, 10vw, 80px);
+    }
+    .mk-root .footer-meta {
+        flex-direction: column;
+        gap: var(--spacing-16);
+        text-align: center;
+    }
+}
+@media (max-width: 480px) {
+    .mk-root .footer-wordmark {
+        display: none;
+    }
+    .mk-root .footer-logo {
+        display: block;
+    }
 }

@@ -15,6 +15,8 @@ const links = [
 	{ href: "/admin/outreach", label: "Outreach", icon: "M22 2 11 13M22 2l-7 20-4-9-9-4z" },
 	{ href: "/admin/videos", label: "Videos", icon: "M23 7l-7 5 7 5V7zM1 5h15a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z" },
 	{ href: "/admin/docs", label: "Docs", icon: "M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5zM14 2v6h6M9 13h6M9 17h6" },
+	{ href: "/admin/posts", label: "Posts", icon: "M3 11l18-5v12L3 13v-2z M11.6 16.8a3 3 0 1 1-5.8-1.6" },
+	{ href: "/admin/newsletters", label: "Newsletters", icon: "M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-4 0V9h2 M18 6h-6v4h6V6z" },
 	{ href: "/admin/brain", label: "Brain", icon: "M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5M9 18h6M10 22h4" },
 	{ href: "/admin/api-keys", label: "API Keys", icon: "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3" },
 ];
@@ -37,14 +39,8 @@ const Layout: ParentComponent<{ user?: { id?: string; email?: string } | null }>
 		localStorage.setItem("sidebar-collapsed", next ? "1" : "0");
 	}
 
-	// Identify user in PostHog once loaded
-	createEffect(() => {
-		const u = props.user;
-		if (u?.id) (window as any).posthog?.identify?.(u.id, { email: u.email });
-	});
-
 	function handleLogoutForm(e: Event) {
-		(window as any).posthog?.reset?.();
+		// posthog never loads on /admin (owner traffic isn't tracked) — nothing to reset
 	}
 
 	return (
