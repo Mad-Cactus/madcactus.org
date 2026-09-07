@@ -1,0 +1,36 @@
+name: Schema sync
+
+# Catches the inverse failure of migrations.yml: schema.ts edited without
+# running `db:generate` (deploy would then break at runtime because the
+# migration never ships). If drizzle-kit can generate anything from the
+# current schema.ts, the PR is missing a migration.
+on:
+  pull_request:
+    paths: ['dashboard/src/db/**', 'supabase/migrations/**']
+  push:
+    branches: [main]
+    paths: ['dashboard/src/db/**', 'supabase/migrations/**']
+
+jobs:
+  schema-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+      - working-directory: dashboard
+        run: bun install --frozen-lockfile
+      - name: drizzle-kit generate must be a no-op
+        working-directory: dashboard
+        env:
+          DATABASE_URL: postgres://dummy@localhost:5/dummy
+        run: |
+          bunx drizzle-kit generate
+          if [ -n "$(git status --porcelain supabase/migrations)" ]; then
+            echo "schema.ts has changes not captured by a migration."
+            echo "Run: cd dashboard && bun run db:generate  (then commit the migration)"
+            git status --porcelain supabase/migrations
+            exit 1
+          fi
+          echo "schema.ts and migrations are in sync."

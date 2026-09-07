@@ -34,6 +34,9 @@ prod by the Supabase GitHub integration on merge to main. One folder, strict rul
   (this has happened; fixing it needs `supabase migration repair`).
 - CI (`.github/workflows/migrations.yml`) replays every migration on a fresh database
   and fails PRs that aren't registered in the drizzle journal. Both must be green before merge.
+- `schema-sync.yml` fails PRs where `schema.ts` changed but no migration was generated;
+  `db-drift.yml` runs daily and alerts if prod is behind main or has unversioned schema
+  (needs `SUPABASE_ACCESS_TOKEN` + `SUPABASE_DB_PASSWORD` repo secrets; skipped until set).
 - Current state: squashed to `20260907175653_baseline.sql` (dump of prod, 2026-09-07).
   28 prior migrations deleted; drizzle journal/snapshots kept so `db:generate` still
   diffs correctly.
