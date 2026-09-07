@@ -16,7 +16,7 @@
 set -euo pipefail
 
 API_KEY="${1:?usage: ./install.sh <mc_api_key> [dashboard_url]}"
-URL="${2:-https://app.madcactus.org}"
+URL="${2:-https://madcactus.org}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 HOME_DIR="$HOME/.madcactus/meeting-publisher"
 STATE="$HOME_DIR/state"

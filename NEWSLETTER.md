@@ -20,7 +20,7 @@ The signup endpoint (`dashboard/src/routes/api/newsletter.ts`) is already built 
    ```sh
    flyctl secrets set RESEND_API_KEY=re_xxxxxxx --app madcactus-dashboard
    ```
-6. **Test the signup** — hit `https://app.madcactus.org/api/newsletter` with a real email, confirm it appears in the Resend Audience.
+6. **Test the signup** — hit `https://madcactus.org/api/newsletter` with a real email, confirm it appears in the Resend Audience.
 
 Until step 5 is done, the signup form returns `RESEND_API_KEY not configured` (500). That's expected.
 
@@ -34,7 +34,7 @@ Two places capture emails, both POST to the same endpoint:
 | Homepage newsletter band | `/` | Inline band signup |
 | Scorecard results gate | `/scorecard` | "Get your detailed action plan" |
 
-All call `POST https://app.madcactus.org/api/newsletter` with `{ email }`. The endpoint handles dedup (duplicate email → success). CORS is open (`*`).
+All call `POST https://madcactus.org/api/newsletter` with `{ email }`. The endpoint handles dedup (duplicate email → success). CORS is open (`*`).
 
 ### UTM tracking for links
 

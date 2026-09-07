@@ -5,7 +5,7 @@ export function Header() {
 				<a href="/" class="logo-link">
 					<img src="/cactus-seal.svg" alt="Mad Cactus" class="logo-seal" />
 				</a>
-				<a href="https://app.madcactus.org/portal/login" class="top-bar-signin">
+				<a href="/portal/login" class="top-bar-signin">
 					Clients
 				</a>
 			</div>

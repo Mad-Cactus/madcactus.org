@@ -4,13 +4,13 @@ import { externalOrigin } from "./social";
 // Behind Fly/Cloudflare TLS termination url.origin is http:// — the OAuth
 // redirect_uri must be the https origin the browser (and LinkedIn's app
 // registration) actually sees.
-const req = (headers: Record<string, string> = {}, url = "http://app.madcactus.org/api/social/linkedin?start=1") =>
+const req = (headers: Record<string, string> = {}, url = "http://madcactus.org/api/social/linkedin?start=1") =>
 	new Request(url, { headers });
 
 describe("externalOrigin", () => {
 	test("prefers x-forwarded-proto/host (prod TLS-terminated)", () => {
-		expect(externalOrigin(req({ "x-forwarded-proto": "https", host: "app.madcactus.org" }))).toBe(
-			"https://app.madcactus.org",
+		expect(externalOrigin(req({ "x-forwarded-proto": "https", host: "madcactus.org" }))).toBe(
+			"https://madcactus.org",
 		);
 	});
 
