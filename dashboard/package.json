@@ -3,7 +3,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun --bun vite dev --port 3000",
-    "build": "tsc --noEmit && vite build && bun run scripts/copy-loro-wasm.ts && bun run scripts/check-client-bundle.ts",
+    "build": "tsc --noEmit && bun --bun vite build && bun run scripts/copy-loro-wasm.ts && bun run scripts/check-client-bundle.ts",
     "typecheck": "tsc --noEmit",
     "prepare": "command -v git >/dev/null 2>&1 && git config core.hooksPath .githooks || true",
     "start": "bun .output/server/index.mjs",

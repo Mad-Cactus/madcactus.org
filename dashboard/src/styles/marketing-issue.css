@@ -1,0 +1,215 @@
+/* Dispatch issue article — ported from marketing/src/pages/newsletter/issue-01.astro <style is:global>.
+   Shared by the static issue-01 page and the live /newsletter/[id] DB pages. */
+
+.mk-root .issue {
+    padding: var(--spacing-48) var(--spacing-24) var(--spacing-80);
+}
+.mk-root .issue-inner {
+    max-width: 680px;
+    margin: 0 auto;
+}
+
+.mk-root .issue-eyebrow {
+    font-family: var(--font-sans);
+    font-size: var(--text-caption);
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--color-burnished-gold) !important;
+    margin: 0 0 48px 0 !important;
+}
+.mk-root .issue-eyebrow a {
+    color: var(--color-burnished-gold);
+    text-decoration: none;
+    border-bottom: none;
+}
+
+.mk-root .issue-title {
+    font-family: var(--font-serif);
+    font-weight: 400;
+    font-size: clamp(28px, 5vw, 40px);
+    line-height: var(--leading-display);
+    color: var(--color-letterpress-black);
+    margin-bottom: var(--spacing-40);
+}
+.mk-root .issue-title em {
+    font-style: italic;
+}
+
+.mk-root .issue-tldr {
+    font-family: var(--font-serif);
+    font-size: var(--text-body);
+    line-height: var(--leading-body);
+    color: var(--color-letterpress-black);
+    padding-left: var(--spacing-24);
+    border-left: 2px solid var(--color-burnished-gold);
+    margin-bottom: var(--spacing-48);
+}
+.mk-root .issue-tldr a {
+    color: var(--color-letterpress-black);
+}
+
+.mk-root .issue-beat {
+    font-family: var(--font-sans);
+    font-size: var(--text-caption);
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--color-letterpress-black);
+    margin-top: var(--spacing-48);
+    margin-bottom: var(--spacing-16);
+}
+
+.mk-root .issue p {
+    font-family: var(--font-serif);
+    font-size: var(--text-body);
+    line-height: var(--leading-body);
+    color: var(--color-letterpress-black);
+    margin-bottom: var(--spacing-20);
+}
+.mk-root .issue a {
+    color: var(--color-letterpress-black);
+    border-bottom: 1px solid var(--color-burnished-gold);
+}
+.mk-root .issue h2 {
+    font-family: var(--font-sans);
+    font-size: var(--text-caption);
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--color-letterpress-black);
+    margin-top: var(--spacing-48);
+    margin-bottom: var(--spacing-16);
+}
+.mk-root .issue pre {
+    background: var(--color-gallery-ink);
+    color: var(--color-paper);
+    font-family: monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    padding: var(--spacing-24) var(--spacing-32);
+    overflow-x: auto;
+    white-space: pre;
+}
+.mk-root .issue pre code {
+    background: none;
+    color: inherit;
+    font-family: inherit;
+    font-size: inherit;
+}
+.mk-root .issue code {
+    font-family: monospace;
+    font-size: 0.9em;
+    background: var(--color-vellum-white);
+    padding: 2px 6px;
+}
+.mk-root .issue ul {
+    font-family: var(--font-serif);
+    font-size: var(--text-body);
+    line-height: var(--leading-body);
+    padding-left: var(--spacing-24);
+    margin-bottom: var(--spacing-24);
+}
+.mk-root .issue li {
+    margin-bottom: var(--spacing-8);
+}
+
+.mk-root .prompt-wrap {
+    position: relative;
+    margin: var(--spacing-16) 0 var(--spacing-24);
+}
+.mk-root .prompt-inline {
+    margin: var(--spacing-8) 0 var(--spacing-16);
+}
+.mk-root .prompt-inline .prompt-block {
+    font-size: 14px;
+    padding: var(--spacing-16) var(--spacing-24);
+}
+.mk-root .copy-btn {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--color-silver-wash);
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    padding: 6px 12px;
+    cursor: pointer;
+    z-index: 1;
+}
+.mk-root .copy-btn:hover {
+    color: var(--color-paper);
+    border-color: var(--color-paper);
+}
+.mk-root .copy-btn.copied {
+    color: var(--color-burnished-gold);
+    border-color: var(--color-burnished-gold);
+}
+.mk-root .prompt-block {
+    background: var(--color-gallery-ink);
+    color: var(--color-paper);
+    font-family: monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    padding: var(--spacing-24) var(--spacing-32);
+    overflow-x: auto;
+    white-space: pre;
+}
+.mk-root .prompt-block code {
+    background: none;
+    color: inherit;
+    font-family: inherit;
+    font-size: inherit;
+}
+
+.mk-root .issue-subhead {
+    font-family: var(--font-sans) !important;
+    font-size: var(--text-caption) !important;
+    font-weight: 700 !important;
+    letter-spacing: 2px;
+    color: var(--color-silver-wash) !important;
+    margin-top: var(--spacing-24);
+}
+
+.mk-root .issue-cta .cta-bracketed {
+    border-bottom: none;
+}
+
+.mk-root .issue-footer-note {
+    margin-top: var(--spacing-64);
+    margin-bottom: var(--spacing-64);
+}
+.mk-root .issue-footer-note p {
+    font-size: var(--text-body-sm);
+    color: var(--color-silver-wash);
+}
+.mk-root .issue-footer-note a {
+    border-bottom: 1px solid var(--color-burnished-gold);
+    color: var(--color-letterpress-black);
+    display: inline-block;
+    padding: 0 4px;
+}
+
+.mk-root .issue-cta {
+    margin-top: 0;
+    padding: var(--spacing-48) var(--spacing-32);
+    background: var(--color-vellum-white);
+    text-align: center;
+}
+.mk-root .issue-cta h3 {
+    font-family: var(--font-serif);
+    font-weight: 400;
+    font-size: var(--text-subheading);
+    color: var(--color-letterpress-black);
+    margin-bottom: var(--spacing-12);
+}
+.mk-root .issue-cta p {
+    font-family: var(--font-serif);
+    font-size: var(--text-body-sm);
+    color: var(--color-silver-wash);
+    margin-bottom: var(--spacing-24);
+}

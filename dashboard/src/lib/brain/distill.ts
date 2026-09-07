@@ -12,6 +12,7 @@ import {
 	brainState,
 	brainTakes,
 	companies,
+	docs,
 	documents,
 	emailMessages,
 	emailThreads,
@@ -25,6 +26,7 @@ import { syncEntities, syncPersons, syncProspects, detectLoops, backfillTimeline
 import { embedPending } from "./embed";
 import { addVoicePatterns } from "~/lib/voice-lint-db";
 import type { PatternCandidate } from "~/lib/voice-lint";
+import { docSurface } from "~/lib/voice-lint";
 import { syncSlack } from "~/lib/slack";
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
@@ -167,6 +169,21 @@ export async function extractLessons(opts: { maxPairs?: number; maxChars?: numbe
 		return { pairs: 0, lessons: 0, patterns: 0 };
 	}
 
+	// scope stamps: lessons learned from a doc inherit that doc's kind+genre,
+	// so a LinkedIn-post lesson never lints an email (and vice versa)
+	const docIds = [...new Set(pairs.filter((p) => p.entity === "doc").map((p) => p.entityId))];
+	const docRows = docIds.length
+		? await db.select({ id: docs.id, kind: docs.kind, genre: docs.genre }).from(docs).where(inArray(docs.id, docIds))
+		: [];
+	const docById = new Map(docRows.map((d) => [d.id, d]));
+	const scopeForPair = (p: { entity: string; entityId: string }): { surface: string; genre?: string | null } => {
+		if (p.entity === "doc") {
+			const d = docById.get(p.entityId);
+			return { surface: d ? docSurface(d.kind) : "docs", genre: d?.genre ?? null };
+		}
+		return { surface: surfaceForPair(p.entity) };
+	};
+
 	let lessons = 0;
 	let patterns = 0;
 	let newest: Date | null = null;
@@ -183,13 +200,14 @@ ${p.human.content.slice(0, maxChars)}`;
 		}[];
 		for (const item of out) {
 			if (!item?.lesson) continue;
+			const scope = scopeForPair(p);
 			await insertFacts(
 				[{ entity: item.entity ?? "voice", fact: item.lesson, kind: "lesson", notability: "high", confidence: 0.9 }],
-				{ sourceTable: "text_versions", sourceId: p.human.id, surface: surfaceForPair(p.entity) },
+				{ sourceTable: "text_versions", sourceId: p.human.id, surface: scope.surface, genre: scope.genre ?? null },
 			);
 			lessons++;
 			if (item.patterns?.length) {
-				patterns += await addVoicePatterns(item.patterns, item.lesson);
+				patterns += await addVoicePatterns(item.patterns, item.lesson, scope);
 			}
 		}
 		if (!newest || p.human.createdAt > newest) newest = p.human.createdAt;
@@ -224,7 +242,7 @@ export function surfaceForPair(entity: string): string {
 /** Insert facts with deterministic dedup (entity + normalized-text hash). */
 export async function insertFacts(
 	facts: (ExtractedFact & { speaker?: string })[],
-	provenance: { sourceTable: string; sourceId?: string; surface?: string },
+	provenance: { sourceTable: string; sourceId?: string; surface?: string; genre?: string | null },
 ) {
 	let inserted = 0;
 	let skipped = 0;
@@ -242,6 +260,7 @@ export async function insertFacts(
 					sourceTable: provenance.sourceTable,
 					sourceId: provenance.sourceId,
 					surface: provenance.surface,
+					genre: provenance.genre?.trim().toLowerCase() || null,
 					context: f.speaker ? `said by ${f.speaker}` : null,
 					factHash: factHash(f.fact),
 				})

@@ -27,6 +27,13 @@ export const createDocAction = action(async (formData: FormData) => {
 	"use server";
 	await requireAdmin();
 	const title = String(formData.get("title") || "").trim() || "Untitled";
-	const [row] = await db.insert(docs).values({ title }).returning();
-	throw redirect(`/admin/docs/${row.id}`);
+	const kindRaw = String(formData.get("kind") || "");
+	const kind = kindRaw === "post" || kindRaw === "newsletter" ? kindRaw : null;
+	const genre = String(formData.get("genre") || "").trim().toLowerCase() || null;
+	const [row] = await db
+		.insert(docs)
+		.values({ title, kind, ...(genre ? { genre } : {}) })
+		.returning();
+	const base = kind === "post" ? "/admin/posts" : kind === "newsletter" ? "/admin/newsletters" : "/admin/docs";
+	throw redirect(`${base}/${row.id}`);
 }, "createDoc");

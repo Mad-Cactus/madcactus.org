@@ -3,13 +3,16 @@
 // can't drag the db chain into the browser bundle.
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "~/db";
-import { brainFacts, voicePatterns, voiceLintOverrides } from "~/db/schema";
+import { brainFacts, docs, voicePatterns, voiceLintOverrides } from "~/db/schema";
+export type { VoiceScope } from "~/lib/voice-lint";
 import {
 	lintAgainstPatterns,
 	normalizePattern,
+	patternApplies,
 	type LintResult,
 	type PatternCandidate,
 	type PatternRow,
+	type VoiceScope,
 } from "~/lib/voice-lint";
 
 let cache: { rows: PatternRow[]; at: number } | null = null;
@@ -30,42 +33,70 @@ async function activePatterns(): Promise<PatternRow[]> {
 			direction: voicePatterns.direction,
 			beforeText: voicePatterns.beforeText,
 			afterText: voicePatterns.afterText,
+			surface: voicePatterns.surface,
+			genre: voicePatterns.genre,
 		})
 		.from(voicePatterns)
 		.where(eq(voicePatterns.enabled, true));
-	cache = { rows, at: Date.now() };
+	cache = { rows: rows.map((r) => ({ ...r, surface: r.surface ?? null, genre: r.genre ?? null })), at: Date.now() };
 	return rows;
 }
 
 /** Lint text against Collin's voice patterns. avoid matches are violations;
- *  prefer matches are satisfied (reported in checked count only). */
-export async function lintVoiceText(text: string): Promise<LintResult> {
-	const patterns = await activePatterns();
+ *  prefer matches are satisfied (reported in checked count only). Pass a scope
+ *  to lint only the rules learned for that surface/genre (plus global ones). */
+export async function lintVoiceText(text: string, scope?: VoiceScope): Promise<LintResult> {
+	const patterns = (await activePatterns()).filter((p) => patternApplies(p, scope));
 	const violations = lintAgainstPatterns(text, patterns);
 	return { violations, avoidCount: violations.length, checked: patterns.length };
 }
 
 /** The prose half: Collin's voice lessons (brain_facts kind='lesson',
  *  entity 'voice'), highest-signal first — the "read before writing" list. */
-export async function getVoiceLessons(limit = 25) {
-	return db
-		.select({ id: brainFacts.id, fact: brainFacts.fact, surface: brainFacts.surface, confidence: brainFacts.confidence })
+export async function getVoiceLessons(limit = 25, scope?: VoiceScope) {
+	const rows = await db
+		.select({
+			id: brainFacts.id,
+			fact: brainFacts.fact,
+			surface: brainFacts.surface,
+			genre: brainFacts.genre,
+			confidence: brainFacts.confidence,
+		})
 		.from(brainFacts)
 		.where(and(eq(brainFacts.entitySlug, "voice"), eq(brainFacts.kind, "lesson"), sql`${brainFacts.expiredAt} IS NULL`))
 		.orderBy(sql`${brainFacts.confidence} desc`)
-		.limit(limit);
+		.limit(500);
+	return rows.filter((r) => patternApplies(r, scope)).slice(0, limit);
+}
+
+/** Genre vocabulary already in use — agents must reuse these before minting
+ *  a new one, or scopes fragment ("promo" vs "marketing" lint nothing together). */
+export async function listKnownGenres(): Promise<string[]> {
+	const [d, f, p] = await Promise.all([
+		db.selectDistinct({ genre: docs.genre }).from(docs),
+		db.selectDistinct({ genre: brainFacts.genre }).from(brainFacts),
+		db.selectDistinct({ genre: voicePatterns.genre }).from(voicePatterns),
+	]);
+	return [...new Set([...d, ...f, ...p].map((r) => r.genre?.trim().toLowerCase()).filter((g): g is string => Boolean(g)))].sort();
 }
 
 /** Insert LLM-proposed patterns from a lesson pair. Duplicates (rule+pattern
  *  unique index) are skipped; cache cleared so the lint sees them at once. */
-export async function addVoicePatterns(candidates: PatternCandidate[], lessonText: string): Promise<number> {
+export async function addVoicePatterns(candidates: PatternCandidate[], lessonText: string, scope?: VoiceScope): Promise<number> {
 	let added = 0;
 	for (const c of candidates.slice(0, 3)) {
 		const p = normalizePattern(c);
 		if (!p) continue;
 		const res = await db
 			.insert(voicePatterns)
-			.values({ ...p, lessonText: lessonText.slice(0, 500), confidence: 0.6, enabled: true })
+			.values({
+				...p,
+				lessonText: lessonText.slice(0, 500),
+				confidence: 0.6,
+				enabled: true,
+				surface: scope?.surface ?? null,
+				genre: scope?.genre?.trim().toLowerCase() || null,
+			})
 			.onConflictDoNothing({ target: [voicePatterns.rule, voicePatterns.pattern] })
 			.returning({ id: voicePatterns.id });
 		if (res.length) added++;

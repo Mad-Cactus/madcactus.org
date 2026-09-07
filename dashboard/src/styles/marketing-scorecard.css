@@ -1,0 +1,351 @@
+/* Scorecard — ported from marketing/src/pages/scorecard.astro <style is:global>.
+   .dot/.progress-fill renamed to .sc-* — they collide with dashboard app.css. */
+
+.mk-root .intro {
+    padding: var(--spacing-80) var(--spacing-64) var(--spacing-48);
+}
+.mk-root .intro-inner {
+    max-width: 720px;
+    margin: 0 auto;
+    text-align: center;
+}
+.mk-root .intro-headline {
+    font-family: var(--font-serif);
+    font-weight: 400;
+    font-size: var(--text-heading);
+    line-height: var(--leading-display);
+    color: var(--color-letterpress-black);
+    margin-bottom: var(--spacing-24);
+}
+.mk-root .intro-headline em {
+    font-style: italic;
+}
+.mk-root .intro-body {
+    font-family: var(--font-serif);
+    font-size: var(--text-body);
+    line-height: var(--leading-body);
+    color: rgba(0, 0, 0, 0.6);
+    max-width: 480px;
+    margin: 0 auto var(--spacing-24);
+}
+
+.mk-root .quiz {
+    padding: var(--spacing-48) var(--spacing-64) var(--spacing-80);
+}
+.mk-root .quiz-inner {
+    max-width: 720px;
+    margin: 0 auto;
+}
+.mk-root .sc-progress-track {
+    width: 100%;
+    height: 1px;
+    background: rgba(0, 0, 0, 0.08);
+    margin-bottom: var(--spacing-16);
+}
+.mk-root .sc-progress-fill {
+    height: 100%;
+    background: var(--color-burnished-gold);
+    transition: width 0.3s ease;
+    width: 10%;
+}
+.mk-root .progress-text {
+    font-family: var(--font-sans);
+    font-size: var(--text-caption);
+    color: var(--color-silver-wash);
+    margin-bottom: var(--spacing-40);
+}
+.mk-root .question {
+    display: none;
+}
+.mk-root .question.active {
+    display: block;
+}
+.mk-root .question-text {
+    font-family: var(--font-serif);
+    font-weight: 400;
+    font-size: var(--text-subheading);
+    line-height: 1.3;
+    color: var(--color-letterpress-black);
+    margin-bottom: var(--spacing-32);
+}
+.mk-root .answers {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-16);
+}
+.mk-root .answers label {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-16);
+    padding: var(--spacing-16) var(--spacing-24);
+    background: var(--color-paper);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    cursor: pointer;
+    transition: border-color 0.2s;
+}
+.mk-root .answers label:hover {
+    border-color: var(--color-burnished-gold);
+}
+.mk-root .answers input[type="radio"] {
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border: 1px solid rgba(0, 0, 0, 0.3);
+    border-radius: 0;
+    position: relative;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+.mk-root .answers input[type="radio"]:checked {
+    border-color: var(--color-burnished-gold);
+}
+.mk-root .answers input[type="radio"]:checked::after {
+    content: "";
+    position: absolute;
+    inset: 3px;
+    background: var(--color-burnished-gold);
+}
+.mk-root .answers label span {
+    font-family: var(--font-serif);
+    font-size: var(--text-body);
+    color: var(--color-letterpress-black);
+}
+
+.mk-root .quiz-nav {
+    display: flex;
+    justify-content: space-between;
+    margin-top: var(--spacing-40);
+}
+.mk-root .nav-btn {
+    font-family: var(--font-serif);
+    font-size: var(--text-body-sm);
+    color: var(--color-letterpress-black);
+    background: transparent;
+    border: 1px solid var(--color-letterpress-black);
+    padding: 10px 24px;
+    cursor: pointer;
+    border-radius: 0;
+}
+.mk-root .nav-btn:hover {
+    background: var(--color-letterpress-black);
+    color: var(--color-vellum-white);
+}
+.mk-root .nav-btn-primary {
+    background: var(--color-letterpress-black);
+    color: var(--color-vellum-white);
+}
+.mk-root .nav-btn-primary:hover {
+    background: var(--color-burnished-gold);
+    color: var(--color-letterpress-black);
+    border-color: var(--color-burnished-gold);
+}
+
+.mk-root .results {
+    padding: var(--spacing-80) var(--spacing-64);
+}
+.mk-root .results-inner {
+    max-width: 720px;
+    margin: 0 auto;
+}
+.mk-root .score-display {
+    text-align: center;
+    margin-bottom: var(--spacing-48);
+}
+.mk-root .score-tier {
+    font-family: var(--font-sans);
+    font-size: var(--text-caption);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: var(--spacing-16);
+}
+.mk-root .score-number {
+    font-family: var(--font-serif);
+    font-weight: 400;
+    font-size: 96px;
+    line-height: 1;
+    color: var(--color-letterpress-black);
+}
+.mk-root .score-pct {
+    font-size: 42px;
+}
+.mk-root .score-desc {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-size: var(--text-body);
+    line-height: var(--leading-body);
+    color: rgba(0, 0, 0, 0.6);
+    max-width: 480px;
+    margin: var(--spacing-24) auto 0;
+}
+.mk-root .score-cost {
+    margin-top: var(--spacing-32);
+    padding: var(--spacing-32);
+    background: var(--color-paper);
+    border-top: 1px solid var(--color-burnished-gold);
+    border-bottom: 1px solid var(--color-burnished-gold);
+}
+.mk-root .cost-label {
+    font-family: var(--font-sans);
+    font-size: var(--text-caption);
+    color: var(--color-silver-wash);
+    display: block;
+    margin-bottom: var(--spacing-8);
+}
+.mk-root .cost-amount {
+    font-family: var(--font-serif);
+    font-weight: 400;
+    font-size: var(--text-heading);
+    color: var(--color-burnished-gold);
+    display: block;
+}
+.mk-root .cost-note {
+    font-family: var(--font-sans);
+    font-size: var(--text-caption);
+    color: var(--color-silver-wash);
+    display: block;
+    margin-top: var(--spacing-8);
+}
+
+.mk-root .score-breakdown {
+    margin-bottom: var(--spacing-48);
+}
+.mk-root .breakdown-title {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-size: var(--text-subheading);
+    color: var(--color-letterpress-black);
+    margin-bottom: var(--spacing-24);
+}
+.mk-root .breakdown-bars {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-16);
+}
+.mk-root .breakdown-row {
+    display: grid;
+    grid-template-columns: 180px 1fr 40px;
+    align-items: center;
+    gap: var(--spacing-16);
+}
+.mk-root .breakdown-label {
+    font-family: var(--font-serif);
+    font-size: var(--text-body-sm);
+    color: var(--color-letterpress-black);
+}
+.mk-root .breakdown-bar {
+    height: 1px;
+    background: rgba(0, 0, 0, 0.08);
+    position: relative;
+}
+.mk-root .breakdown-fill {
+    height: 1px;
+    background: var(--color-burnished-gold);
+}
+.mk-root .breakdown-score {
+    font-family: var(--font-sans);
+    font-size: var(--text-caption);
+    color: var(--color-silver-wash);
+    text-align: right;
+}
+.mk-root .breakdown-note {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-size: var(--text-body-sm);
+    color: var(--color-silver-wash);
+    margin-top: var(--spacing-24);
+}
+
+.mk-root .email-gate {
+    padding: var(--spacing-40);
+    background: var(--color-paper);
+    border-top: 1px solid var(--color-letterpress-black);
+    border-bottom: 1px solid var(--color-letterpress-black);
+    margin-bottom: var(--spacing-48);
+    text-align: center;
+}
+.mk-root .gate-heading {
+    font-family: var(--font-serif);
+    font-weight: 400;
+    font-size: var(--text-subheading);
+    color: var(--color-letterpress-black);
+    margin-bottom: var(--spacing-16);
+}
+.mk-root .gate-body {
+    font-family: var(--font-serif);
+    font-size: var(--text-body-sm);
+    line-height: var(--leading-body);
+    color: rgba(0, 0, 0, 0.6);
+    max-width: 400px;
+    margin: 0 auto var(--spacing-24);
+}
+.mk-root .gate-form {
+    display: flex;
+    gap: var(--spacing-8);
+    justify-content: center;
+    flex-wrap: wrap;
+}
+.mk-root .gate-form input[type="email"] {
+    font-family: var(--font-sans);
+    font-size: var(--text-body-sm);
+    padding: 10px 16px;
+    border: 1px solid rgba(0, 0, 0, 0.2);
+    background: var(--color-vellum-white);
+    color: var(--color-letterpress-black);
+    border-radius: 0;
+    min-width: 240px;
+}
+.mk-root .gate-form input[type="email"]:focus {
+    outline: none;
+    border-color: var(--color-burnished-gold);
+}
+
+.mk-root .gate-submit {
+    appearance: none;
+    -webkit-appearance: none;
+    background: transparent;
+    border: none;
+    padding: 10px 24px;
+    font-family: var(--font-sans);
+    font-size: var(--text-body-sm);
+    font-weight: 700;
+    letter-spacing: 1px;
+    cursor: pointer;
+    color: var(--color-letterpress-black);
+}
+
+.mk-root .results-cta {
+    text-align: center;
+    padding: var(--spacing-48) 0;
+}
+.mk-root .cta-heading {
+    font-family: var(--font-serif);
+    font-weight: 400;
+    font-size: var(--text-subheading);
+    line-height: var(--leading-display);
+    color: var(--color-letterpress-black);
+    margin-bottom: var(--spacing-16);
+}
+.mk-root .cta-body {
+    font-family: var(--font-serif);
+    font-size: var(--text-body-sm);
+    line-height: var(--leading-body);
+    color: rgba(0, 0, 0, 0.6);
+    max-width: 400px;
+    margin: 0 auto var(--spacing-24);
+}
+
+@media (max-width: 900px) {
+    .mk-root .intro {
+        padding: var(--spacing-48) var(--spacing-24);
+    }
+    .mk-root .quiz {
+        padding: var(--spacing-24) var(--spacing-24) var(--spacing-48);
+    }
+    .mk-root .results {
+        padding: var(--spacing-48) var(--spacing-24);
+    }
+    .mk-root .breakdown-row {
+        grid-template-columns: 1fr;
+        gap: var(--spacing-8);
+    }
+}

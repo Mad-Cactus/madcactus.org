@@ -9,17 +9,23 @@ import { desc, eq } from "drizzle-orm";
 import { randomHex } from "~/lib/crypto";
 import { db } from "~/db";
 import { docs, type Doc } from "~/db/schema";
-import { lintVoiceText } from "~/lib/voice-lint-db";
+import { lintVoiceText, type VoiceScope } from "~/lib/voice-lint-db";
+import { docSurface } from "~/lib/voice-lint";
 import { trackText, listTextVersions, getTextVersionDiff } from "~/lib/crdt-text-db";
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { UUID_RE } from "~/lib/uuid";
 
 // ── Queries ────────────────────────────────────────────────────────
 
 export async function createDoc(
 	title: string,
 	markdown = "",
-	opts: { status?: "draft" | "final"; author?: "human" | "agent"; chatUuid?: string } = {},
+	opts: {
+		status?: "draft" | "final";
+		author?: "human" | "agent";
+		chatUuid?: string;
+		kind?: "post" | "newsletter" | null;
+		genre?: string | null;
+	} = {},
 ): Promise<Doc> {
 	const author = opts.author ?? "human";
 	const [row] = await db
@@ -28,6 +34,8 @@ export async function createDoc(
 			title,
 			markdown,
 			status: opts.status ?? "final",
+			...(opts.kind ? { kind: opts.kind } : {}),
+			...(opts.genre ? { genre: opts.genre.trim().toLowerCase() } : {}),
 			...(opts.chatUuid ? { chatUuid: opts.chatUuid } : {}),
 		})
 		.returning();
@@ -99,6 +107,16 @@ export async function setDocKind(id: string, kind: "post" | "newsletter" | null)
 	await db.update(docs).set({ kind }).where(eq(docs.id, id));
 }
 
+export async function setDocGenre(id: string, genre: string | null) {
+	const g = genre?.trim().toLowerCase() || null;
+	await db.update(docs).set({ genre: g }).where(eq(docs.id, id));
+}
+
+/** Voice scope a doc's text lints/learns under — kind → surface, freeform genre. */
+export function docVoiceScope(doc: Pick<Doc, "kind" | "genre">): VoiceScope {
+	return { surface: docSurface(doc.kind), genre: doc.genre };
+}
+
 /** Queue a doc for the scheduler. Any status is allowed — rescheduling a
  *  failed or already-published doc is a normal correction. */
 export async function scheduleDoc(id: string, when: Date, firstComment?: string | null) {
@@ -151,9 +169,16 @@ export async function agentWrite(input: {
 	content: string;
 	chatUuid: string;
 	mode?: "append" | "replace";
+	genre?: string | null;
 }): Promise<{ docId: string; version: number; lint: Awaited<ReturnType<typeof lintVoiceText>> }> {
 	const row = await getDoc(input.docId);
 	if (!row) throw new Error(`doc not found: ${input.docId}`);
+
+	// retag first so the lint + lesson derivation for THIS write use the new scope
+	if (input.genre !== undefined) {
+		await setDocGenre(input.docId, input.genre);
+		row.genre = input.genre?.trim().toLowerCase() || null;
+	}
 
 	const next =
 		input.mode === "replace"
@@ -161,7 +186,8 @@ export async function agentWrite(input: {
 			: (row.markdown ? row.markdown.replace(/\n*$/, "\n\n") : "") + input.content + "\n";
 
 	const version = await saveDocMarkdown(input.docId, next, "agent", input.chatUuid);
-	// advisory: violations ride back to the agent so it rewrites before finishing
-	const lint = await lintVoiceText(next);
+	// advisory: violations ride back to the agent so it rewrites before finishing —
+	// scoped to this doc's kind+genre so post rules stay out of plain docs
+	const lint = await lintVoiceText(next, docVoiceScope(row));
 	return { docId: input.docId, version, lint };
 }

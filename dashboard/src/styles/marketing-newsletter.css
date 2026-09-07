@@ -1,0 +1,222 @@
+/* Newsletter landing — ported from marketing/src/pages/newsletter.astro <style is:global>. */
+
+.mk-root .hero {
+    padding: var(--spacing-48) var(--spacing-64) var(--spacing-80);
+}
+.mk-root .hero-inner {
+    max-width: 760px;
+    margin: 0 auto;
+    text-align: center;
+}
+.mk-root .hero-headline {
+    font-family: var(--font-serif);
+    font-weight: 400;
+    font-size: clamp(40px, 9vw, 64px);
+    line-height: var(--leading-display);
+    letter-spacing: -1px;
+    margin-bottom: var(--spacing-32);
+}
+.mk-root .hero-headline em {
+    font-style: italic;
+    font-weight: 400;
+}
+.mk-root .hero-body {
+    font-family: var(--font-serif);
+    font-size: var(--text-body);
+    line-height: 1.5;
+    color: var(--color-letterpress-black);
+    max-width: 560px;
+    margin: 0 auto var(--spacing-48);
+}
+
+.mk-root .section-rule {
+    width: calc(100% + 2 * var(--spacing-64));
+    margin-left: calc(-1 * var(--spacing-64));
+}
+
+.mk-root .signup-form {
+    display: flex;
+    gap: var(--spacing-16);
+    justify-content: center;
+    align-items: stretch;
+    max-width: 480px;
+    margin: 0 auto;
+}
+.mk-root .signup-form input {
+    flex: 1;
+    font-family: var(--font-serif);
+    font-size: var(--text-body);
+    padding: 14px 18px;
+    border: 1px solid var(--color-letterpress-black);
+    background: var(--color-paper);
+    color: var(--color-letterpress-black);
+    outline: none;
+}
+.mk-root .signup-form input:focus {
+    border-color: var(--color-burnished-gold);
+}
+.mk-root .signup-form button {
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 14px 24px;
+    white-space: nowrap;
+}
+.mk-root .signup-form button:disabled {
+    opacity: 0.5;
+    cursor: wait;
+}
+.mk-root .signup-success {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-size: var(--text-subheading);
+    color: var(--color-letterpress-black);
+    padding: var(--spacing-16) 0;
+}
+
+.mk-root .section-header {
+    text-align: center;
+    padding: 0 var(--spacing-64) var(--spacing-48);
+}
+
+.mk-root .features-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--spacing-48);
+    max-width: var(--page-max-width);
+    margin: 0 auto;
+    padding: 0 var(--spacing-64) var(--spacing-80);
+}
+.mk-root .feature-col {
+    text-align: center;
+}
+.mk-root .feature-num {
+    font-family: var(--font-sans);
+    font-size: var(--text-caption);
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: var(--color-burnished-gold);
+    margin-bottom: var(--spacing-16);
+}
+.mk-root .feature-col h3 {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-weight: 400;
+    font-size: var(--text-subheading);
+    margin-bottom: var(--spacing-16);
+}
+.mk-root .feature-col p {
+    font-family: var(--font-serif);
+    font-size: var(--text-body);
+    line-height: 1.5;
+    color: var(--color-silver-wash);
+}
+
+/* CTA band — light variant, overrides the homepage dark band */
+.mk-root .dark-band {
+    background: var(--color-vellum-white);
+    border-top: 1px solid var(--color-burnished-gold);
+    padding: var(--spacing-80) var(--spacing-64);
+    text-align: center;
+}
+.mk-root .dark-band-inner {
+    max-width: 640px;
+    margin: 0 auto;
+}
+.mk-root .dark-band-headline {
+    font-family: var(--font-serif);
+    font-weight: 400;
+    font-size: clamp(32px, 6vw, 42px);
+    line-height: var(--leading-display);
+    color: var(--color-letterpress-black);
+    margin-bottom: var(--spacing-32);
+}
+.mk-root .dark-band-headline em {
+    font-style: italic;
+}
+.mk-root .dark-band-body {
+    font-family: var(--font-serif);
+    font-size: var(--text-body);
+    line-height: 1.5;
+    color: var(--color-silver-wash);
+    margin-bottom: var(--spacing-40);
+}
+
+.mk-root #past-issues {
+    padding: var(--spacing-80) 0;
+    border-top: 1px solid var(--color-letterpress-black);
+}
+.mk-root .archive-inner {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 0 var(--spacing-64);
+}
+.mk-root .archive-card {
+    display: block;
+    border: 1px solid var(--color-letterpress-black);
+    padding: var(--spacing-32);
+    transition: border-color 0.15s;
+}
+.mk-root .archive-card:hover {
+    border-color: var(--color-burnished-gold);
+}
+.mk-root .archive-meta {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: var(--spacing-24);
+}
+.mk-root .archive-num {
+    font-family: var(--font-sans);
+    font-size: var(--text-caption);
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--color-burnished-gold);
+}
+.mk-root .archive-date {
+    font-family: var(--font-sans);
+    font-size: var(--text-caption);
+    color: var(--color-silver-wash);
+}
+.mk-root .archive-title {
+    font-family: var(--font-serif);
+    font-weight: 400;
+    font-size: var(--text-subheading);
+    line-height: var(--leading-display);
+    color: var(--color-letterpress-black);
+    margin-bottom: var(--spacing-20);
+}
+.mk-root .archive-desc {
+    font-family: var(--font-serif);
+    font-size: var(--text-body-sm);
+    line-height: var(--leading-body);
+    color: var(--color-silver-wash);
+    margin-bottom: var(--spacing-32);
+}
+.mk-root .archive-link {
+    font-family: var(--font-sans);
+    font-size: var(--text-body-sm);
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--color-letterpress-black);
+}
+.mk-root .archive-card:hover .archive-link {
+    color: var(--color-burnished-gold);
+}
+
+@media (max-width: 900px) {
+    .mk-root .hero,
+    .mk-root .features-grid,
+    .mk-root .dark-band {
+        padding-left: var(--spacing-24);
+        padding-right: var(--spacing-24);
+    }
+    .mk-root .features-grid {
+        grid-template-columns: 1fr;
+        gap: var(--spacing-48);
+    }
+    .mk-root .archive-inner {
+        padding: 0 var(--spacing-24);
+    }
+}

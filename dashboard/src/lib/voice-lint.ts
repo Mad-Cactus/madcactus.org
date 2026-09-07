@@ -29,7 +29,26 @@ export type PatternRow = {
 	direction: string;
 	beforeText: string | null;
 	afterText: string | null;
+	// scope the pattern lints (null = global for that dimension)
+	surface?: string | null;
+	genre?: string | null;
 };
+
+/** Scope a lint/lesson request: surface ("email" | "docs" | "post" |
+ *  "newsletter" …) plus optional freeform genre. Undefined = match all. */
+export type VoiceScope = { surface: string; genre?: string | null };
+
+/** A pattern applies iff its surface is global or matches, AND its genre is
+ *  global or matches — either dimension can widen, neither narrows past a mismatch. */
+export function patternApplies(p: { surface?: string | null; genre?: string | null }, scope?: VoiceScope): boolean {
+	if (!scope) return true;
+	if (p.surface && p.surface !== scope.surface) return false;
+	if (p.genre && p.genre !== (scope.genre ?? null)) return false;
+	return true;
+}
+
+/** Which lint surface a doc kind uses — plain docs are just "docs". */
+export const docSurface = (kind: string | null | undefined): string => kind ?? "docs";
 
 /** Pure core — the DB wrapper just feeds it enabled patterns. */
 export function lintAgainstPatterns(text: string, patterns: PatternRow[]): LintViolation[] {
