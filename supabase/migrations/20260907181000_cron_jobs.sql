@@ -25,7 +25,7 @@ begin
       '0 10 * * *',
       $job$
       select net.http_post(
-        url := 'https://app.madcactus.org/api/brain/cycle',
+        url := 'https://madcactus.org/api/brain/cycle',
         headers := jsonb_build_object(
           'Content-Type', 'application/json',
           'x-cron-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'brain-cron-secret')
@@ -53,7 +53,7 @@ begin
           or exists (select 1 from email_outbox where status = 'sending' and updated_at <= now() - interval '5 minutes')
         then
           perform net.http_post(
-            url := 'https://app.madcactus.org/api/scheduler/tick',
+            url := 'https://madcactus.org/api/scheduler/tick',
             headers := jsonb_build_object(
               'Content-Type', 'application/json',
               'x-cron-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'brain-cron-secret')
