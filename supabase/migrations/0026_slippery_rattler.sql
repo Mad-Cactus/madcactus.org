@@ -1,1 +1,0 @@
-ALTER TABLE "docs" ADD COLUMN "first_comment" text;

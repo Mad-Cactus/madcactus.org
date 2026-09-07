@@ -1,0 +1,53 @@
+name: DB drift
+
+# Daily check that prod hasn't drifted from the repo. Catches:
+#  1. Supabase GitHub auto-apply silently not running (main ahead of prod)
+#  2. Schema changed on prod outside migrations (e.g. someone ran
+#     drizzle-kit db:push or SQL editor changes)
+#
+# Requires repo secrets (Settings → Secrets → Actions):
+#   SUPABASE_ACCESS_TOKEN  — supabase.com/dashboard/account/tokens
+#   SUPABASE_DB_PASSWORD   — dashboard DB connection password
+# Job is skipped (green) until both exist.
+on:
+  schedule:
+    - cron: '0 13 * * *' # 06:00 PT daily
+  workflow_dispatch:
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    if: ${{ secrets.SUPABASE_ACCESS_TOKEN != '' && secrets.SUPABASE_DB_PASSWORD != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Link project
+        run: supabase link --project-ref uzhjhzmgycjmvhkbelgx
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: No pending migrations
+        run: |
+          out=$(supabase migration list </dev/null 2>/dev/null || true)
+          pending=$(echo "$out" | grep -o '"local":"[^"]*","remote":""' || true)
+          if [ -n "$pending" ]; then
+            echo "::error::Migrations on main not applied to prod (auto-apply broken?): $pending"
+            exit 1
+          fi
+          echo "Prod is up to date with main."
+        env:
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+
+      - name: No unversioned schema on prod
+        run: |
+          supabase db diff --linked -f /tmp/drift.sql </dev/null
+          if [ -s /tmp/drift.sql ]; then
+            echo "::error::Prod schema differs from what migrations produce — someone changed the DB outside migrations."
+            cat /tmp/drift.sql
+            exit 1
+          fi
+          echo "No drift: prod matches migrations."
+        env:
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}

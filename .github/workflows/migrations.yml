@@ -1,0 +1,53 @@
+name: Migrations
+
+# Guards schema changes before they reach Supabase's GitHub auto-apply:
+# 1. every migration file is registered in the drizzle journal
+#    (catches hand-dropped SQL that desyncs `drizzle-kit generate`)
+# 2. all migrations replay cleanly, in order, on a fresh database
+on:
+  pull_request:
+    paths: ['supabase/migrations/**']
+  push:
+    branches: [main]
+    paths: ['supabase/migrations/**']
+
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Journal consistency
+        run: |
+          python3 - <<'EOF'
+          import json, os, sys
+          j = json.load(open('supabase/migrations/meta/_journal.json'))
+          tags = {e['tag'] for e in j['entries']}
+          files = sorted(f[:-4] for f in os.listdir('supabase/migrations')
+                         if f.endswith('.sql'))
+          missing = [f for f in files if f not in tags]
+          if missing:
+              print('Files missing from drizzle journal (run `drizzle-kit generate --custom` and add an entry):')
+              for f in missing: print(' -', f)
+              sys.exit(1)
+          print(f'{len(files)} migration files, all registered in journal')
+          EOF
+
+      - name: Replay on fresh database
+        run: |
+          docker run -d --name db -e POSTGRES_PASSWORD=postgres -p 54399:5432 pgvector/pgvector:pg17
+          for i in $(seq 30); do docker exec db pg_isready -U postgres >/dev/null 2>&1 && break || sleep 2; done
+
+          # Stub Supabase-platform objects so plain Postgres can replay:
+          # storage schema, extensions schema. Platform-only CREATE EXTENSION
+          # and ALTER PUBLICATION lines are filtered below.
+          docker exec db psql -U postgres -q -c \
+            "create schema extensions; create schema storage;
+             create table storage.buckets (id text primary key, name text, public boolean, file_size_limit bigint)"
+
+          for f in supabase/migrations/*.sql; do
+            echo "== applying $f"
+            awk '!/CREATE EXTENSION/ || /"vector"|pg_trgm/' "$f" | sed '/ALTER PUBLICATION/d' \
+              | docker exec -i db psql -U postgres -v ON_ERROR_STOP=1 -q || { echo "FAILED: $f"; exit 1; }
+          done
+          echo "All migrations replayed cleanly."
