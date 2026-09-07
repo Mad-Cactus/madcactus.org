@@ -1,6 +1,7 @@
 name: DB drift
 
-# Daily check that prod hasn't drifted from the repo. Catches:
+# Drift check that prod matches the repo. Runs before migration-touching
+# PRs merge and before main's auto-apply reaches Supabase, plus daily. Catches:
 #  1. Supabase GitHub auto-apply silently not running (main ahead of prod)
 #  2. Schema changed on prod outside migrations (e.g. someone ran
 #     drizzle-kit db:push or SQL editor changes)
@@ -10,6 +11,11 @@ name: DB drift
 #   SUPABASE_DB_PASSWORD   — dashboard DB connection password
 # Job is skipped (green) until both exist.
 on:
+  pull_request:
+    paths: ['supabase/migrations/**']
+  push:
+    branches: [main]
+    paths: ['supabase/migrations/**']
   schedule:
     - cron: '0 13 * * *' # 06:00 PT daily
   workflow_dispatch:
