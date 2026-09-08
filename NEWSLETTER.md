@@ -6,6 +6,8 @@ Weekly AI/automation teardown newsletter. Name: **The Cactus Dispatch**.
 
 ### Resend (sending infra)
 
+> **Status (2026-09-08): domain `madcactus.org` is verified in Resend** — SPF, DKIM, and DMARC records are live in Squarespace DNS. Sending is unblocked.
+
 The signup endpoint (`dashboard/src/routes/api/newsletter.ts`) is already built and adds contacts to a Resend Audience. Provision:
 
 1. **Create account** at resend.com
