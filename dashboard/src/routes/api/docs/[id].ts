@@ -11,6 +11,7 @@ import {
 	setDocGenre,
 	scheduleDoc,
 	unscheduleDoc,
+	deleteDoc,
 	listDocVersions,
 	getDocVersionDiff,
 } from "~/lib/docs";
@@ -22,6 +23,7 @@ import {
  * GET  /api/docs/:id?diff=N → word-diff of version N vs N-1
  * PUT  /api/docs/:id   { markdown } → { version }
  * POST /api/docs/:id   { op: "finalize" | "share" | "rename" | "set-kind" | "set-genre" | "schedule" | "unschedule", ... } → result
+ * DELETE /api/docs/:id → { ok }  (hard-deletes the doc + version history)
  */
 async function requireAdmin() {
 	return (await getAuthedClient()) !== null;
@@ -101,3 +103,13 @@ export const POST = async (event: APIEvent) => {
 
 // createDoc re-exported for discoverability; route handlers above are the API.
 void createDoc;
+
+export const DELETE = async (event: APIEvent) => {
+	if (!(await requireAdmin())) return json({ error: "Unauthorized" }, 401);
+	try {
+		const ok = await deleteDoc(event.params.id);
+		return ok ? json({ ok: true }) : json({ error: "Not found" }, 404);
+	} catch (e) {
+		return json({ error: e instanceof Error ? e.message : String(e) }, 400);
+	}
+};

@@ -1,5 +1,7 @@
 import { For, Show, createSignal, onMount } from "solid-js";
+import { useNavigate } from "@solidjs/router";
 import LexicalDocEditor from "~/components/LexicalDocEditor";
+import ConfirmButton from "~/components/ConfirmButton";
 import { LinkedInPreview, NewsletterEmailPreview, NewsletterWebPreview, type PreviewMode } from "~/components/DocPreviews";
 import { getDocQuery } from "~/lib/docs-queries";
 
@@ -28,6 +30,14 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 	const [sel, setSel] = createSignal<number | null>(null);
 	const [diff, setDiff] = createSignal<DiffPart[] | null>(null);
 	// kind is set at creation (which tab you made it in) — the editor adapts
+	const navigate = useNavigate();
+	const listUrl = () => (kind() === "newsletter" ? "/admin/newsletters" : kind() === "post" ? "/admin/posts" : "/admin");
+	const remove = async (): Promise<{ error?: string } | undefined> => {
+		const res = await fetch(`/api/docs/${props.id}`, { method: "DELETE" });
+		if (!res.ok) return { error: ((await res.json().catch(() => ({}))) as { error?: string }).error ?? "delete failed" };
+		navigate(listUrl());
+		return undefined;
+	};
 	const kind = () => doc().kind ?? null;
 	const [docStatus, setDocStatus] = createSignal(doc().status as string);
 	const [schedFor, setSchedFor] = createSignal<string | null>(doc().scheduledFor?.toISOString() ?? null);
@@ -181,6 +191,13 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 				<button type="button" class="btn btn-sm" classList={{ active: showHistory() }} onClick={toggleHistory}>
 					History
 				</button>
+				<Show when={docStatus() !== "publishing"}>
+					<ConfirmButton
+						label="Delete"
+						confirmText={docStatus() === "scheduled" ? "Delete? Cancels the send" : "Delete? Removes it from the site"}
+						onConfirm={remove}
+					/>
+				</Show>
 				<button type="button" class="btn btn-sm" onClick={async () => {
 					const r = await post(props.id, { op: "share", enabled: !shareUrl() });
 					setShareUrl(r.shareToken ? `${location.origin}/share/${r.shareToken}` : "");
