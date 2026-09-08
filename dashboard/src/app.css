@@ -1009,20 +1009,6 @@ input:not(.form-group input):not(.doc-title):focus {
 }
 .doc-firstcomment .doc-sched-input { flex: 1; min-width: 0; }
 
-/* stacks below the editor once the sidebar would crowd it */
-@media (max-width: 1100px) {
-	.doc-shell { flex-direction: column; gap: 24px; }
-	.doc-history {
-		position: static;
-		width: 100%;
-		max-height: none;
-		border-left: none;
-		border-top: 1px solid rgba(0, 0, 0, 0.15);
-		padding-left: 0;
-		padding-top: 16px;
-	}
-}
-
 .doc-badge.sched { color: var(--accent, #a855f7); }
 .doc-badge.published { color: var(--good, #22c55e); }
 .doc-publish-error {
