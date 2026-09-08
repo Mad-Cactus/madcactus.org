@@ -20,6 +20,7 @@ export default function Newsletter() {
 			const params = new URLSearchParams(window.location.search);
 			ph.capture("newsletter_landed", {
 				source: params.get("utm_source") || (ref ? new URL(ref).hostname : "direct"),
+				campaign: params.get("utm_campaign") || "none",
 				referrer: ref,
 				path: window.location.pathname,
 			});
@@ -35,6 +36,12 @@ export default function Newsletter() {
 			btn.disabled = true;
 			const res = await subscribeToNewsletter(email);
 			if (res.ok) {
+				// conversion signal per post: /l/<key> redirect carries utm_campaign
+				const qp = new URLSearchParams(window.location.search);
+				window.posthog?.capture("newsletter_signed_up", {
+					campaign: qp.get("utm_campaign") || "none",
+					source: qp.get("utm_source") || "direct",
+				});
 				form.innerHTML = '<p class="signup-success">You\'re in. Check your inbox.</p>';
 			} else {
 				btn.textContent = "{ SUBSCRIBE }";

@@ -30,10 +30,11 @@ export default function AdminLinks() {
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ slug: fd.get("slug"), target: fd.get("target") }),
 		});
-		const body = (await r.json()) as { error?: string };
+		const body = (await r.json()) as { error?: string; slug?: string };
 		if (!r.ok) return setError(body.error ?? "Save failed");
-		setMsg("Saved.");
+		setMsg(`Saved — share link: ${location.origin}/l/${body.slug}`);
 		await refresh();
+		(e.target as HTMLFormElement).reset();
 	}
 
 	async function remove(slug: string) {
@@ -53,8 +54,8 @@ export default function AdminLinks() {
 				<summary style={{ cursor: "pointer", "font-weight": "600" }}>Create or update a link</summary>
 				<form onSubmit={save} style={{ display: "grid", gap: "8px", "max-width": "640px", "margin-top": "12px" }}>
 					<label style={{ display: "grid", gap: "4px" }}>
-						Slug (the /l/… part)
-						<input name="slug" required placeholder="td1-p1" style={{ padding: "8px" }} />
+						Slug — optional, leave blank for an unguessable one
+						<input name="slug" placeholder="e.g. td1 — or blank for random" style={{ padding: "8px" }} />
 					</label>
 					<label style={{ display: "grid", gap: "4px" }}>
 						Target URL (UTMs go here)
