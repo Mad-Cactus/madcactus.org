@@ -66,7 +66,9 @@ export function authUrl(redirectUri: string, state: string): string {
 		client_id: creds()!.clientId,
 		redirect_uri: redirectUri,
 		state,
-		scope: "openid profile w_member_social",
+		// w_member_social_feed = comment/react (Community Management API product —
+		// connect fails with invalid_scope until that product is approved & added)
+		scope: "openid profile w_member_social w_member_social_feed",
 	});
 	return `${AUTH_URL}?${params}`;
 }

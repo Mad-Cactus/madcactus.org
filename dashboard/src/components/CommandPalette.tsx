@@ -28,6 +28,7 @@ export default function CommandPalette() {
 			go("/admin/docs", "Go to Docs"),
 			go("/admin/posts", "Go to Posts"),
 			go("/admin/newsletters", "Go to Newsletters"),
+			go("/admin/links", "Go to Links"),
 			go("/admin/projects", "Go to Projects"),
 			go("/admin/meetings", "Go to Meetings"),
 			go("/admin/outreach", "Go to Outreach"),
