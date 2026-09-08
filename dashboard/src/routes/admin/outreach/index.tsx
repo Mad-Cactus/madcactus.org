@@ -142,26 +142,29 @@ function ActivityMetrics(props: { activity: BrainActivity }) {
 	);
 }
 
-/** Fetches only on first expand — one board render = zero activity calls. */
-function ActivitySection(props: { prospectId: string }) {
-	const [open, setOpen] = createSignal(false);
-	return (
-		<div style={{ "font-size": "12px", margin: "5px 0" }}>
-			<button type="button" class="btn btn-sm" onClick={() => setOpen(!open())}>
-				{open() ? "▾ brain activity" : "▸ brain activity"}
-			</button>
-			<Show when={open()}>
-				<ActivityDetails prospectId={props.prospectId} />
-			</Show>
-		</div>
-	);
-}
-
 /** Opening the brain from here auto-sets the me-cookie (?key=) so Collin's
  * demo visits never pollute prospect tracking — no ritual to forget. */
 function brainHref(p: OutreachProspect): string {
 	const base = (p.brainUrl ?? "").replace(/\/+$/, "");
 	return p.brainActivityKey ? `${base}/?key=${p.brainActivityKey}` : base;
+}
+
+function DetailRow(props: { videoUrl?: string | null; videoId: string }) {
+	return (
+		<Show when={props.videoUrl}>
+			<div style={{ display: "flex", gap: "8px", "flex-wrap": "wrap", margin: "12px 0" }}>
+				<a class="btn btn-sm" href={props.videoUrl!} target="_blank" rel="noreferrer">video ↗</a>
+				<button
+					type="button"
+					class="btn btn-sm"
+					onClick={() => navigator.clipboard.writeText(`${location.origin}/v/${props.videoId}`)}
+				>
+					copy email link
+				</button>
+				<a class="btn btn-sm" href={`/v/${props.videoId}?test=1`} target="_blank" rel="noreferrer">test ↗</a>
+			</div>
+		</Show>
+	);
 }
 
 function BoardCard(props: { prospect: OutreachProspect; due: boolean; onDragStart?: (id: string) => void }) {
@@ -173,6 +176,8 @@ function BoardCard(props: { prospect: OutreachProspect; due: boolean; onDragStar
 	const [editing, setEditing] = createSignal(false);
 	const [error, setError] = createSignal("");
 	const [dragging, setDragging] = createSignal(false);
+	const [open, setOpen] = createSignal(false);
+	let dialogRef!: HTMLDialogElement;
 
 	function startDrag(e: DragEvent) {
 		e.dataTransfer?.setData("text/plain", p().id);
@@ -231,6 +236,12 @@ function BoardCard(props: { prospect: OutreachProspect; due: boolean; onDragStar
 			draggable
 			onDragStart={startDrag}
 			onDragEnd={() => setDragging(false)}
+			onClick={(e) => {
+				// links/buttons keep their own behavior; everything else opens the detail dialog
+				if ((e.target as HTMLElement).closest("a,button,input,select,textarea,form")) return;
+				setOpen(true);
+				dialogRef.showModal();
+			}}
 		>
 			<div style={{ display: "flex", "align-items": "baseline", gap: "6px" }}>
 				<span style={{ "font-weight": "600", "font-size": "13px" }}>{p().company}</span>
@@ -270,14 +281,9 @@ function BoardCard(props: { prospect: OutreachProspect; due: boolean; onDragStar
 						</Show>
 					</Show>
 					<Show when={p().brainUrl}>
-						<a href={brainHref(p())} target="_blank" rel="noreferrer">brain ↗</a>
+						<a class="btn btn-sm" href={brainHref(p())} target="_blank" rel="noreferrer">brain ↗</a>
 					</Show>
 				</div>
-			</Show>
-
-			<Show when={p().brainUrl}>
-				<DigestSection brainUrl={p().brainUrl!} />
-				<ActivitySection prospectId={p().id} />
 			</Show>
 
 			<Show when={p().notes}>
@@ -313,6 +319,51 @@ function BoardCard(props: { prospect: OutreachProspect; due: boolean; onDragStar
 					<button type="submit" class="btn btn-primary btn-sm">Save</button>
 				</form>
 			</Show>
+
+			{/* detail dialog: email, brain digest + activity live here, not on the card */}
+			<dialog
+				class="prospect-modal"
+				ref={dialogRef}
+				onClick={(e) => e.stopPropagation()}
+				onClose={() => setOpen(false)}
+			>
+				<Show when={open()}>
+					<div style={{ display: "flex", "align-items": "center", gap: "8px" }}>
+						<h2 style={{ margin: "0", "font-size": "15px" }}>{p().company}</h2>
+						<button type="button" class="btn btn-sm" style={{ "margin-left": "auto" }} onClick={() => dialogRef.close()}>
+							Close
+						</button>
+					</div>
+					<Show when={p().contactName || p().email}>
+						<p style={{ margin: "10px 0", "font-size": "13px" }}>
+							<Show when={p().contactName}>{p().contactName} · </Show>
+							<Show when={p().email}>
+								<a href={`mailto:${p().email}`}>{p().email}</a>
+							</Show>
+						</p>
+					</Show>
+					<div class="muted" style={{ "font-size": "12px", margin: "8px 0", color: props.due ? "var(--orange)" : undefined }}>
+						→ {fmtDate(p().nextActionAt)}
+						<Show when={p().nextActionNote}> — {p().nextActionNote}</Show>
+					</div>
+					<div style={{ display: "flex", gap: "8px", "flex-wrap": "wrap", margin: "12px 0" }}>
+						<Show when={p().brainUrl}>
+							<a class="btn btn-sm" href={brainHref(p())} target="_blank" rel="noreferrer">brain ↗</a>
+						</Show>
+						<DetailRow videoUrl={p().videoUrl} videoId={p().id} />
+					</div>
+					<Show when={p().brainUrl}>
+						<DigestSection brainUrl={p().brainUrl!} />
+						<ActivityDetails prospectId={p().id} />
+					</Show>
+					<Show when={p().videoUrl && videoSummary(p())}>
+						<div style={{ color: "var(--orange)", "font-size": "12px", margin: "8px 0" }}>{videoSummary(p())}</div>
+					</Show>
+					<Show when={p().notes}>
+						<p class="muted" style={{ "font-size": "12px", margin: "8px 0" }}>{p().notes}</p>
+					</Show>
+				</Show>
+			</dialog>
 		</div>
 	);
 }
