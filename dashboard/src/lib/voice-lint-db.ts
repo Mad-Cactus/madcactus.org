@@ -3,8 +3,8 @@
 // can't drag the db chain into the browser bundle.
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "~/db";
-import { brainFacts, docs, voicePatterns, voiceLintOverrides } from "~/db/schema";
-export type { VoiceScope } from "~/lib/voice-lint";
+import { brainFacts, docs, voiceLessonReviews, voicePatterns, voiceLintOverrides } from "~/db/schema";
+export type { LintResult, VoiceScope } from "~/lib/voice-lint";
 import {
 	lintAgainstPatterns,
 	normalizePattern,
@@ -49,6 +49,18 @@ export async function lintVoiceText(text: string, scope?: VoiceScope): Promise<L
 	const patterns = (await activePatterns()).filter((p) => patternApplies(p, scope));
 	const violations = lintAgainstPatterns(text, patterns);
 	return { violations, avoidCount: violations.length, checked: patterns.length };
+}
+
+/** The hard-gate rejection payload for doc writes: nothing lands, the agent
+ *  must rewrite. No agent-side override — a wrong rule gets disabled by
+ *  Collin in the dashboard (only the human email send gate has an override). */
+export function lintGateError(lint: LintResult) {
+	return {
+		ok: false as const,
+		blocked: "voice_lint" as const,
+		violations: lint.violations,
+		error: `write REJECTED: ${lint.avoidCount} avoid-violation(s). Rewrite the flagged text and resubmit (verify with lint_voice_text). No override exists — if a rule is wrong, tell Collin to disable it in the dashboard.`,
+	};
 }
 
 /** The prose half: Collin's voice lessons (brain_facts kind='lesson',
@@ -114,4 +126,25 @@ export async function recordLintOverrides(patternIds: string[], outboxId?: strin
 		.update(voicePatterns)
 		.set({ overrideCount: sql`${voicePatterns.overrideCount} + 1` })
 		.where(inArray(voicePatterns.id, patternIds));
+}
+
+// ── Lessons review gate ────────────────────────────────────────────
+// Server-side proof an agent chat actually pulled the lessons: doc writes
+// are rejected without a review no older than LESSON_REVIEW_TTL_MS.
+const LESSON_REVIEW_TTL_MS = 60 * 60 * 1000;
+
+export async function recordLessonReview(chatUuid: string) {
+	await db
+		.insert(voiceLessonReviews)
+		.values({ chatUuid })
+		.onConflictDoUpdate({ target: voiceLessonReviews.chatUuid, set: { reviewedAt: new Date() } });
+}
+
+export async function hasRecentLessonReview(chatUuid: string): Promise<boolean> {
+	const [row] = await db
+		.select({ at: voiceLessonReviews.reviewedAt })
+		.from(voiceLessonReviews)
+		.where(eq(voiceLessonReviews.chatUuid, chatUuid))
+		.limit(1);
+	return !!row && Date.now() - row.at.getTime() < LESSON_REVIEW_TTL_MS;
 }

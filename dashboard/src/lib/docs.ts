@@ -9,7 +9,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { randomHex } from "~/lib/crypto";
 import { db } from "~/db";
 import { docs, textVersions, type Doc } from "~/db/schema";
-import { lintVoiceText, type VoiceScope } from "~/lib/voice-lint-db";
+import { lintGateError, lintVoiceText, type LintResult, type VoiceScope } from "~/lib/voice-lint-db";
 import { docSurface } from "~/lib/voice-lint";
 import { trackText, listTextVersions, getTextVersionDiff } from "~/lib/crdt-text-db";
 import { UUID_RE } from "~/lib/uuid";
@@ -201,10 +201,14 @@ export async function deleteDoc(id: string): Promise<boolean> {
 // ── Agent writes ───────────────────────────────────────────────────
 
 /**
- * Agent append/replace, attributed + versioned via crdt-text. The write
- * re-opens the doc for human review (status=draft); the human's next save
- * (or Mark final) closes it. The version timeline IS the learning record —
- * the brain reads these diffs during memory generation.
+ * Agent append/replace, attributed + versioned via crdt-text. HARD VOICE
+ * GATE: the text is linted BEFORE saving — unfixed avoid-violations reject
+ * the write outright (no agent override; a wrong rule gets disabled by
+ * Collin in the dashboard). append lints only the incoming text so legacy
+ * bodies can't block new sections; replace owns the whole body. On success
+ * the write re-opens the doc for human review (status=draft); the human's
+ * next save (or Mark final) closes it. The version timeline IS the learning
+ * record — the brain reads these diffs during memory generation.
  */
 export async function agentWrite(input: {
 	docId: string;
@@ -212,24 +216,30 @@ export async function agentWrite(input: {
 	chatUuid: string;
 	mode?: "append" | "replace";
 	genre?: string | null;
-}): Promise<{ docId: string; version: number; lint: Awaited<ReturnType<typeof lintVoiceText>> }> {
+}): Promise<{ docId: string; version: number; lint: LintResult } | ReturnType<typeof lintGateError>> {
 	const row = await getDoc(input.docId);
 	if (!row) throw new Error(`doc not found: ${input.docId}`);
 
-	// retag first so the lint + lesson derivation for THIS write use the new scope
-	if (input.genre !== undefined) {
-		await setDocGenre(input.docId, input.genre);
-		row.genre = input.genre?.trim().toLowerCase() || null;
-	}
-
+	// lint under the incoming genre without persisting the retag yet — a
+	// rejected write must leave the doc untouched
+	const nextGenre = input.genre !== undefined ? input.genre?.trim().toLowerCase() || null : row.genre;
+	const scope = docVoiceScope({ kind: row.kind, genre: nextGenre });
 	const next =
 		input.mode === "replace"
 			? input.content
 			: (row.markdown ? row.markdown.replace(/\n*$/, "\n\n") : "") + input.content + "\n";
 
+	const lint = await lintVoiceText(input.mode === "replace" ? next : input.content, scope);
+	if (lint.avoidCount > 0) return lintGateError(lint);
+
+	// retag only once the gate passed, so the lint + lesson derivation for
+	// THIS write use the new scope
+	if (input.genre !== undefined && nextGenre !== row.genre) {
+		await setDocGenre(input.docId, nextGenre);
+	}
+
 	const version = await saveDocMarkdown(input.docId, next, "agent", input.chatUuid);
-	// advisory: violations ride back to the agent so it rewrites before finishing —
-	// scoped to this doc's kind+genre so post rules stay out of plain docs
-	const lint = await lintVoiceText(next, docVoiceScope(row));
+	// remaining violations (prefer-direction) ride back as advisory — scoped to
+	// this doc's kind+genre so post rules stay out of plain docs
 	return { docId: input.docId, version, lint };
 }
