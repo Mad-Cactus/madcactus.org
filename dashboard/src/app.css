@@ -1071,7 +1071,7 @@ input:not(.form-group input):not(.doc-title):focus {
 
 /* right-side version history / preview panel */
 .doc-shell { display: flex; align-items: flex-start; gap: 36px; }
-.doc-main { flex: 1; min-width: 0; }
+.doc-main { flex: 1; min-width: 0; overflow-wrap: anywhere; } /* long first-comment URLs must wrap, not push the page off screen */
 .doc-history {
 	width: 300px;
 	flex-shrink: 0;
