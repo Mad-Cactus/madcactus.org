@@ -1,5 +1,5 @@
 import { query, action, redirect } from "@solidjs/router";
-import { and, asc, desc, eq, isNotNull, ne } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, isNull, ne } from "drizzle-orm";
 import { db } from "~/db";
 import { emailOutbox } from "~/db/schema";
 import { getAuthedClient } from "~/lib/session";
@@ -59,10 +59,12 @@ export const getInboxQuery = query(async (opts: { q?: string } = {}) => {
 	// in `threads` (Inbox tab), sent matches ride along in `sent` (Sent tab).
 	const matches = await listInbox(account, { q: opts.q });
 	const threads = opts.q ? matches.filter((t) => !t.archived) : matches;
+	// sendAt must be null: a scheduled draft lives in the Outbox only — one
+	// place at a time
 	const drafts = await db
 		.select()
 		.from(emailOutbox)
-		.where(eq(emailOutbox.status, "draft"))
+		.where(and(eq(emailOutbox.status, "draft"), isNull(emailOutbox.sendAt)))
 		.orderBy(desc(emailOutbox.createdAt));
 	// Outbox — the scheduled-send queue (status≠sent; sent mail lives in the
 	// Sent tab via Gmail sync). Failed scheduled sends stay visible here.
