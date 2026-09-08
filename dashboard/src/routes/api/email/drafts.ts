@@ -1,4 +1,4 @@
-import { inArray } from "drizzle-orm";
+import { and, inArray, isNull } from "drizzle-orm";
 import type { APIEvent } from "@solidjs/start/server";
 import { getAuthedClient } from "~/lib/session";
 import { db } from "~/db";
@@ -9,8 +9,12 @@ export const GET = async () => {
 	if (!(await getAuthedClient())) {
 		return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
 	}
-	// draft + failed: failed scheduled sends stay visible for retry instead of vanishing
-	const rows = await db.select().from(emailOutbox).where(inArray(emailOutbox.status, ["draft", "failed"]));
+	// draft + failed, never scheduled: sendAt set = lives in the Outbox only
+	// (failed scheduled sends stay visible there for retry instead of vanishing)
+	const rows = await db
+		.select()
+		.from(emailOutbox)
+		.where(and(inArray(emailOutbox.status, ["draft", "failed"]), isNull(emailOutbox.sendAt)));
 	return new Response(JSON.stringify(rows), { headers: { "Content-Type": "application/json" } });
 };
 
