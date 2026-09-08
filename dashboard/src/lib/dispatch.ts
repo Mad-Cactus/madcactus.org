@@ -12,11 +12,6 @@ export type DispatchIssue = {
 	issueNumber: number;
 };
 
-// issue-01 lives as a hand-built static page (routes/newsletter/issue-01.tsx)
-// from before issues lived in the DB — DB numbering continues after it.
-// ponytail: delete the static page + drop the offset once issue-01 is a DB doc.
-const STATIC_ISSUE_OFFSET = 1;
-
 export async function listPublishedDispatch(): Promise<DispatchIssue[]> {
 	const rows = await db
 		.select({ id: docs.id, title: docs.title, publishedAt: docs.publishedAt })
@@ -24,7 +19,7 @@ export async function listPublishedDispatch(): Promise<DispatchIssue[]> {
 		.where(and(eq(docs.kind, "newsletter"), eq(docs.status, "published")))
 		.orderBy(desc(docs.publishedAt))
 		.limit(100);
-	return rows.map((r, i) => ({ ...r, issueNumber: STATIC_ISSUE_OFFSET + rows.length - i }));
+	return rows.map((r, i) => ({ ...r, issueNumber: rows.length - i }));
 }
 
 export async function getPublishedDispatch(id: string): Promise<(DispatchIssue & { markdown: string }) | null> {
