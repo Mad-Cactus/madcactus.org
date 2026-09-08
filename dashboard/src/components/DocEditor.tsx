@@ -274,7 +274,9 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 				}}
 				onSave={(md) => save(props.id, md)}
 			/>
-			<Show when={kind() === "post" && liConnected() !== true}>
+			{/* first comment is a plain doc field — shown whether or not LinkedIn is
+			    connected yet (gating on liConnected unmounted it once the check resolved) */}
+			<Show when={kind() === "post"}>
 				<div class="doc-firstcomment">
 					<label for="first-comment">First comment</label>
 					<input
@@ -289,7 +291,7 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 			</Show>
 				</div>
 				<Show when={preview()}>
-					<aside class="doc-history" classList={{ wide: preview() !== null }}>
+					<aside class="doc-history wide">
 						<div class="doc-history-head">
 							{preview() === "linkedin" ? "LinkedIn preview" : preview() === "email" ? "Email preview" : "Web preview"}
 						</div>
