@@ -59,6 +59,7 @@ export default function DocList(props: {
 									<Show when={d.status === "draft"}> · <span style={{ color: "var(--accent, #a855f7)" }}>agent write awaiting review</span></Show>
 									<Show when={d.status === "scheduled" && d.scheduledFor}> · <span style={{ color: "var(--accent, #a855f7)" }}>scheduled {new Date(d.scheduledFor!).toLocaleString()}</span></Show>
 									<Show when={d.status === "published"}> · <span style={{ color: "var(--good, #22c55e)" }}>published</span></Show>
+									<Show when={d.status === "final" && d.publishedAt}> · was {props.kind === "newsletter" ? "sent" : "posted"} {new Date(d.publishedAt!).toLocaleDateString()} · marked unposted</Show>
 									<Show when={d.status === "failed"}> · <span style={{ color: "var(--bad, #ef4444)" }}>publish failed</span></Show>
 									<Show when={d.shareToken}> · shared</Show>
 								</div>
