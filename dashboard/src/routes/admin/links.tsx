@@ -18,22 +18,55 @@ export default function AdminLinks() {
 		const r = await fetch("/api/links");
 		if (r.ok) setLinks((await r.json()) as Link[]);
 	}
-	onMount(() => void refresh());
+	onMount(() => {
+		void refresh();
+		// last-used builder values — next post only needs a new campaign
+		try {
+			const s = JSON.parse(localStorage.getItem("link-builder") ?? "{}") as Record<string, string>;
+			const form = document.getElementById("link-form") as HTMLFormElement | null;
+			if (!form) return;
+			for (const k of ["dest", "source", "medium", "campaign"])
+				if (s[k]) (form.elements.namedItem(k) as HTMLInputElement).value = s[k];
+		} catch {}
+	});
 
 	async function save(e: Event) {
 		e.preventDefault();
 		setError("");
 		setMsg("");
 		const fd = new FormData(e.target as HTMLFormElement);
+		const str = (k: string) => String(fd.get(k) ?? "").trim();
+		// full-URL override wins; otherwise compose destination + UTMs
+		let target = str("target");
+		if (!target) {
+			let dest = str("dest");
+			if (dest && !dest.includes("://")) dest = `https://${dest}`;
+			const q = new URLSearchParams();
+			const source = str("source");
+			const medium = str("medium");
+			const campaign = str("campaign");
+			if (source) q.set("utm_source", source);
+			if (medium) q.set("utm_medium", medium);
+			if (campaign) q.set("utm_campaign", campaign);
+			const qs = q.toString();
+			target = qs ? `${dest}${dest.includes("?") ? "&" : "?"}${qs}` : dest;
+		}
+		try {
+			localStorage.setItem(
+				"link-builder",
+				JSON.stringify({ dest: str("dest"), source: str("source"), medium: str("medium"), campaign: str("campaign") }),
+			);
+		} catch {}
 		const r = await fetch("/api/links", {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ slug: fd.get("slug"), target: fd.get("target") }),
+			body: JSON.stringify({ slug: fd.get("slug"), target }),
 		});
-		const body = (await r.json()) as { error?: string };
+		const body = (await r.json()) as { error?: string; slug?: string };
 		if (!r.ok) return setError(body.error ?? "Save failed");
-		setMsg("Saved.");
+		setMsg(`Saved — share link: ${location.origin}/l/${body.slug}`);
 		await refresh();
+		(e.target as HTMLFormElement).reset();
 	}
 
 	async function remove(slug: string) {
@@ -49,17 +82,35 @@ export default function AdminLinks() {
 				Clean /l/&lt;slug&gt; URLs for first comments and posts — UTMs hide behind the redirect, clicks count per link.
 			</p>
 
-			<details style={{ "margin-bottom": "24px" }}>
+			<details open style={{ "margin-bottom": "24px" }}>
 				<summary style={{ cursor: "pointer", "font-weight": "600" }}>Create or update a link</summary>
-				<form onSubmit={save} style={{ display: "grid", gap: "8px", "max-width": "640px", "margin-top": "12px" }}>
+				<form id="link-form" onSubmit={save} style={{ display: "grid", gap: "8px", "max-width": "640px", "margin-top": "12px" }}>
 					<label style={{ display: "grid", gap: "4px" }}>
-						Slug (the /l/… part)
-						<input name="slug" required placeholder="td1-p1" style={{ padding: "8px" }} />
+						Slug — optional, leave blank for an unguessable one
+						<input name="slug" placeholder="e.g. td2 — or blank for random" style={{ padding: "8px" }} />
 					</label>
 					<label style={{ display: "grid", gap: "4px" }}>
-						Target URL (UTMs go here)
-						<input name="target" required placeholder="https://madcactus.org/newsletter?utm_source=linkedin&utm_medium=social&utm_campaign=td1" style={{ padding: "8px" }} />
+						Destination page
+						<input name="dest" value="https://madcactus.org/newsletter" style={{ padding: "8px" }} />
 					</label>
+					<div style={{ display: "grid", "grid-template-columns": "1fr 1fr 1fr", gap: "8px" }}>
+						<label style={{ display: "grid", gap: "4px" }}>
+							Source
+							<input name="source" value="linkedin" style={{ padding: "8px" }} />
+						</label>
+						<label style={{ display: "grid", gap: "4px" }}>
+							Medium
+							<input name="medium" value="social" style={{ padding: "8px" }} />
+						</label>
+						<label style={{ display: "grid", gap: "4px" }}>
+							Campaign
+							<input name="campaign" placeholder="td2" style={{ padding: "8px" }} />
+						</label>
+					</div>
+					<details>
+						<summary style={{ cursor: "pointer", "font-size": "13px" }}>Or paste a full target URL (UTMs included) instead</summary>
+						<input name="target" placeholder="https://…?utm_source=…" style={{ padding: "8px", width: "100%", "margin-top": "8px" }} />
+					</details>
 					<Show when={error()}>
 						<p style={{ color: "#b91c1c" }}>{error()}</p>
 					</Show>
