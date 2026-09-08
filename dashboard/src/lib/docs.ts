@@ -5,10 +5,10 @@
 // markdown; we convert old→new into Loro deltas so a concurrent agent append
 // merges instead of clobbering. The markdown column is the projection: search,
 // export, lint, pairs.
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { randomHex } from "~/lib/crypto";
 import { db } from "~/db";
-import { docs, type Doc } from "~/db/schema";
+import { docs, textVersions, type Doc } from "~/db/schema";
 import { lintVoiceText, type VoiceScope } from "~/lib/voice-lint-db";
 import { docSurface } from "~/lib/voice-lint";
 import { trackText, listTextVersions, getTextVersionDiff } from "~/lib/crdt-text-db";
@@ -154,6 +154,21 @@ export async function toggleShare(id: string, enabled: boolean): Promise<string 
 	const token = enabled ? randomHex(12) : null;
 	await db.update(docs).set({ shareToken: token }).where(eq(docs.id, id));
 	return token;
+}
+
+/** Hard-delete a doc and its version history. Deleting a scheduled doc also
+ *  cancels the pending send (the row is gone before the scheduler claims it);
+ *  deleting a published doc removes it from the public site (the dispatch
+ *  pages filter on status=published) — the email already sent cannot be
+ *  unsent. Blocked mid-dispatch: the scheduler owns the row while publishing. */
+export async function deleteDoc(id: string): Promise<boolean> {
+	if (!UUID_RE.test(id)) return false;
+	const [doc] = await db.select({ status: docs.status }).from(docs).where(eq(docs.id, id));
+	if (!doc) return false;
+	if (doc.status === "publishing") throw new Error("doc is publishing right now — wait for the scheduler to finish, then delete");
+	await db.delete(textVersions).where(and(eq(textVersions.entity, "doc"), eq(textVersions.entityId, id)));
+	await db.delete(docs).where(eq(docs.id, id));
+	return true;
 }
 
 // ── Agent writes ───────────────────────────────────────────────────

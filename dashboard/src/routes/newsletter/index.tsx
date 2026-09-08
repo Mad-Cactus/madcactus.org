@@ -114,37 +114,21 @@ export default function Newsletter() {
 			{/* ════════ PAST ISSUES — server-rendered from the DB, SEO-complete ════════ */}
 			<section id="past-issues">
 				<div class="archive-inner">
-					<a href="/newsletter/issue-01" class="archive-card">
-						<div class="archive-meta">
-							<span class="archive-num">Issue 01</span>
-							<span class="archive-date">January 2026</span>
-						</div>
-						<h3 class="archive-title">3,000 cold emails, zero replies. Then we found 585 warm prospects in 16 minutes.</h3>
-						<p class="archive-desc">
-							How a coding agent turned public records into a ranked sales dashboard. The prompt, the verification
-							loop, and what happened when the sales team saw it.
-						</p>
-						<span class="archive-link">&#123; READ THE TEARDOWN &#125;</span>
-					</a>
+					<For each={issues()}>
+						{(i) => (
+							<a href={`/newsletter/${i.id}`} class="archive-card">
+								<div class="archive-meta">
+									<span class="archive-num">Issue {String(i.issueNumber).padStart(2, "0")}</span>
+									<span class="archive-date">
+										{i.publishedAt ? new Date(i.publishedAt).toLocaleDateString("en-US", { month: "long", year: "numeric" }) : ""}
+									</span>
+								</div>
+								<h3 class="archive-title">{i.title}</h3>
+								<span class="archive-link">&#123; READ THE TEARDOWN &#125;</span>
+							</a>
+						)}
+					</For>
 				</div>
-				<Show when={issues()?.length}>
-					<div class="archive-inner" style={{ "margin-top": "24px" }}>
-						<For each={issues()}>
-							{(i) => (
-								<a href={`/newsletter/${i.id}`} class="archive-card" style={{ "margin-bottom": "24px", display: "block" }}>
-									<div class="archive-meta">
-										<span class="archive-num">Issue {String(i.issueNumber).padStart(2, "0")}</span>
-										<span class="archive-date">
-											{i.publishedAt ? new Date(i.publishedAt).toLocaleDateString("en-US", { month: "long", year: "numeric" }) : ""}
-										</span>
-									</div>
-									<h3 class="archive-title">{i.title}</h3>
-									<span class="archive-link">&#123; READ THE TEARDOWN &#125;</span>
-								</a>
-							)}
-						</For>
-					</div>
-				</Show>
 			</section>
 
 			{/* ════════ CTA BAND ════════ */}
