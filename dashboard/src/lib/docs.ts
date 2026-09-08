@@ -135,6 +135,33 @@ export async function unscheduleDoc(id: string) {
 	await db.update(docs).set({ status: "final", scheduledFor: null }).where(eq(docs.id, id));
 }
 
+/** Manual publish-state fix: "I deleted the LinkedIn post" or "hide a sent
+ *  newsletter from the site" (→ final) vs "actually went out, mark it" (→
+ *  published, stamping publishedAt only if never set — an unpost keeps the
+ *  original date so the record of the real send survives). Publishing rows
+ *  belong to the scheduler. */
+export async function setPublishState(id: string, state: "final" | "published"): Promise<Doc | null> {
+	const [doc] = await db
+		.select({ status: docs.status, publishedAt: docs.publishedAt })
+		.from(docs)
+		.where(eq(docs.id, id));
+	if (!doc) return null;
+	if (doc.status === "publishing") throw new Error("doc is publishing right now — wait for the scheduler to finish");
+	if (state === "published") {
+		await db
+			.update(docs)
+			.set({
+				status: "published",
+				publishError: null,
+				...(doc.publishedAt ? {} : { publishedAt: new Date() }),
+			})
+			.where(eq(docs.id, id));
+	} else {
+		await db.update(docs).set({ status: "final" }).where(eq(docs.id, id));
+	}
+	return getDoc(id);
+}
+
 export async function listDocVersions(docId: string) {
 	if (!UUID_RE.test(docId)) return [];
 	return listTextVersions("doc", docId);
