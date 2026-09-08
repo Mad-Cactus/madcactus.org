@@ -614,10 +614,31 @@
   border-radius: 6px;
   padding: 10px 12px;
   cursor: grab;
+  /* text selection steals the mousedown → drag never starts */
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .board-card.dragging {
   opacity: 0.5;
+}
+
+/* detail dialog opened by clicking a board card */
+.prospect-modal {
+  border: 1px solid rgba(127, 127, 127, 0.25);
+  border-radius: 8px;
+  background: var(--bg-card);
+  color: var(--text);
+  padding: 20px;
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(720px, calc(100vh - 64px));
+  overflow-y: auto;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.prospect-modal::backdrop {
+  background: rgba(0, 0, 0, 0.4);
 }
 
 /* ── Command palette (shadcn Command via cmdk-solid) ── */
