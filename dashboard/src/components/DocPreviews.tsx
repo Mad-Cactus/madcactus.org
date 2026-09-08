@@ -1,4 +1,4 @@
-import { Show, createMemo } from "solid-js";
+import { Show, createSignal, createMemo } from "solid-js";
 import { markdownToPostText, newsletterSubject, markdownToHtml } from "~/lib/publish-core";
 
 export type PreviewMode = "linkedin" | "email" | "web";
@@ -8,12 +8,14 @@ export type PreviewMode = "linkedin" | "email" | "web";
  *  swap for real LinkedIn API preview if they ever expose one. */
 export function LinkedInPreview(props: { markdown: string; title: string; firstComment: string }) {
 	const text = createMemo(() => markdownToPostText(props.markdown));
+	// LinkedIn collapses long posts after ~210 chars; "see more" expands in place
+	const [expanded, setExpanded] = createSignal(false);
 	const clamped = createMemo(() => {
 		const t = text();
-		return t.length > 210 ? `${t.slice(0, 210).trimEnd()}…` : t;
+		return expanded() || t.length <= 210 ? t : `${t.slice(0, 210).trimEnd()}…`;
 	});
 	return (
-		<div style={{ "max-width": "520px" }}>
+		<div style={{ width: "100%", "max-width": "520px" }}>
 			<div
 				style={{
 					"background-color": "#fff",
@@ -46,7 +48,7 @@ export function LinkedInPreview(props: { markdown: string; title: string; firstC
 					<div>
 						<div style={{ "font-weight": 600 }}>Collin Pfeifer</div>
 						<div style={{ color: "rgb(0 0 0 / 0.6)", "font-size": "12px" }}>
-							Fractional AI leadership — Mad Cactus · Follow
+							Consultant at Mad Cactus · Follow
 						</div>
 						<div style={{ color: "rgb(0 0 0 / 0.6)", "font-size": "12px" }}>now · 🌐</div>
 					</div>
@@ -54,7 +56,15 @@ export function LinkedInPreview(props: { markdown: string; title: string; firstC
 				<div style={{ padding: "0 16px 12px", "white-space": "pre-wrap" }}>
 					{clamped()}
 					<Show when={text().length > 210}>
-						<span style={{ color: "#0a66c2", cursor: "pointer" }}> see more</span>
+						<span
+							style={{ color: "#0a66c2", cursor: "pointer" }}
+							onClick={() => setExpanded((v) => !v)}
+							role="button"
+							tabIndex={0}
+							onKeyDown={(e) => e.key === "Enter" && setExpanded((v) => !v)}
+						>
+							{expanded() ? " see less" : " see more"}
+						</span>
 					</Show>
 				</div>
 				<div style={{ display: "flex", padding: "6px 16px", gap: "16px", color: "rgb(0 0 0 / 0.5)", "font-size": "12px", "border-top": "1px solid rgb(0 0 0 / 0.08)" }}>
@@ -80,7 +90,8 @@ export function LinkedInPreview(props: { markdown: string; title: string; firstC
 				</div>
 			</Show>
 			<div class="muted" style={{ "font-size": "12px", "margin-top": "8px" }}>
-				{text().length.toLocaleString()} characters {text().length > 3000 ? "— over LinkedIn's 3,000 limit" : "— fits LinkedIn"}
+				{text().length.toLocaleString()} characters
+				<Show when={text().length > 3000}> — over LinkedIn's 3,000 limit</Show>
 			</div>
 		</div>
 	);
@@ -89,7 +100,7 @@ export function LinkedInPreview(props: { markdown: string; title: string; firstC
 /** What the Resend broadcast will look like in an inbox — 600px frame. */
 export function NewsletterEmailPreview(props: { markdown: string; title: string }) {
 	return (
-		<div style={{ "max-width": "640px" }}>
+		<div style={{ width: "100%", "max-width": "640px" }}>
 			<div class="muted" style={{ "font-size": "12px", "margin-bottom": "8px" }}>
 				Inbox preview — from <strong>Collin Pfeifer</strong> · dispatch@madcactus.org
 			</div>
@@ -113,7 +124,7 @@ export function NewsletterEmailPreview(props: { markdown: string; title: string 
  *  issue pages inline; if the site styling drifts, port the real Astro styles. */
 export function NewsletterWebPreview(props: { markdown: string; title: string }) {
 	return (
-		<div style={{ "max-width": "680px", margin: "0 auto" }}>
+		<div style={{ width: "100%", "max-width": "680px", margin: "0 auto" }}>
 			<div class="muted" style={{ "font-size": "12px", "margin-bottom": "8px", "text-align": "center" }}>
 				Web preview — how the issue reads on madcactus.org
 			</div>

@@ -981,6 +981,7 @@ input:not(.form-group input):not(.doc-title):focus {
 .doc-topbar {
 	display: flex;
 	align-items: center;
+	flex-wrap: wrap;
 	gap: 12px;
 	margin-bottom: 4px;
 	font-size: 12px;
@@ -998,6 +999,30 @@ input:not(.form-group input):not(.doc-title):focus {
 	border-radius: 6px;
 	padding: 3px 8px;
 }
+.doc-firstcomment {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin: 0 0 16px;
+	font-size: 12px;
+	color: var(--text-muted);
+}
+.doc-firstcomment .doc-sched-input { flex: 1; min-width: 0; }
+
+/* stacks below the editor once the sidebar would crowd it */
+@media (max-width: 1100px) {
+	.doc-shell { flex-direction: column; gap: 24px; }
+	.doc-history {
+		position: static;
+		width: 100%;
+		max-height: none;
+		border-left: none;
+		border-top: 1px solid rgba(0, 0, 0, 0.15);
+		padding-left: 0;
+		padding-top: 16px;
+	}
+}
+
 .doc-badge.sched { color: var(--accent, #a855f7); }
 .doc-badge.published { color: var(--good, #22c55e); }
 .doc-publish-error {
@@ -1044,7 +1069,7 @@ input:not(.form-group input):not(.doc-title):focus {
 .folder-tabs button:hover { color: var(--text); }
 .folder-tabs button.active { color: var(--text); font-weight: 600; border-bottom-color: var(--gold, #bc9c5c); }
 
-/* right-side version history panel */
+/* right-side version history / preview panel */
 .doc-shell { display: flex; align-items: flex-start; gap: 36px; }
 .doc-main { flex: 1; min-width: 0; }
 .doc-history {
@@ -1088,6 +1113,10 @@ input:not(.form-group input):not(.doc-title):focus {
 	color: var(--text-muted);
 }
 .doc-history-author.agent { color: var(--gold, #bc9c5c); }
+.doc-history.wide { width: 420px; }
+@media (max-width: 1300px) {
+	.doc-history.wide { width: 360px; }
+}
 .doc-history-row .muted { margin-left: auto; font-size: 11px; white-space: nowrap; }
 .doc-diff {
 	margin-top: 14px;
