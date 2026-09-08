@@ -7,6 +7,7 @@ import {
 	saveDocMarkdown,
 	toggleShare,
 	setDocStatus,
+	setPublishState,
 	setDocKind,
 	setDocGenre,
 	scheduleDoc,
@@ -22,7 +23,7 @@ import {
  * GET  /api/docs/:id?versions=1 → version list (no content)
  * GET  /api/docs/:id?diff=N → word-diff of version N vs N-1
  * PUT  /api/docs/:id   { markdown } → { version }
- * POST /api/docs/:id   { op: "finalize" | "share" | "rename" | "set-kind" | "set-genre" | "schedule" | "unschedule", ... } → result
+ * POST /api/docs/:id   { op: "finalize" | "share" | "rename" | "set-kind" | "set-genre" | "schedule" | "unschedule" | "set-publish-state", ... } → result
  * DELETE /api/docs/:id → { ok }  (hard-deletes the doc + version history)
  */
 async function requireAdmin() {
@@ -67,6 +68,7 @@ export const POST = async (event: APIEvent) => {
 		genre?: string | null;
 		scheduledFor?: string;
 		firstComment?: string;
+		state?: string;
 	};
 	try {
 		if (body.op === "rename") return json({ ok: await renameDoc(event.params.id, String(body.title ?? "").trim() || "Untitled") });
@@ -94,6 +96,13 @@ export const POST = async (event: APIEvent) => {
 		if (body.op === "unschedule") {
 			await unscheduleDoc(event.params.id);
 			return json({ ok: true, status: "final" });
+		}
+		if (body.op === "set-publish-state") {
+			const state = body.state === "published" || body.state === "final" ? body.state : null;
+			if (!state) return json({ error: "state must be 'final' or 'published'" }, 400);
+			const doc = await setPublishState(event.params.id, state);
+			if (!doc) return json({ error: "Not found" }, 404);
+			return json({ ok: true, status: doc.status, publishedAt: doc.publishedAt?.toISOString() ?? null });
 		}
 		return json({ error: "Unknown op" }, 400);
 	} catch (e) {

@@ -40,6 +40,7 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 	};
 	const kind = () => doc().kind ?? null;
 	const [docStatus, setDocStatus] = createSignal(doc().status as string);
+	const [publishedAt, setPublishedAt] = createSignal(doc().publishedAt?.toISOString() ?? null);
 	const [schedFor, setSchedFor] = createSignal<string | null>(doc().scheduledFor?.toISOString() ?? null);
 	const [publishError, setPublishError] = createSignal(doc().publishError ?? null);
 	const [schedInput, setSchedInput] = createSignal("");
@@ -110,7 +111,7 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify(body),
 		});
-		return res.json() as Promise<{ ok?: boolean; error?: string; kind?: string | null; genre?: string | null; status?: string; scheduledFor?: string; shareToken?: string | null }>;
+		return res.json() as Promise<{ ok?: boolean; error?: string; kind?: string | null; genre?: string | null; status?: string; scheduledFor?: string; publishedAt?: string | null; shareToken?: string | null }>;
 	};
 
 	const schedule = async () => {
@@ -138,6 +139,17 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 		} else setStatus(r.error ?? "unschedule failed");
 	};
 
+	// manual state fix — posts deleted on LinkedIn, hiding a sent newsletter
+	// from the site, or marking something that actually went out
+	const setPublishStateState = async (state: "final" | "published") => {
+		const r = await post(props.id, { op: "set-publish-state", state });
+		if (r.ok && r.status) {
+			setDocStatus(r.status);
+			setPublishedAt(r.publishedAt ?? null);
+			setStatus(state === "published" ? "marked as posted" : "marked as unposted");
+		} else setStatus(r.error ?? "state update failed");
+	};
+
 	return (
 		<>
 			<div class="doc-shell">
@@ -149,8 +161,11 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 					<Show when={docStatus() === "scheduled" && schedFor()}>
 						<span class="doc-badge sched">Scheduled {new Date(schedFor()!).toLocaleString()} · </span>
 					</Show>
-					<Show when={docStatus() === "published" && schedFor()}>
-						<span class="doc-badge published">Published {new Date(schedFor()!).toLocaleString()} · </span>
+					<Show when={docStatus() === "published" && (publishedAt() ?? schedFor())}>
+						<span class="doc-badge published">Published {new Date(publishedAt() ?? schedFor()!).toLocaleString()} · </span>
+					</Show>
+					<Show when={docStatus() === "final" && publishedAt()}>
+						<span class="doc-badge published">{kind() === "newsletter" ? "Sent" : "Posted"} {new Date(publishedAt()!).toLocaleString()} · marked unposted · </span>
 					</Show>
 					{status() || `v${verNum()}`}
 				</span>
@@ -194,7 +209,7 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 				<Show when={docStatus() !== "publishing"}>
 					<ConfirmButton
 						label="Delete"
-						confirmText={docStatus() === "scheduled" ? "Delete? Cancels the send" : "Delete? Removes it from the site"}
+						confirmText={docStatus() === "scheduled" ? "Delete? Cancels the send" : docStatus() === "published" && kind() === "newsletter" ? "Delete? Also hides it from the site" : "Delete? Removes it from the site"}
 						onConfirm={remove}
 					/>
 				</Show>
@@ -246,6 +261,16 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 						</>
 					}>
 						<a class="btn btn-sm" target="_top" href="/api/social/linkedin?start=1">Connect LinkedIn to schedule</a>
+					</Show>
+					<Show when={docStatus() === "published"}>
+						<button type="button" class="btn btn-sm" onClick={() => void setPublishStateState("final")}>
+							{kind() === "newsletter" ? "Hide from site" : "Mark as unposted"}
+						</button>
+					</Show>
+					<Show when={docStatus() === "final" || docStatus() === "failed"}>
+						<button type="button" class="btn btn-sm" onClick={() => void setPublishStateState("published")}>
+							{kind() === "newsletter" ? "Mark as sent" : "Mark as posted"}
+						</button>
 					</Show>
 				</Show>
 			</div>
