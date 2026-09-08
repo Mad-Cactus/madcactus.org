@@ -6,7 +6,11 @@ import { socialAccounts } from "~/db/schema";
 
 const AUTH_URL = "https://www.linkedin.com/oauth/v2/authorization";
 const TOKEN_URL = "https://www.linkedin.com/oauth/v2/accessToken";
-const API_VERSION = "202506"; // LinkedIn-Version header for /rest endpoints
+// ponytail: hardcoded — each LinkedIn-Version (YYYYMM) dies ~12 months after
+// release (202506 went inactive 2026-06 → 426 NONEXISTENT_VERSION, echo shows
+// internal YYYYMM01 id). Future versions 426 too (202609 inactive in 2026-09).
+// Bump by one month when scheduled posts fail with NONEXISTENT_VERSION.
+const API_VERSION = "202608";
 
 type Tokens = {
 	accessToken: string;
