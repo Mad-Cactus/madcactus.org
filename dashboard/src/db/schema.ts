@@ -415,6 +415,15 @@ export const docs = pgTable(
 	},
 );
 
+// Short links: /l/<slug> 302s to target and counts the click. UTMs live in
+// target so the link shared on LinkedIn stays clean; clicks = per-post reach.
+export const shortLinks = pgTable("short_links", {
+	slug: text("slug").primaryKey(),
+	target: text("target").notNull(),
+	clicks: integer("clicks").notNull().default(0),
+	createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // OAuth tokens for scheduled publishing targets (LinkedIn). One row per
 // provider — access tokens are short-lived (~60d) and refreshed on use.
 export const socialAccounts = pgTable("social_accounts", {
