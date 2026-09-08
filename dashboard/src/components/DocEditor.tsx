@@ -218,16 +218,6 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 								value={schedInput()}
 								onChange={(e) => setSchedInput(e.currentTarget.value)}
 							/>
-							<Show when={kind() === "post"}>
-								<input
-									type="text"
-									class="doc-sched-input"
-									aria-label="First comment (posted right after publish)"
-									placeholder="First comment (optional)"
-									value={firstComment()}
-									onChange={(e) => setFirstComment(e.currentTarget.value)}
-								/>
-							</Show>
 							<button type="button" class="btn btn-primary btn-sm" onClick={() => void schedule()}>
 								{docStatus() === "scheduled" ? "Reschedule" : "Schedule"}
 							</button>
@@ -284,9 +274,22 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 				}}
 				onSave={(md) => save(props.id, md)}
 			/>
+			<Show when={kind() === "post" && liConnected() !== true}>
+				<div class="doc-firstcomment">
+					<label for="first-comment">First comment</label>
+					<input
+						id="first-comment"
+						type="text"
+						class="doc-sched-input"
+						placeholder="Posted right after publish (optional)"
+						value={firstComment()}
+						onChange={(e) => setFirstComment(e.currentTarget.value)}
+					/>
+				</div>
+			</Show>
 				</div>
 				<Show when={preview()}>
-					<aside class="doc-history">
+					<aside class="doc-history" classList={{ wide: preview() !== null }}>
 						<div class="doc-history-head">
 							{preview() === "linkedin" ? "LinkedIn preview" : preview() === "email" ? "Email preview" : "Web preview"}
 						</div>
