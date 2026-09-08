@@ -13,6 +13,6 @@ export const GET = async (event: APIEvent) => {
 		.returning();
 	return new Response(null, {
 		status: 302,
-		headers: { Location: row?.target ?? "/" },
+		headers: { Location: row?.target ?? "/", "Referrer-Policy": "no-referrer" },
 	});
 };

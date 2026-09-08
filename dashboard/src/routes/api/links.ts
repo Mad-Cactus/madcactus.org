@@ -17,6 +17,15 @@ function json(body: unknown, status = 200) {
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,48}$/;
 const TARGET_RE = /^https?:\/\//i;
 
+// Dub-style opaque keys: 7 chars, nanoid custom-alphabet style, lookalikes
+// (0 O 1 l I i o) dropped so a misread link never dead-ends. 54^7 ≈ 1.3e12.
+const KEY_ALPHABET = "23456789abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ";
+function randomKey(len = 7): string {
+	let out = "";
+	for (let i = 0; i < len; i++) out += KEY_ALPHABET[Math.floor(Math.random() * KEY_ALPHABET.length)];
+	return out;
+}
+
 export const GET = async () => {
 	if ((await getAuthedClient()) === null) return json({ error: "Unauthorized" }, 401);
 	return json(await db.select().from(shortLinks).orderBy(desc(shortLinks.createdAt)));
@@ -25,13 +34,27 @@ export const GET = async () => {
 export const POST = async (event: APIEvent) => {
 	if ((await getAuthedClient()) === null) return json({ error: "Unauthorized" }, 401);
 	const body = (await event.request.json().catch(() => ({}))) as { slug?: string; target?: string };
-	const slug = (body.slug ?? "").trim().toLowerCase();
+	const requested = (body.slug ?? "").trim().toLowerCase();
 	const target = (body.target ?? "").trim();
-	if (!SLUG_RE.test(slug)) return json({ error: "Slug must be lowercase letters, digits, dashes (max 49)" }, 400);
+	if (requested && !SLUG_RE.test(requested))
+		return json({ error: "Slug must be lowercase letters, digits, dashes (max 49)" }, 400);
 	if (!TARGET_RE.test(target)) return json({ error: "Target must be an http(s) URL" }, 400);
-	const values = { slug, target };
-	await db.insert(shortLinks).values(values).onConflictDoUpdate({ target: shortLinks.slug, set: { target } });
-	return json({ ok: true, slug, target });
+	// explicit slug → upsert (create or retarget); blank → Dub-style opaque key,
+	// retried on the astronomically rare PK collision
+	if (requested) {
+		await db.insert(shortLinks).values({ slug: requested, target }).onConflictDoUpdate({ target: shortLinks.slug, set: { target } });
+		return json({ ok: true, slug: requested, target });
+	}
+	for (let attempt = 0; attempt < 3; attempt++) {
+		const slug = randomKey();
+		try {
+			await db.insert(shortLinks).values({ slug, target });
+			return json({ ok: true, slug, target });
+		} catch (e) {
+			if (!(e instanceof Error) || !e.message.includes("duplicate key")) throw e;
+		}
+	}
+	return json({ error: "Could not generate a unique slug — try again" }, 500);
 };
 
 export const DELETE = async (event: APIEvent) => {
