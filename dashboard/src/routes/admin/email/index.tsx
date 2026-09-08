@@ -53,9 +53,13 @@ export default function AdminEmail() {
 	// client-side windowing over the full local corpus — no server pagination
 	const [visibleCount, setVisibleCount] = createSignal(50);
 	const [editBody, setEditBody] = createSignal<Record<string, string>>({});
+	// locally edited to/subject — shown until the next list revalidate
+	const [editMeta, setEditMeta] = createSignal<Record<string, { to?: string; subject?: string }>>({});
 	const [sendStatus, setSendStatus] = createSignal("");
 	const [connecting, setConnecting] = createSignal(false);
-	// per-draft CRDT history (Drafts tab)
+	// per-draft CRDT history (Drafts tab); clicking a draft row opens the
+	// corner editor for that draft id
+	const [openDraft, setOpenDraft] = createSignal<string | null>(null);
 	const [openDraftHistory, setOpenDraftHistory] = createSignal<string | null>(null);
 	const [draftVersions, setDraftVersions] = createSignal<Record<string, DraftVersionRow[]>>({});
 	const [draftDiff, setDraftDiff] = createSignal<{ id: string; parts: DraftDiffPart[] | null } | null>(null);
@@ -262,16 +266,24 @@ export default function AdminEmail() {
 		void revalidate("email-inbox");
 	};
 
-	// draft body autosave — debounced PUT, CRDT-tracked server-side (hunks into
-	// the Loro snapshot, coalesced version rows)
-	const editDraft = (outboxId: string, body: string) => {
-		setEditBody({ ...editBody(), [outboxId]: body });
+	// draft autosave — debounced PUT for body/to/subject; body is CRDT-tracked
+	// server-side (hunks into the Loro snapshot, coalesced version rows)
+	const editDraft = (outboxId: string, patch: { body?: string; to?: string; subject?: string }) => {
+		if (patch.body !== undefined) setEditBody({ ...editBody(), [outboxId]: patch.body });
+		if (patch.to !== undefined || patch.subject !== undefined) {
+			setEditMeta({ ...editMeta(), [outboxId]: { ...editMeta()[outboxId], ...patch } });
+		}
 		clearTimeout(draftSaveTimers[outboxId]);
 		draftSaveTimers[outboxId] = setTimeout(async () => {
+			const payload: Record<string, string> = {};
+			if (editBody()[outboxId] !== undefined) payload.body = editBody()[outboxId];
+			const m = editMeta()[outboxId];
+			if (m?.to !== undefined) payload.to = m.to;
+			if (m?.subject !== undefined) payload.subject = m.subject;
 			const res = await fetch(`/api/email/drafts/${outboxId}`, {
 				method: "PUT",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ body }),
+				body: JSON.stringify(payload),
 			});
 			if (res.ok && openDraftHistory() === outboxId) {
 				const r = await fetch(`/api/email/drafts/${outboxId}?versions=1`);
@@ -420,9 +432,10 @@ export default function AdminEmail() {
 				}
 				setSelected(null);
 				setCompose(null);
+				setOpenDraft(null);
 				return;
 			}
-			if (compose()) return;
+			if (compose() || openDraft()) return;
 			// h/l cycle the folder tabs (wrap) — works on every tab
 			if (e.key === "h" || e.key === "l") {
 				e.preventDefault();
@@ -587,81 +600,26 @@ export default function AdminEmail() {
 				<Show when={inbox()?.drafts?.length} fallback={<div class="muted">No open drafts. Agents push drafts via create_email_draft; compose with c in the Inbox.</div>}>
 					<For each={inbox()!.drafts}>
 						{(d) => (
-							<div class="card" style={{ padding: "16px 20px", "margin-bottom": "10px", border: "1px solid rgba(188,156,92,0.5)" }}>
-								<div style={{ display: "flex", gap: "12px", "align-items": "baseline" }}>
-									<strong style={{ "font-size": "14px" }}>{d.subject}</strong>
-									<span class="muted" style={{ "font-size": "13px" }}>to {d.toEmail} · v{d.version}</span>
-									<Show when={d.status === "failed"}>
-										<span style={{ "font-size": "12px", color: "#a33" }}>send failed: {d.error}</span>
-									</Show>
-									<div style={{ flex: 1 }} />
-									<button type="button" class="btn btn-sm" classList={{ active: openDraftHistory() === d.id }} onClick={() => void toggleDraftHistory(d.id)}>
-										History
-									</button>
-									<Show when={lintBlockedDraft() === d.id} fallback={<button type="button" class="btn btn-primary btn-sm" onClick={() => sendDraft(d.id)}>Send</button>}>
-										<button type="button" class="btn btn-sm" style={{ "border-color": "#a33", color: "#a33" }} onClick={() => sendDraft(d.id, true)}>Send anyway (ignores voice lint)</button>
-									</Show>
-									<Show
-										when={lintBlockedSched() === d.id}
-										fallback={
-											<Show
-												when={!d.sendAt}
-												fallback={
-													<>
-														<span class="muted" style={{ "font-size": "12px" }}>Scheduled {new Date(d.sendAt!).toLocaleString()}</span>
-														<button type="button" class="btn btn-sm" onClick={() => void unscheduleDraft(d.id)}>Unschedule</button>
-													</>
-												}
-											>
-												<input
-													type="datetime-local"
-													class="doc-sched-input"
-													aria-label="Send at"
-													value={schedInput()[d.id] ?? ""}
-													onChange={(e) => setSchedInput({ ...schedInput(), [d.id]: e.currentTarget.value })}
-												/>
-												<button type="button" class="btn btn-sm" onClick={() => void scheduleDraft(d.id)}>Schedule</button>
-											</Show>
-										}
-									>
-										<button type="button" class="btn btn-sm" style={{ "border-color": "#a33", color: "#a33" }} onClick={() => void scheduleDraft(d.id, true)}>Schedule anyway (ignores voice lint)</button>
-									</Show>
-									<button type="button" class="btn btn-sm" onClick={() => discardDraft(d.id)}>Discard</button>
+							<div
+								class="card"
+								style={{
+									padding: "12px 16px",
+									"margin-bottom": "8px",
+									cursor: "pointer",
+									background: openDraft() === d.id ? "rgba(188, 156, 92, 0.12)" : undefined,
+									transition: "background 120ms",
+								}}
+								onClick={() => setOpenDraft(d.id)}
+							>
+								<div style={{ display: "flex", gap: "10px", "align-items": "baseline" }}>
+									<strong style={{ "font-size": "14px", flex: 1 }}>{editMeta()[d.id]?.subject ?? d.subject}</strong>
+									<span class="muted" style={{ "font-size": "12px" }}>to {editMeta()[d.id]?.to ?? d.toEmail} · v{d.version}</span>
 								</div>
-								<textarea
-									value={editBody()[d.id] ?? d.body}
-									onInput={(e) => editDraft(d.id, e.currentTarget.value)}
-									rows={6}
-									style={{ width: "100%", "margin-top": "10px", "font-family": "inherit", "font-size": "14px" }}
-								/>
-								<Show when={openDraftHistory() === d.id}>
-									<div class="doc-history" style={{ position: "static", width: "100%", "max-height": "none", "margin-top": "12px" }}>
-										<Show when={draftVersions()[d.id]?.length} fallback={<p class="muted">No tracked versions yet.</p>}>
-											<For each={draftVersions()[d.id]}>
-												{(v) => (
-													<button type="button" class="doc-history-row" onClick={() => void showDraftDiff(d.id, v.version)}>
-														<span class="doc-history-ver">v{v.version}</span>
-														<span class="doc-history-author" classList={{ agent: v.author === "agent" }}>{v.author}</span>
-														<span class="muted">{new Date(v.updatedAt).toLocaleString()}</span>
-													</button>
-												)}
-											</For>
-											<Show when={draftDiff()?.id === d.id}>
-												<div class="doc-diff">
-													<Show when={draftDiff()?.parts} fallback={<p class="muted">Loading…</p>}>
-														{(parts) => (
-															<For each={parts()}>
-																{(p) =>
-																	p.added ? <ins>{p.value}</ins> : p.removed ? <del>{p.value}</del> : <span>{p.value}</span>
-																}
-															</For>
-														)}
-													</Show>
-												</div>
-											</Show>
-										</Show>
-									</div>
-								</Show>
+								<div class="muted" style={{ "font-size": "13px", "margin-top": "4px" }}>
+									<Show when={d.status === "failed"}><span style={{ color: "#a33" }}>send failed: {d.error} · </span></Show>
+									<Show when={d.sendAt}>fires {new Date(d.sendAt!).toLocaleString()} · </Show>
+									{(editBody()[d.id] ?? d.body)?.slice(0, 90)}
+								</div>
 							</div>
 						)}
 					</For>
@@ -868,6 +826,104 @@ export default function AdminEmail() {
 						</div>
 					</div>
 				</div>
+			</Show>
+
+			{/* draft editor overlay — click a Drafts row; every field autosaves
+			    (body CRDT-tracked → History shows what changed), send/schedule
+			    stay lint-gated */}
+			<Show when={inbox()?.drafts.find((d) => d.id === openDraft())} keyed>
+				{(d) => (
+					<div
+						class="card"
+						style={{ position: "fixed", bottom: "24px", right: "24px", width: "560px", "max-width": "90vw", "max-height": "80vh", "overflow-y": "auto", "z-index": 50 }}
+					>
+						<div style={{ padding: "16px 20px" }}>
+							<input
+								placeholder="To"
+								value={editMeta()[d.id]?.to ?? d.toEmail}
+								onInput={(e) => editDraft(d.id, { to: e.currentTarget.value })}
+								style={{ width: "100%", "margin-bottom": "8px", padding: "8px", border: "1px solid rgba(0,0,0,0.12)" }}
+							/>
+							<input
+								placeholder="Subject"
+								value={editMeta()[d.id]?.subject ?? d.subject}
+								onInput={(e) => editDraft(d.id, { subject: e.currentTarget.value })}
+								style={{ width: "100%", "margin-bottom": "8px", padding: "8px", border: "1px solid rgba(0,0,0,0.12)" }}
+							/>
+							<textarea
+								placeholder="Body"
+								value={editBody()[d.id] ?? d.body}
+								onInput={(e) => editDraft(d.id, { body: e.currentTarget.value })}
+								rows={12}
+								style={{ width: "100%", "margin-bottom": "8px", padding: "8px", "font-family": "inherit", border: "1px solid rgba(0,0,0,0.12)" }}
+							/>
+							<div style={{ display: "flex", gap: "8px", "align-items": "center", "flex-wrap": "wrap" }}>
+								<button type="button" class="btn btn-sm" classList={{ active: openDraftHistory() === d.id }} onClick={() => void toggleDraftHistory(d.id)}>
+									History
+								</button>
+								<Show when={lintBlockedDraft() === d.id} fallback={<button type="button" class="btn btn-primary btn-sm" onClick={() => sendDraft(d.id)}>Send</button>}>
+									<button type="button" class="btn btn-sm" style={{ "border-color": "#a33", color: "#a33" }} onClick={() => sendDraft(d.id, true)}>Send anyway (ignores voice lint)</button>
+								</Show>
+								<Show
+									when={lintBlockedSched() === d.id}
+									fallback={
+										<Show
+											when={!d.sendAt}
+											fallback={
+												<>
+													<span class="muted" style={{ "font-size": "12px" }}>Scheduled {new Date(d.sendAt!).toLocaleString()}</span>
+													<button type="button" class="btn btn-sm" onClick={() => void unscheduleDraft(d.id)}>Unschedule</button>
+												</>
+											}
+										>
+											<input
+												type="datetime-local"
+												class="doc-sched-input"
+												aria-label="Send at"
+												value={schedInput()[d.id] ?? ""}
+												onChange={(e) => setSchedInput({ ...schedInput(), [d.id]: e.currentTarget.value })}
+											/>
+											<button type="button" class="btn btn-sm" onClick={() => void scheduleDraft(d.id)}>Schedule</button>
+										</Show>
+									}
+								>
+									<button type="button" class="btn btn-sm" style={{ "border-color": "#a33", color: "#a33" }} onClick={() => void scheduleDraft(d.id, true)}>Schedule anyway (ignores voice lint)</button>
+								</Show>
+								<button type="button" class="btn btn-sm" onClick={() => discardDraft(d.id)}>Discard</button>
+								<div style={{ flex: 1 }} />
+								<button type="button" class="btn btn-sm" onClick={() => setOpenDraft(null)}>Close (esc)</button>
+							</div>
+							<Show when={openDraftHistory() === d.id}>
+								<div class="doc-history" style={{ position: "static", width: "100%", "max-height": "160px", "margin-top": "12px" }}>
+									<Show when={draftVersions()[d.id]?.length} fallback={<p class="muted">No tracked versions yet.</p>}>
+										<For each={draftVersions()[d.id]}>
+											{(v) => (
+												<button type="button" class="doc-history-row" onClick={() => void showDraftDiff(d.id, v.version)}>
+													<span class="doc-history-ver">v{v.version}</span>
+													<span class="doc-history-author" classList={{ agent: v.author === "agent" }}>{v.author}</span>
+													<span class="muted">{new Date(v.updatedAt).toLocaleString()}</span>
+												</button>
+											)}
+										</For>
+										<Show when={draftDiff()?.id === d.id}>
+											<div class="doc-diff">
+												<Show when={draftDiff()?.parts} fallback={<p class="muted">Loading…</p>}>
+													{(parts) => (
+														<For each={parts()}>
+															{(p) =>
+																p.added ? <ins>{p.value}</ins> : p.removed ? <del>{p.value}</del> : <span>{p.value}</span>
+															}
+														</For>
+													)}
+												</Show>
+											</div>
+										</Show>
+									</Show>
+								</div>
+							</Show>
+						</div>
+					</div>
+				)}
 			</Show>
 
 			{/* compose/reply overlay */}
