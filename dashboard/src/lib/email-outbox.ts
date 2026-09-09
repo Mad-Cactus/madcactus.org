@@ -113,7 +113,7 @@ export async function sendOutboxInner(
 	}
 
 	try {
-		const gmailMessageId = await sendGmail(account, {
+		const { id: gmailMessageId, threadId: gmailThreadId } = await sendGmail(account, {
 			to: row.toEmail,
 			subject: row.subject,
 			body,
@@ -131,24 +131,46 @@ export async function sendOutboxInner(
 			})
 			.where(eq(emailOutbox.id, outboxId));
 		// record the sent message locally — replies keep their thread current
-		// without waiting for a sync (new composes land via the SENT sync)
-		if (row.threadId) {
-			await db
-				.insert(emailMessages)
+		// without waiting for a sync; a NEW compose also gets its thread created
+		// so the Sent tab updates on the immediate revalidate instead of on the
+		// next Gmail sync
+		let threadRowId = row.threadId;
+		if (!threadRowId) {
+			const [threadRow] = await db
+				.insert(emailThreads)
 				.values({
-					threadId: row.threadId,
-					gmailId: gmailMessageId,
-					toEmails: row.toEmail,
-					bodyText: body,
-					date: new Date(),
-					isSent: true,
+					accountId: account.id,
+					gmailThreadId,
+					subject: row.subject,
+					snippet: "",
+					fromName: account.email,
+					fromEmail: account.email,
+					unread: false,
+					archived: true,
+					lastMessageAt: new Date(),
 				})
-				.onConflictDoNothing({ target: emailMessages.gmailId });
-			await db
-				.update(emailThreads)
-				.set({ lastMessageAt: new Date() })
-				.where(eq(emailThreads.id, row.threadId));
+				.onConflictDoUpdate({
+					target: emailThreads.gmailThreadId,
+					set: { lastMessageAt: new Date(), subject: row.subject },
+				})
+				.returning();
+			threadRowId = threadRow.id;
 		}
+		await db
+			.insert(emailMessages)
+			.values({
+				threadId: threadRowId,
+				gmailId: gmailMessageId,
+				toEmails: row.toEmail,
+				bodyText: body,
+				date: new Date(),
+				isSent: true,
+			})
+			.onConflictDoNothing({ target: emailMessages.gmailId });
+		await db
+			.update(emailThreads)
+			.set({ lastMessageAt: new Date() })
+			.where(eq(emailThreads.id, threadRowId));
 		return { ok: true, gmailMessageId };
 	} catch (e) {
 		const error = e instanceof Error ? e.message : String(e);
