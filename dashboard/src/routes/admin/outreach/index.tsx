@@ -1,5 +1,5 @@
 import { Title } from "@solidjs/meta";
-import { createAsync, useAction } from "@solidjs/router";
+import { createAsync, useAction, useNavigate } from "@solidjs/router";
 import { For, Show, Suspense, createSignal, createMemo } from "solid-js";
 import Layout from "~/components/Layout";
 import { getUserQuery } from "~/lib/queries";
@@ -224,6 +224,7 @@ function EmailSection(props: { prospect: OutreachProspect }) {
 	const p = () => props.prospect;
 	const data = createAsync(() => getProspectEmailCardQuery(p().id));
 	const setContact = useAction(setOutreachContactAction);
+	const navigate = useNavigate();
 	const [linkMsg, setLinkMsg] = createSignal("");
 	async function linkAddress(addr: string) {
 		setLinkMsg("");
@@ -239,6 +240,7 @@ function EmailSection(props: { prospect: OutreachProspect }) {
 			<Show when={data()}>
 				{(d) => (
 					<div
+						title="open in emails tab"
 						style={{
 							background: "rgba(0, 0, 0, 0.04)",
 							"border-radius": "6px",
@@ -246,6 +248,12 @@ function EmailSection(props: { prospect: OutreachProspect }) {
 							margin: "5px 0",
 							display: "grid",
 							gap: "4px",
+							cursor: "pointer",
+						}}
+						onClick={(e) => {
+							// the whole card jumps to the thread; chips/buttons keep their own behavior
+							if ((e.target as HTMLElement).closest("a,button")) return;
+							navigate(`/admin/email?q=${encodeURIComponent((d() as { email: string }).email)}`);
 						}}
 					>
 						<div style={{ display: "flex", "align-items": "baseline", gap: "6px" }}>
@@ -263,9 +271,6 @@ function EmailSection(props: { prospect: OutreachProspect }) {
 								>
 									{(d() as { card: { replied: boolean } }).card.replied ? "they replied" : "waiting on them"}
 								</span>
-								<a class="muted" style={{ "font-size": "12px" }} href={`/admin/email?q=${encodeURIComponent((d() as { email: string }).email)}`}>
-									thread ↗
-								</a>
 							</Show>
 						</div>
 						<Show when={(d() as { card: { subject: string; lastMessageAt: Date } }).card}>

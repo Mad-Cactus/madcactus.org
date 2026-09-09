@@ -33,21 +33,19 @@ export const getEmailStatusQuery = query(async () => {
 	return account ? { email: account.email, lastSyncAt: account.lastSyncAt } : null;
 }, "email-status");
 
-/** Account ids with a sync currently running (see getInboxQuery). */
+/** Account ids with a sync currently running (see triggerSyncIfStale). */
 const syncingAccounts = new Set<string>();
 
-export const getInboxQuery = query(async (opts: { q?: string } = {}) => {
-	"use server";
-	await requireAdmin();
+/** Kick a Gmail sync if the account is stale (>10min) — fire-and-forget.
+ *  No background worker at this volume: the Fly machine that runs this also
+ *  auto-stops when idle, so a cron-style syncer would be dead anyway. Instead
+ *  every page that consumes synced mail (email tab, outreach board) pokes
+ *  this on load; the in-flight guard keeps repeated reads from stacking
+ *  concurrent syncs (lastSyncAt only updates at the end). Fresh rows land on
+ *  the NEXT load — callers render from what's already in the DB. */
+export async function triggerSyncIfStale(): Promise<void> {
 	const account = await getPrimaryAccount();
-	if (!account) return { connected: false as const, threads: [], drafts: [], sent: [], outbox: [] };
-	// sync on read if stale >10min — no background worker at this volume.
-	// Fire-and-forget: awaiting it here blocks SSR for the whole first sync
-	// (50 threads × round-trips) and renders a white page. The email route
-	// polls revalidate() until the rows land. In-flight guard keeps repeated
-	// reads from stacking concurrent syncs (lastSyncAt only updates at the end).
-	// This query's only caller is the email page, so syncs only fire while
-	// you're there — and at most every 10 minutes.
+	if (!account) return;
 	const stale = !account.lastSyncAt || Date.now() - account.lastSyncAt.getTime() > 10 * 60_000;
 	if (stale && !syncingAccounts.has(account.id)) {
 		syncingAccounts.add(account.id);
@@ -55,6 +53,14 @@ export const getInboxQuery = query(async (opts: { q?: string } = {}) => {
 			.catch(() => {})
 			.finally(() => syncingAccounts.delete(account.id));
 	}
+}
+
+export const getInboxQuery = query(async (opts: { q?: string } = {}) => {
+	"use server";
+	await requireAdmin();
+	const account = await getPrimaryAccount();
+	if (!account) return { connected: false as const, threads: [], drafts: [], sent: [], outbox: [] };
+	await triggerSyncIfStale();
 	// Gmail's search index covers the whole mailbox — non-archived matches stay
 	// in `threads` (Inbox tab), sent matches ride along in `sent` (Sent tab).
 	const matches = await listInbox(account, { q: opts.q });

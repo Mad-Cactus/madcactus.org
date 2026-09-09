@@ -26,6 +26,7 @@ import type {
 import { generateApiKey, hashKey, keyPrefix } from "~/lib/crypto";
 import { normalizeBrainTools } from "~/lib/brain-activity";
 import { autoStageReplies, contactSuggestionsFor, latestThreadFor } from "~/lib/outreach-email";
+import { triggerSyncIfStale } from "~/lib/email-queries";
 
 // ── Auth guard ────────────────────────────────────────────────────
 
@@ -690,6 +691,10 @@ export const revokeAdminApiKeyAction = action(async (formData: FormData) => {
 export const getOutreachQuery = query(async () => {
 	"use server";
 	await requireAdmin();
+	// poke Gmail sync so the board is self-refreshing: reply detection reads
+	// synced rows, and fresh rows land on the next board load (sync is
+	// fire-and-forget — never block the board on Gmail round-trips)
+	await triggerSyncIfStale().catch(() => {});
 	// subscribe the board to replies: promote pre-reply prospects whose last
 	// synced message came from them. DB-only, fail-soft — never block the board.
 	await autoStageReplies().catch(() => {});
