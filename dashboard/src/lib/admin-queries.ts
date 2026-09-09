@@ -26,6 +26,8 @@ import type {
 } from "~/db/schema";
 import { generateApiKey, hashKey, keyPrefix } from "~/lib/crypto";
 import { normalizeBrainTools } from "~/lib/brain-activity";
+import { contactSuggestionsFor, latestThreadFor } from "~/lib/outreach-email";
+import { triggerSyncIfStale } from "~/lib/email-queries";
 
 // ── Auth guard ────────────────────────────────────────────────────
 
@@ -726,6 +728,10 @@ async function prospectEmailStatus(email: string): Promise<ProspectEmailStatus> 
 export const getOutreachQuery = query(async () => {
 	"use server";
 	await requireAdmin();
+	// poke Gmail sync so the board is self-refreshing: reply detection reads
+	// synced rows, and fresh rows land on the next board load (sync is
+	// fire-and-forget — never block the board on Gmail round-trips)
+	await triggerSyncIfStale().catch(() => {});
 	const rows = await db
 		.select()
 		.from(outreachProspects)
@@ -733,7 +739,7 @@ export const getOutreachQuery = query(async () => {
 	const all = [] as (typeof rows[number] & { emailStatus: ProspectEmailStatus | null })[];
 	for (const p of rows) {
 		const status = p.email ? await prospectEmailStatus(p.email) : null;
-		if (status?.repliedAt && p.stage === "sent") {
+		if (status?.repliedAt && ["proposed", "sent", "watching"].includes(p.stage)) {
 			await db.update(outreachProspects).set({ stage: "replied" }).where(eq(outreachProspects.id, p.id));
 			p.stage = "replied";
 		}
@@ -826,6 +832,23 @@ export const setOutreachVideoAction = action(async (formData: FormData) => {
 	return { success: "Video saved." };
 }, "setOutreachVideo");
 
+export const setOutreachContactAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const id = String(formData.get("id"));
+	if (!id) return { error: "id is required" };
+	await db
+		.update(outreachProspects)
+		.set({
+			contactName: String(formData.get("contact_name") || "").trim() || null,
+			email: String(formData.get("email") || "").trim() || null,
+		})
+		.where(eq(outreachProspects.id, id));
+	await revalidate(getOutreachQuery.key);
+	await revalidate(getProspectEmailCardQuery.key);
+	return { success: "Contact saved." };
+}, "setOutreachContact");
+
 export const setOutreachNextActionAction = action(async (formData: FormData) => {
 	"use server";
 	await requireAdmin();
@@ -895,6 +918,10 @@ export interface BrainActivity {
 	// longest single-visit dwell, seconds
 	maxDwell: number;
 	tools: string[];
+	// last connected agent client name, if any brain reported one
+	agent?: string;
+	// daily counts for the last 14 days (dd = YYYY-MM-DD, v = visits, t = mcp tool calls)
+	days: { dd: string; v: number; t: number }[];
 }
 
 // Activity key lives on the prospect row (brain_activity_key column) —
@@ -932,9 +959,64 @@ export const getBrainActivityQuery = query(async (prospectId: string) => {
 				clicks: j.clicks ?? 0,
 				maxDwell: j.maxDwell ?? 0,
 				tools: normalizeBrainTools(j.tools),
+				agent: typeof j.agent === "string" && j.agent ? j.agent : undefined,
+				days: Array.isArray(j.days)
+					? j.days.map((d) => ({ dd: String(d.dd), v: Number(d.v) || 0, t: Number(d.t) || 0 }))
+					: [],
 			} satisfies BrainActivity,
 		};
 	} catch {
 		return { error: "brain unreachable" as const };
 	}
 }, "brain-activity");
+
+// Email preview + address suggestions for one prospect, from synced threads.
+// DB-only (no Gmail round-trip) so the dialog can render it inline.
+export const getProspectEmailCardQuery = query(async (prospectId: string) => {
+	"use server";
+	await requireAdmin();
+	const [p] = await db
+		.select({ email: outreachProspects.email })
+		.from(outreachProspects)
+		.where(eq(outreachProspects.id, prospectId))
+		.limit(1);
+	if (!p?.email) return null;
+	const [card, suggestions] = await Promise.all([
+		latestThreadFor(p.email),
+		contactSuggestionsFor(p.email),
+	]);
+	return {
+		email: p.email,
+		card,
+		suggestions: suggestions
+			.filter((s) => s.email !== p.email!.toLowerCase())
+			.slice(0, 4),
+	};
+}, "prospect-email-card");
+
+// Wipes the brain's activity_events rows via POST /activity/reset (gated by
+// the same x-activity-key as GET /activity). Fails soft — an old brain
+// without the route surfaces "brain rejected the reset".
+export const resetBrainActivityAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const id = String(formData.get("id"));
+	const [row] = await db
+		.select({ brainUrl: outreachProspects.brainUrl, key: outreachProspects.brainActivityKey })
+		.from(outreachProspects)
+		.where(eq(outreachProspects.id, id))
+		.limit(1);
+	if (!row?.brainUrl || !row.key) return { error: "No brain activity key configured." };
+	try {
+		const res = await fetch(`${row.brainUrl.replace(/\/+$/, "")}/activity/reset`, {
+			method: "POST",
+			headers: { "x-activity-key": row.key },
+			signal: AbortSignal.timeout(15_000),
+		});
+		if (!res.ok) return { error: "Brain rejected the reset — brain needs /activity/reset deployed." };
+	} catch {
+		return { error: "brain unreachable" };
+	}
+	await revalidate(getBrainActivityQuery.key);
+	return { success: "Brain metrics reset." };
+}, "resetBrainActivity");
