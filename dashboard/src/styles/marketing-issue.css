@@ -213,3 +213,13 @@
     color: var(--color-silver-wash);
     margin-bottom: var(--spacing-24);
 }
+
+/* GFM tables in issue markdown (also used by the admin web/email previews) */
+.issue-body table, .dispatch-body table { border-collapse: collapse; margin: 16px 0; width: 100%; }
+.issue-body th, .issue-body td, .dispatch-body th, .dispatch-body td {
+	border: 1px solid rgba(0, 0, 0, 0.15);
+	padding: 6px 10px;
+	text-align: left;
+	vertical-align: top;
+}
+.issue-body th, .dispatch-body th { background: rgba(188, 156, 92, 0.12); font-weight: 600; }

@@ -5,13 +5,20 @@
 // "- [ ] " → checkbox, "> " → quote, **bold**, `code`, via
 // registerMarkdownShortcuts. A floating format toolbar shows on selection,
 // mirroring macro's selection toolbar.
+// Node registry + markdown transformers (GFM tables, page breaks) live in
+// ~/lib/doc-markdown so they stay testable headless.
 import { onCleanup, onMount, createEffect, createSignal, Show } from "solid-js";
+import { DOC_NODES, DOC_TRANSFORMERS } from "~/lib/doc-markdown";
+import { TableCellNode, TableRowNode, $isTableCellNode, $isTableRowNode } from "@lexical/table";
+import type { LexicalNode } from "lexical";
+import { $convertFromMarkdownString, $convertToMarkdownString, registerMarkdownShortcuts } from "@lexical/markdown";
 import {
 	createEditor,
 	FORMAT_TEXT_COMMAND,
 	INSERT_PARAGRAPH_COMMAND,
 	KEY_DOWN_COMMAND,
 	KEY_ENTER_COMMAND,
+	KEY_TAB_COMMAND,
 	BEFORE_INPUT_COMMAND,
 	SELECTION_CHANGE_COMMAND,
 	COMMAND_PRIORITY_HIGH,
@@ -24,51 +31,16 @@ import {
 	$createParagraphNode,
 	$createTextNode,
 } from "lexical";
-import {
-	$convertFromMarkdownString,
-	$convertToMarkdownString,
-	registerMarkdownShortcuts,
-	HEADING,
-	QUOTE,
-	CHECK_LIST,
-	UNORDERED_LIST,
-	ORDERED_LIST,
-	MULTILINE_ELEMENT_TRANSFORMERS,
-	TEXT_FORMAT_TRANSFORMERS,
-	TEXT_MATCH_TRANSFORMERS,
-} from "@lexical/markdown";
-import { registerRichText, HeadingNode, QuoteNode, $isHeadingNode, $isQuoteNode, $createHeadingNode, $createQuoteNode } from "@lexical/rich-text";
+import { registerRichText, $isHeadingNode, $isQuoteNode, $createHeadingNode, $createQuoteNode } from "@lexical/rich-text";
 import { ListNode, ListItemNode, INSERT_UNORDERED_LIST_COMMAND, registerList, $isListItemNode } from "@lexical/list";
 import { registerHistory, createEmptyHistoryState } from "@lexical/history";
 import { CodeNode, CodeHighlightNode, $isCodeNode } from "@lexical/code";
 import { LinkNode, AutoLinkNode, TOGGLE_LINK_COMMAND, toggleLink } from "@lexical/link";
 import { $setBlocksType } from "@lexical/selection";
 
-export const DOC_NODES = [
-	HeadingNode,
-	QuoteNode,
-	ListNode,
-	ListItemNode,
-	CodeNode,
-	CodeHighlightNode,
-	LinkNode,
-	AutoLinkNode,
-];
-
 // CHECK_LIST converts on Enter (triggerOnEnter), so "- [ ] item" + Enter
 // becomes a checkbox while "- " alone becomes a plain bullet on space —
 // stock regexes, same arrangement as macro's docs editor.
-const DOC_TRANSFORMERS = [
-	HEADING,
-	QUOTE,
-	CHECK_LIST,
-	UNORDERED_LIST,
-	ORDERED_LIST,
-	...MULTILINE_ELEMENT_TRANSFORMERS,
-	...TEXT_FORMAT_TRANSFORMERS,
-	...TEXT_MATCH_TRANSFORMERS,
-];
-
 type ToolbarApi = {
 	fmt: (f: TextFormatType) => void;
 	toggleH2: () => void;
@@ -82,6 +54,10 @@ export default function LexicalDocEditor(props: {
 	onMarkdownChange: (md: string) => void;
 	onSave?: (md: string) => void;
 	readOnly?: boolean;
+	/** editor root is live — caller can start paginating against it */
+	onReady?: (root: HTMLElement) => void;
+	/** content changed — pager should re-measure (debounced by caller) */
+	onLayoutDirty?: () => void;
 }) {
 	let host!: HTMLDivElement;
 	let api: ToolbarApi | undefined;
@@ -97,6 +73,7 @@ export default function LexicalDocEditor(props: {
 			onError: (e) => console.error(e),
 		});
 		ed.setRootElement(host);
+		props.onReady?.(host);
 		// the JSX host must not carry contenteditable=false — Lexical manages the
 		// attribute itself, and a stale "false" leaves the doc uneditable
 		ed.setEditable(!props.readOnly);
@@ -144,6 +121,7 @@ export default function LexicalDocEditor(props: {
 		let timer: ReturnType<typeof setTimeout> | undefined;
 		const offUpdate = ed.registerUpdateListener(() => {
 			syncToolbar();
+			props.onLayoutDirty?.();
 			clearTimeout(timer);
 			timer = setTimeout(() => props.onMarkdownChange(currentMd()), 1200);
 		});
@@ -298,6 +276,38 @@ export default function LexicalDocEditor(props: {
 				return true;
 			},
 			COMMAND_PRIORITY_EDITOR,
+		);
+
+		// Tab / Shift+Tab move between table cells (0.45's applyTableHandlers
+		// is internal-API shaped; this covers the navigation users expect)
+		ed.registerCommand(
+			KEY_TAB_COMMAND,
+			(event: KeyboardEvent | null) => {
+				const backwards = !!event?.shiftKey;
+				let handled = false;
+				ed.update(() => {
+					const sel = $getSelection();
+					if (!$isRangeSelection(sel)) return;
+					let n: LexicalNode | null = sel.anchor.getNode();
+					while (n && !$isTableCellNode(n)) n = n.getParent();
+					if (!$isTableCellNode(n)) return;
+					const row = n.getParent();
+					if (!$isTableRowNode(row)) return;
+					let next = backwards ? n.getPreviousSibling() : n.getNextSibling();
+					if (!next) {
+						const nextRow = backwards ? row.getPreviousSibling() : row.getNextSibling();
+						if (!$isTableRowNode(nextRow)) return;
+						next = backwards ? nextRow.getLastChild() : nextRow.getFirstChild();
+					}
+					if (next) {
+						(event as KeyboardEvent | null)?.preventDefault();
+						handled = true;
+						(next as TableCellNode).selectStart();
+					}
+				});
+				return handled;
+			},
+			COMMAND_PRIORITY_LOW,
 		);
 
 		// "- [ ] task" + Enter → checkbox. "- " already became a bullet on space

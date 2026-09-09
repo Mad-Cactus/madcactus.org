@@ -24,6 +24,7 @@
     "@lexical/list": "0.45.0",
     "@lexical/markdown": "0.45.0",
     "@lexical/rich-text": "0.45.0",
+    "@lexical/table": "0.45.0",
     "@lexical/utils": "0.45.0",
     "@solidjs/meta": "^0.29.4",
     "@solidjs/router": "^0.16.2",
@@ -33,7 +34,9 @@
     "autoprefixer": "^10.5.4",
     "clsx": "^2.1.1",
     "cmdk-solid": "^1.2.0",
+    "cva": "1.0.0-beta.8",
     "diff": "^9.0.0",
+    "docx": "^9.7.1",
     "drizzle-orm": "^0.45.2",
     "lexical": "0.45.0",
     "loro-crdt": "1.13.7",
@@ -47,8 +50,7 @@
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "3",
     "tailwindcss-animate": "^1.0.7",
-    "vite": "^8.0.0",
-    "cva": "1.0.0-beta.8"
+    "vite": "^8.0.0"
   },
   "devDependencies": {
     "@types/bun": "^1.4.0",
