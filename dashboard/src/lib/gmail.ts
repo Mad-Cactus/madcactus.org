@@ -202,6 +202,14 @@ async function fetchFullThread(account: EmailAccount, id: string) {
 /** Upsert one full thread (+ its messages). `archived` defaults to "does any
  *  message still carry INBOX" — Gmail's own truth, used for threads fetched
  *  outside a sync (search hits); sync passes it explicitly from the id lists. */
+/** Thread subject comes from the ROOT message, not the latest — bounces
+ *  ("Delivery Status Notification (Failure)") land inside the same Gmail
+ *  thread, and taking the latest subject renamed the whole conversation. */
+export function threadSubject(messages: GmailMessage[]): string {
+	const root = messages.slice().sort((a, b) => Number(a.internalDate) - Number(b.internalDate))[0];
+	return (root && header(root.payload ?? { headers: [] }, "Subject")) || "(no subject)";
+}
+
 async function upsertThread(
 	account: EmailAccount,
 	full: Awaited<ReturnType<typeof fetchFullThread>>,
@@ -215,7 +223,7 @@ async function upsertThread(
 	}
 	const last = latestMessage(messages)!;
 	const from = addr(header(last.payload, "From"));
-	const subject = header(last.payload, "Subject") || "(no subject)";
+	const subject = threadSubject(messages);
 	const unread = last.labelIds?.includes("UNREAD") ?? false;
 	const lastDate = new Date(Number(last.internalDate));
 
@@ -272,10 +280,17 @@ async function fetchMissingThreads(account: EmailAccount, ids: string[], max: nu
 		.where(inArray(emailThreads.gmailThreadId, ids));
 	const knownSet = new Set(known.map((r) => r.gmailThreadId));
 	const missing = ids.filter((id) => !knownSet.has(id)).slice(0, max);
+	let ok = 0;
 	await pooled(missing, 8, async (id) => {
-		await upsertThread(account, await fetchFullThread(account, id));
+		// per-item guard — one poisoned thread must not reject the whole backfill
+		try {
+			await upsertThread(account, await fetchFullThread(account, id));
+			ok++;
+		} catch (e) {
+			console.error(`sync: backfill thread ${id} failed:`, e instanceof Error ? e.message : e);
+		}
 	});
-	return missing.length;
+	return ok;
 }
 
 /** List every thread id carrying a label (paginated). ponytail: capped at
@@ -309,8 +324,15 @@ export async function syncAccount(account: EmailAccount): Promise<{ synced: numb
 
 	let freshInbox = 0;
 	await pooled(inboxIds.slice(0, 50), 8, async (id) => {
-		const row = await upsertThread(account, await fetchFullThread(account, id), false);
-		if (row) freshInbox++;
+		// one poisoned thread (deleted mid-sync, transient 500) used to reject
+		// the whole sync — lastSyncAt then never landed and the header showed
+		// "never" forever. Per-item failures just skip that thread.
+		try {
+			const row = await upsertThread(account, await fetchFullThread(account, id), false);
+			if (row) freshInbox++;
+		} catch (e) {
+			console.error(`sync: inbox thread ${id} failed:`, e instanceof Error ? e.message : e);
+		}
 	});
 	synced += freshInbox;
 
@@ -320,8 +342,12 @@ export async function syncAccount(account: EmailAccount): Promise<{ synced: numb
 	const sentFresh = sentIds.filter((id) => !inboxSet.has(id)).slice(0, 50);
 	let freshSent = 0;
 	await pooled(sentFresh, 8, async (id) => {
-		const row = await upsertThread(account, await fetchFullThread(account, id));
-		if (row) freshSent++;
+		try {
+			const row = await upsertThread(account, await fetchFullThread(account, id));
+			if (row) freshSent++;
+		} catch (e) {
+			console.error(`sync: sent thread ${id} failed:`, e instanceof Error ? e.message : e);
+		}
 	});
 	synced += freshSent;
 
@@ -411,20 +437,20 @@ export function buildMime(input: { to: string; subject: string; body: string }):
 	return `${headers.join("\r\n")}\r\n\r\n${input.body}`;
 }
 
-/** Send via Gmail. Returns the new gmail message id. */
+/** Send via Gmail. Returns the new message id + its Gmail thread id. */
 export async function sendGmail(
 	account: EmailAccount,
 	input: { to: string; subject: string; body: string; inReplyToGmailId?: string },
-): Promise<string> {
+): Promise<{ id: string; threadId: string }> {
 	// Gmail threads replies via the threadId param — no In-Reply-To guessing
 	const threadId = input.inReplyToGmailId ? await threadIdOf(account, input.inReplyToGmailId) : undefined;
 	const raw = toBase64Url(buildMime({ to: input.to, subject: input.subject, body: input.body }));
-	const res = await gmail<{ id: string }>(account, "/messages/send", {
+	const res = await gmail<{ id: string; threadId: string }>(account, "/messages/send", {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ raw, ...(threadId ? { threadId } : {}) }),
 	});
-	return res.id;
+	return { id: res.id, threadId: res.threadId };
 }
 
 async function threadIdOf(account: EmailAccount, gmailMessageId: string): Promise<string | undefined> {

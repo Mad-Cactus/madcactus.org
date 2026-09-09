@@ -440,6 +440,11 @@ export default function AdminEmail() {
 				return;
 			}
 			if (compose() || openDraft()) return;
+			// c composes from any tab — it only creates a draft, folder-agnostic
+			if (e.key === "c") {
+				setCompose({ to: "", subject: "", body: "" });
+				return;
+			}
 			// h/l cycle the folder tabs (wrap) — works on every tab
 			if (e.key === "h" || e.key === "l") {
 				e.preventDefault();
@@ -511,8 +516,6 @@ export default function AdminEmail() {
 					subject: selected()!.thread.subject.startsWith("Fwd:") ? selected()!.thread.subject : `Fwd: ${selected()!.thread.subject}`,
 					body: `\n\n---\nForwarded message from ${last?.fromEmail ?? ""}:\n${(last?.bodyText ?? "").slice(0, 2000)}`,
 				});
-			} else if (e.key === "c") {
-				setCompose({ to: "", subject: "", body: "" });
 			}
 		};
 		window.addEventListener("keydown", handler);
@@ -537,13 +540,19 @@ export default function AdminEmail() {
 
 	// getInboxQuery syncs in the background (fire-and-forget) so this page must
 	// poll until the rows land — otherwise a fresh connect renders an empty inbox
-	// that stays empty until the next manual action.
+	// that stays empty until the next manual action. Also polls email-status:
+	// the background sync writes lastSyncAt only when it finishes, so "never"
+	// has to keep revalidating until the timestamp lands.
 	onMount(() => {
 		let ticks = 0;
 		const timer = setInterval(() => {
 			const snap = inbox();
-			if (snap?.connected && snap.threads.length === 0 && folder() === "inbox" && ticks++ < 60) {
+			const st = status();
+			const waitingFirstSync = snap?.connected && snap.threads.length === 0 && folder() === "inbox";
+			const waitingStamp = st?.email && !st.lastSyncAt;
+			if ((waitingFirstSync || waitingStamp) && ticks++ < 60) {
 				void revalidate("email-inbox");
+				void revalidate("email-status");
 			} else {
 				clearInterval(timer);
 			}
@@ -583,18 +592,23 @@ export default function AdminEmail() {
 			</Show>
 
 			{/* folder tabs */}
-			<div class="folder-tabs">
-				<button type="button" classList={{ active: folder() === "inbox" }} onClick={() => setFolder("inbox")}>
-					Inbox<Show when={visibleThreads().length}> · {visibleThreads().length}</Show>
-				</button>
-				<button type="button" classList={{ active: folder() === "drafts" }} onClick={() => setFolder("drafts")}>
-					Drafts<Show when={inbox()?.drafts?.length}> · {inbox()!.drafts.length}</Show>
-				</button>
-				<button type="button" classList={{ active: folder() === "outbox" }} onClick={() => setFolder("outbox")}>
-					Outbox<Show when={inbox()?.outbox?.length}> · {inbox()!.outbox.length}</Show>
-				</button>
-				<button type="button" classList={{ active: folder() === "sent" }} onClick={() => setFolder("sent")}>
-					Sent
+			<div style={{ display: "flex", gap: "12px", "align-items": "center" }}>
+				<div class="folder-tabs" style={{ "margin-bottom": 0 }}>
+					<button type="button" classList={{ active: folder() === "inbox" }} onClick={() => setFolder("inbox")}>
+						Inbox<Show when={visibleThreads().length}> · {visibleThreads().length}</Show>
+					</button>
+					<button type="button" classList={{ active: folder() === "drafts" }} onClick={() => setFolder("drafts")}>
+						Drafts<Show when={inbox()?.drafts?.length}> · {inbox()!.drafts.length}</Show>
+					</button>
+					<button type="button" classList={{ active: folder() === "outbox" }} onClick={() => setFolder("outbox")}>
+						Outbox<Show when={inbox()?.outbox?.length}> · {inbox()!.outbox.length}</Show>
+					</button>
+					<button type="button" classList={{ active: folder() === "sent" }} onClick={() => setFolder("sent")}>
+						Sent
+					</button>
+				</div>
+				<button type="button" class="btn btn-sm" onClick={() => setCompose({ to: "", subject: "", body: "" })}>
+					Compose (c)
 				</button>
 			</div>
 
