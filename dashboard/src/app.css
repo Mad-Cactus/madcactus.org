@@ -1042,18 +1042,18 @@ input:not(.form-group input):not(.doc-title):focus {
 	margin: 4px 0 8px;
 }
 .doc-title {
-	font-family: var(--font-sans);
+	font-family: Arial, Helvetica, sans-serif;
 	font-weight: 700;
-	font-size: 30px;
+	font-size: 29.33px;   /* 22pt — matches PDF title */
+	line-height: 0.925;
 	letter-spacing: -0.5px;
 	background: transparent;
 	border: none;
 	border-bottom: 1px dashed transparent;
 	padding: 0;
-	margin: 8px 0 12px;
+	margin: 0 0 13.33px;
 	color: inherit;
-	width: 100%;
-	max-width: 760px;
+	width: 645.34px;
 }
 .doc-title:hover,
 .doc-title:focus {
@@ -1078,7 +1078,7 @@ input:not(.form-group input):not(.doc-title):focus {
 
 /* right-side version history / preview panel */
 .doc-shell { display: flex; align-items: flex-start; gap: 36px; }
-.doc-main { flex: 1; min-width: 0; overflow-wrap: anywhere; } /* long first-comment URLs must wrap, not push the page off screen */
+.doc-main { flex: 1; min-width: 0; overflow-wrap: anywhere; overflow-x: auto; } /* URL wrap + page sheets (816px) scroll on narrow screens */
 .doc-history {
 	width: 300px;
 	flex-shrink: 0;
@@ -1139,27 +1139,64 @@ input:not(.form-group input):not(.doc-title):focus {
 .doc-diff ins { background: rgba(46, 125, 50, 0.18); text-decoration: none; }
 .doc-diff del { background: rgba(198, 40, 40, 0.15); color: #7a2018; }
 
+/* ── paged editor ───────────────────────────────────────────────────────────
+   Letter pages (816×1056 @96dpi, 64pt margins) that MATCH the PDF export:
+   same geometry + spacings as ~/lib/page-spec (Arial ≡ Helvetica metrics).
+   ~/lib/doc-pages measures the real flow and pushes blocks that cross a page
+   boundary onto the next sheet; sheets + numbers are overlays behind text. */
+.doc-pager {
+	position: relative;
+	width: 816px;
+	margin: 14px auto 28px;
+	padding-top: 85.33px;
+}
+.doc-sheet {
+	position: absolute;
+	left: 0;
+	width: 816px;
+	height: 1056px;
+	background: var(--bg-card, #fff);
+	border-radius: 3px;
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14), 0 10px 28px rgba(0, 0, 0, 0.09);
+	z-index: 0;
+	pointer-events: none;
+}
+.doc-sheet-num {
+	position: absolute;
+	bottom: 30px;
+	left: 0;
+	right: 0;
+	text-align: center;
+	font-size: 12px;
+	color: rgba(0, 0, 0, 0.35);
+}
+.doc-title, .doc-editor { position: relative; z-index: 1; width: 645.34px; margin-left: auto; margin-right: auto; }
+
 .doc-editor {
 	border: none;
 	background: transparent;
-	padding: 0 0 96px;
-	max-width: 760px;
-	min-height: 50vh;
-	font-size: 15.5px;
-	line-height: 1.7;
+	padding: 0;
+	min-height: 60px;
+	font-family: Arial, Helvetica, sans-serif;
+	font-size: 14.67px;   /* 11pt */
+	line-height: 0.925;   /* Helvetica ascent+descent — pdfkit's line height */
 	outline: none;
 	caret-color: var(--gold, #bc9c5c);
 }
 .doc-editor.readonly { opacity: 0.7; }
-.doc-editor > *:first-child { margin-top: 0; }
-.doc-editor h1 { font-size: 28px; margin: 24px 0 8px; letter-spacing: -0.3px; }
-.doc-editor h2 { font-size: 21px; margin: 20px 0 6px; letter-spacing: -0.2px; }
-.doc-editor h3, .doc-editor h4 { font-size: 16.5px; margin: 16px 0 4px; }
-.doc-editor p { margin: 0 0 10px; }
-.doc-editor ul, .doc-editor ol { padding-left: 24px; margin: 0 0 10px; }
+/* blocks space DOWNWARD only (margin-bottom) so the pager's math is exact;
+   spacing values mirror ~/lib/page-spec */
+.doc-editor > * { margin-top: 0; }
+.doc-editor p { margin: 0 0 9.33px; }
+.doc-editor h1 { font-size: 28px; padding-top: 18.67px; margin: 0 0 4px; }
+.doc-editor h2 { font-size: 21.33px; padding-top: 18.67px; margin: 0 0 4px; }
+.doc-editor h3 { font-size: 18px; padding-top: 13.33px; margin: 0 0 4px; }
+.doc-editor h4 { font-size: 16px; padding-top: 13.33px; margin: 0 0 4px; }
+.doc-editor h5, .doc-editor h6 { font-size: 14.67px; padding-top: 13.33px; margin: 0 0 4px; }
+.doc-editor ul, .doc-editor ol { display: flow-root; padding-left: 8px; margin: 0 0 5.33px; }
 .doc-editor ul { list-style: disc; }
 .doc-editor ol { list-style: decimal; }
-.doc-editor li { margin: 2px 0; }
+.doc-editor li { margin: 0 0 5.33px; }
 .doc-editor li[role="checkbox"] { list-style: none; margin-left: -20px; }
 .doc-editor li[role="checkbox"]::before {
 	content: "";
@@ -1182,17 +1219,116 @@ input:not(.form-group input):not(.doc-title):focus {
 }
 .doc-editor ul.contains-task-list, .doc-editor li.task-list-item { list-style: none; }
 .doc-editor blockquote {
-	border-left: 3px solid var(--gold, #bc9c5c);
-	margin: 12px 0;
-	padding: 2px 0 2px 14px;
+	border-left: 2px solid var(--gold, #bc9c5c);
+	margin: 0 0 10.67px;
+	padding: 10.67px 0 10.67px 18.67px;
 	color: var(--text-muted);
 }
-.doc-editor code { background: rgba(0, 0, 0, 0.05); padding: 1px 5px; font-family: ui-monospace, monospace; font-size: 13px; }
-.doc-editor pre { background: rgba(0, 0, 0, 0.04); padding: 12px; border-radius: 6px; overflow-x: auto; }
-.doc-editor pre code { background: transparent; padding: 0; }
+.doc-editor blockquote p { margin-bottom: 0; }
+.doc-editor code { background: rgba(0, 0, 0, 0.05); padding: 0 3px; font-family: "Courier New", Courier, monospace; font-size: 14.67px; }
+.doc-editor pre {
+	background: #f4f4f4;
+	padding: 5.33px 10.67px;
+	margin: 0 0 10.67px;
+	width: calc(100% + 21.34px);
+	margin-left: -10.67px;
+	box-sizing: border-box;
+	white-space: pre-wrap;
+	border-radius: 0;
+	font-family: "Courier New", Courier, monospace;
+	font-size: 12px;      /* 9pt */
+	line-height: 0.786;   /* Courier ascent+descent */
+}
+.doc-editor pre code { background: transparent; padding: 0; font-size: 12px; }
 .doc-editor a { color: var(--text); text-decoration: underline; text-decoration-color: var(--gold, #bc9c5c); }
-.doc-editor hr { border: none; border-top: 1px solid rgba(0, 0, 0, 0.12); margin: 20px 0; }
+.doc-editor hr {
+	border: none;
+	border-top: 1px solid rgba(0, 0, 0, 0.2);
+	height: 0;
+	padding-top: 10.67px;
+	margin: 0 0 18.67px;
+	background: none;
+}
 .doc-editor .lexical-highlight, .doc-editor mark { background: rgba(188, 156, 92, 0.35); }
+
+/* GFM pipe tables — fixed layout so wrapping matches the PDF's equal columns */
+.doc-editor table {
+	table-layout: fixed;
+	width: 100%;
+	border-collapse: collapse;
+	margin: 0 0 10.67px;
+	font-size: 12.67px;   /* 9.5pt */
+}
+.doc-editor table td, .doc-editor table th {
+	border: 1px solid rgba(0, 0, 0, 0.18);
+	padding: 5.33px 8px;
+	vertical-align: top;
+	line-height: 0.925;
+	box-sizing: border-box;
+	overflow-wrap: break-word;
+}
+.doc-editor table th { background: rgba(188, 156, 92, 0.12); font-weight: 700; }
+
+/* `<!-- pagebreak -->` — hard break: next block starts a fresh page */
+.doc-pagebreak {
+	position: relative;
+	margin: 0;
+	min-height: 20px;
+	user-select: none;
+}
+.doc-pagebreak::before {
+	content: "";
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: 9px;
+	border-top: 1px dashed rgba(188, 156, 92, 0.8);
+}
+.doc-pagebreak span {
+	position: absolute;
+	left: 50%;
+	top: 3px;
+	transform: translateX(-50%);
+	background: var(--bg-card, #fff);
+	padding: 0 14px;
+	font-size: 12px;
+	white-space: nowrap;
+	color: rgba(0, 0, 0, 0.5);
+	font-style: italic;
+}
+.doc-pagebreak[data-selected="true"]::before { border-color: var(--gold, #bc9c5c); }
+
+/* Export dropdown (details/summary — native, keyboard-accessible) */
+.doc-export { position: relative; }
+.doc-export summary { list-style: none; cursor: pointer; }
+.doc-export summary::-webkit-details-marker { display: none; }
+.doc-export[open] summary { background: rgba(0, 0, 0, 0.08); }
+.doc-export-menu {
+	position: absolute;
+	right: 0;
+	top: calc(100% + 6px);
+	z-index: 60;
+	background: var(--bg-card, #fff);
+	border: 1px solid rgba(0, 0, 0, 0.12);
+	border-radius: 8px;
+	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+	padding: 4px;
+	min-width: 150px;
+	display: flex;
+	flex-direction: column;
+}
+.doc-export-menu button {
+	text-align: left;
+	background: none;
+	border: none;
+	padding: 7px 10px;
+	border-radius: 6px;
+	cursor: pointer;
+	font: inherit;
+	font-size: 13px;
+	color: inherit;
+}
+.doc-export-menu button:hover { background: rgba(0, 0, 0, 0.06); }
 
 /* floating selection toolbar (macro-style) */
 .doc-toolbar {
