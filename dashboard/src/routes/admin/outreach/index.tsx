@@ -149,11 +149,25 @@ function brainHref(p: OutreachProspect): string {
 	return p.brainActivityKey ? `${base}/?key=${p.brainActivityKey}` : base;
 }
 
-function DetailRow(props: { videoUrl?: string | null; videoId: string }) {
+/** Boxed video block: description + copy email/test buttons + cap link. */
+function VideoSection(props: { videoUrl?: string | null; videoId: string; description?: string | null }) {
 	return (
 		<Show when={props.videoUrl}>
-			<div style={{ display: "flex", gap: "8px", "flex-wrap": "wrap", margin: "12px 0" }}>
-				<a class="btn btn-sm" href={props.videoUrl!} target="_blank" rel="noreferrer">video ↗</a>
+			<div
+				style={{
+					background: "rgba(0, 0, 0, 0.04)",
+					"border-radius": "6px",
+					padding: "8px",
+					margin: "5px 0",
+					display: "grid",
+					gap: "6px",
+					"justify-items": "start",
+				}}
+			>
+				<div style={{ "font-weight": "600" }}>Video</div>
+				<Show when={props.description}>
+					<div class="muted">{props.description}</div>
+				</Show>
 				<button
 					type="button"
 					class="btn btn-sm"
@@ -161,7 +175,14 @@ function DetailRow(props: { videoUrl?: string | null; videoId: string }) {
 				>
 					copy email link
 				</button>
-				<a class="btn btn-sm" href={`/v/${props.videoId}?test=1`} target="_blank" rel="noreferrer">test ↗</a>
+				<button
+					type="button"
+					class="btn btn-sm"
+					onClick={() => navigator.clipboard.writeText(`${location.origin}/v/${props.videoId}?test=1`)}
+				>
+					copy test email link
+				</button>
+				<a class="btn btn-sm" href={props.videoUrl!} target="_blank" rel="noreferrer">cap ↗</a>
 			</div>
 		</Show>
 	);
@@ -266,20 +287,7 @@ function BoardCard(props: { prospect: OutreachProspect; due: boolean; onDragStar
 
 			<Show when={p().videoUrl || p().brainUrl}>
 				<div style={{ "font-size": "12px", margin: "5px 0" }}>
-					<Show when={p().videoUrl}>
-						<a href={p().videoUrl!} target="_blank" rel="noreferrer">video ↗</a>{" "}
-						<button
-							type="button"
-							class="btn btn-sm"
-							onClick={() => navigator.clipboard.writeText(`${location.origin}/v/${p().id}`)}
-						>
-							copy email link
-						</button>{" "}
-						<a href={`/v/${p().id}?test=1`} target="_blank" rel="noreferrer">test ↗</a>
-						<Show when={videoSummary(p())}>
-							<div style={{ color: "var(--orange)" }}>{videoSummary(p())}</div>
-						</Show>
-					</Show>
+					<VideoSection videoUrl={p().videoUrl} videoId={p().id} description={p().videoDescription} />
 					<Show when={p().brainUrl}>
 						<a class="btn btn-sm" href={brainHref(p())} target="_blank" rel="noreferrer">brain ↗</a>
 					</Show>
@@ -350,7 +358,7 @@ function BoardCard(props: { prospect: OutreachProspect; due: boolean; onDragStar
 						<Show when={p().brainUrl}>
 							<a class="btn btn-sm" href={brainHref(p())} target="_blank" rel="noreferrer">brain ↗</a>
 						</Show>
-						<DetailRow videoUrl={p().videoUrl} videoId={p().id} />
+						<VideoSection videoUrl={p().videoUrl} videoId={p().id} description={p().videoDescription} />
 					</div>
 					<Show when={p().brainUrl}>
 						<DigestSection brainUrl={p().brainUrl!} />
