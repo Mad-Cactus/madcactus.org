@@ -44,6 +44,10 @@ const syncingAccounts = new Set<string>();
  *  concurrent syncs (lastSyncAt only updates at the end). Fresh rows land on
  *  the NEXT load — callers render from what's already in the DB. */
 export async function triggerSyncIfStale(): Promise<void> {
+	// "use server" keeps this server-only: without it the directive-less export
+	// travels into the client graph when admin-queries imports it, dragging
+	// the db chain into the bundle (check-client-bundle trips).
+	"use server";
 	const account = await getPrimaryAccount();
 	if (!account) return;
 	const stale = !account.lastSyncAt || Date.now() - account.lastSyncAt.getTime() > 10 * 60_000;
