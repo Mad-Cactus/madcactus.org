@@ -1,12 +1,13 @@
 -- ── Seed: client portal data ──────────────────────────────────────
--- Uses fixed salt for reproducible seed. App hashes with scrypt + random salt.
+-- Portal login = a client_members row (this file) + a Supabase Auth user with
+-- the same email (auth is hosted; create it with the real keys:
+--   curl -X POST "$SUPABASE_URL/auth/v1/signup" -H "apikey: $SUPABASE_ANON_KEY" \
+--     -H 'content-type: application/json' -d '{"email":"client@cdl.example","password":"..."}'
+-- ). password_hash is legacy/unused (schema.ts: Supabase Auth is the password store).
 
--- Client linked to CDL Engagement project
-insert into clients (project_id, name, email, password_hash, is_active)
-select p.id, 'CDL Admin', 'client@cdl.example',
-       'a1b2c3d4e5f67890:772e0cc20a98209a154be0f8b4a1c1ccfe119a2542ff67f3b0473bc12ec7dfb2d5d3ba1718aac622fa15415ded6a838219597483d9466f5463377baba56d4199',
-       true
-from projects p where p.name = 'CDL Engagement'
+-- Client portal member
+insert into client_members (name, email, is_active)
+values ('CDL Admin', 'client@cdl.example', true)
 on conflict (email) do nothing;
 
 -- ── Documents ─────────────────────────────────────────────────────

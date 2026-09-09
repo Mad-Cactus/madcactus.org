@@ -1,0 +1,4 @@
+# Orca runs `scripts.setup` when a new worktree is created (setup policy "run").
+# Env available to the script: ORCA_WORKTREE_PATH, ORCA_WORKSPACE_NAME.
+scripts:
+  setup: ./scripts/dev-setup.sh
