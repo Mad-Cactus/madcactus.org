@@ -84,13 +84,18 @@ export default function AdminEmail() {
 			.then((d) => d && cacheThread(d))
 			.catch(() => {});
 	};
+	// folder-aware nav list: j/k walks whatever tab is up — inbox rows or the
+	// Sent tab's threads. Triage ops (V/e/u/!/#/x) stay inbox-only.
+	const listThreads = () =>
+		folder() === "sent" ? (inbox()?.sent ?? []).map((s) => s.thread) : visibleThreads();
+
 	// fast j/j/j fires overlapping fetches — abort the stale one so a slow
 	// earlier response can't overwrite the newer selection (out-of-order race)
 	let threadAbort: AbortController | null = null;
 	const loadThread = async (t: EmailThread, i?: number) => {
 		if (i !== undefined) setSelIdx(i);
 		const idx = i ?? selIdx();
-		const list = visibleThreads();
+		const list = listThreads();
 		prefetch(list[idx - 1]);
 		prefetch(list[idx + 1]);
 		const paint = (data: ThreadFull) => {
@@ -423,7 +428,7 @@ export default function AdminEmail() {
 				}
 				return;
 			}
-			const threads = visibleThreads();
+			const threads = listThreads();
 			if (e.key === "/") {
 				e.preventDefault();
 				searchEl?.focus();
@@ -440,7 +445,6 @@ export default function AdminEmail() {
 				return;
 			}
 			if (compose() || openDraft()) return;
-			// c composes from any tab — it only creates a draft, folder-agnostic
 			if (e.key === "c") {
 				setCompose({ to: "", subject: "", body: "" });
 				return;
@@ -455,11 +459,9 @@ export default function AdminEmail() {
 				setVisMode(false);
 				return;
 			}
-			// remaining thread hotkeys only make sense in the inbox tab
-			if (folder() !== "inbox") return;
-			// j/k move a visible selection; nothing selected yet → j starts at the
-			// top row instead of skipping it. In visual mode moving just extends
-			// the range — no fetch, no mark-as-read.
+			// j/k navigate the list on Inbox AND Sent; Drafts/Outbox have no list.
+			// The ops below (V/e/u/!/#/x, r/f) stay inbox-scoped.
+			if (folder() === "inbox" || folder() === "sent") {
 			const cur = selected() ? selIdx() : -1;
 			const move = async (i: number) => {
 				if (i < 0 || i >= threads.length) return;
@@ -475,12 +477,18 @@ export default function AdminEmail() {
 			if (e.key === "j" || e.key === "ArrowDown") {
 				e.preventDefault();
 				await move(Math.min(cur + 1, threads.length - 1));
+				return;
 			} else if (e.key === "k" || e.key === "ArrowUp") {
 				e.preventDefault();
 				await move(Math.max(cur - 1, 0));
-			} else if (e.key === "V" && threads.length) {
+				return;
+			}
+			}
+			// remaining thread hotkeys only make sense in the inbox tab
+			if (folder() !== "inbox") return;
+			if (e.key === "V" && threads.length) {
 				e.preventDefault();
-				setVisAnchor(Math.max(cur, 0));
+				setVisAnchor(Math.max(selIdx(), 0));
 				setVisMode(!visMode());
 			} else if (e.key === "e") {
 				if (visMode()) await bulkOp(visRangeIds(), "archive");
@@ -764,8 +772,9 @@ export default function AdminEmail() {
 					    via the local insert + SENT sync; Gmail-UI sends on next sync) */}
 					<Show when={inbox()?.sent?.length} fallback={<div class="muted">Nothing sent yet.</div>}>
 						<For each={inbox()!.sent.slice(0, visibleCount())}>
-							{(s) => (
+							{(s, i) => (
 								<div
+									data-thread-row=""
 									class="card"
 									style={{
 										padding: "12px 16px",
@@ -774,7 +783,7 @@ export default function AdminEmail() {
 										opacity: 0.85,
 										background: selected()?.thread.id === s.thread.id ? "rgba(188, 156, 92, 0.12)" : undefined,
 									}}
-									onClick={() => loadThread(s.thread)}
+									onClick={() => loadThread(s.thread, i())}
 								>
 									<div style={{ display: "flex", gap: "10px", "align-items": "baseline" }}>
 										<strong style={{ "font-size": "14px", flex: 1 }}>{s.thread.subject}</strong>
