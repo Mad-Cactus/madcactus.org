@@ -1,4 +1,4 @@
-import { query, action, redirect } from "@solidjs/router";
+import { query, action, redirect, revalidate } from "@solidjs/router";
 import { and, asc, desc, eq, isNotNull, isNull, ne } from "drizzle-orm";
 import { db } from "~/db";
 import { emailOutbox } from "~/db/schema";
@@ -98,7 +98,11 @@ export const syncEmailAction = action(async () => {
 	"use server";
 	await requireAdmin();
 	const account = await requireAccount();
-	return syncAccount(account);
+	const out = await syncAccount(account);
+	// the header reads email-status — without this the button synced but the
+	// "last sync" timestamp stayed stale until a full reload
+	await revalidate(getEmailStatusQuery.key);
+	return out;
 }, "syncEmail");
 
 export const archiveEmailAction = action(async (formData: FormData) => {
