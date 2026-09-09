@@ -84,10 +84,25 @@ export default function AdminEmail() {
 			.then((d) => d && cacheThread(d))
 			.catch(() => {});
 	};
-	// folder-aware nav list: j/k walks whatever tab is up — inbox rows or the
-	// Sent tab's threads. Triage ops (V/e/u/!/#/x) stay inbox-only.
+	// folder-aware nav list: j/k walks whatever tab is up — inbox rows, the
+	// Sent tab's threads, or the Drafts/Outbox rows (activation differs).
 	const listThreads = () =>
 		folder() === "sent" ? (inbox()?.sent ?? []).map((s) => s.thread) : visibleThreads();
+	// drafts/outbox have no threads — j/k moves a row cursor + activates
+	const [selOutbox, setSelOutbox] = createSignal<string | null>(null);
+	const activateNav = async (i: number) => {
+		if (folder() === "drafts") {
+			const d = inbox()?.drafts?.[i];
+			setSelIdx(i);
+			if (d) setOpenDraft(d.id);
+			document.querySelectorAll("[data-thread-row]")[i]?.scrollIntoView({ block: "nearest" });
+		} else if (folder() === "outbox") {
+			const o = inbox()?.outbox?.[i];
+			setSelIdx(i);
+			setSelOutbox(o?.id ?? null);
+			document.querySelectorAll("[data-thread-row]")[i]?.scrollIntoView({ block: "nearest" });
+		}
+	};
 
 	// fast j/j/j fires overlapping fetches — abort the stale one so a slow
 	// earlier response can't overwrite the newer selection (out-of-order race)
@@ -442,7 +457,40 @@ export default function AdminEmail() {
 				setSelected(null);
 				setCompose(null);
 				setOpenDraft(null);
+				setSelOutbox(null);
 				return;
+			}
+			// j/k navigate EVERY tab — above the editor guard so j/k switches
+			// drafts while the draft editor is open (typing already returned)
+			{
+				const cur = selected() || openDraft() || selOutbox() ? selIdx() : -1;
+				const navLen =
+					folder() === "drafts" || folder() === "outbox"
+						? (folder() === "drafts" ? inbox()?.drafts?.length : inbox()?.outbox?.length) ?? 0
+						: threads.length;
+				const step = async (i: number) => {
+					if (folder() === "drafts" || folder() === "outbox") {
+						await activateNav(i);
+					} else {
+						if (i >= visibleCount()) setVisibleCount(i + 100);
+						if (visMode()) {
+							setSelIdx(i);
+							document.querySelectorAll("[data-thread-row]")[i]?.scrollIntoView({ block: "nearest" });
+							return;
+						}
+						const t = threads[i];
+						if (t) await loadThread(t, i);
+					}
+				};
+				if (e.key === "j" || e.key === "ArrowDown") {
+					e.preventDefault();
+				if (navLen) await step(Math.min(cur + 1, navLen - 1));
+					return;
+				} else if (e.key === "k" || e.key === "ArrowUp") {
+					e.preventDefault();
+				if (navLen) await step(Math.max(cur - 1, 0));
+					return;
+				}
 			}
 			if (compose() || openDraft()) return;
 			if (e.key === "c") {
@@ -459,32 +507,8 @@ export default function AdminEmail() {
 				setVisMode(false);
 				return;
 			}
-			// j/k navigate the list on Inbox AND Sent; Drafts/Outbox have no list.
-			// The ops below (V/e/u/!/#/x, r/f) stay inbox-scoped.
-			if (folder() === "inbox" || folder() === "sent") {
-			const cur = selected() ? selIdx() : -1;
-			const move = async (i: number) => {
-				if (i < 0 || i >= threads.length) return;
-				if (i >= visibleCount()) setVisibleCount(i + 100);
-				if (visMode()) {
-					setSelIdx(i);
-					document.querySelectorAll("[data-thread-row]")[i]?.scrollIntoView({ block: "nearest" });
-					return;
-				}
-				const t = threads[i];
-				if (t) await loadThread(t, i);
-			};
-			if (e.key === "j" || e.key === "ArrowDown") {
-				e.preventDefault();
-				await move(Math.min(cur + 1, threads.length - 1));
-				return;
-			} else if (e.key === "k" || e.key === "ArrowUp") {
-				e.preventDefault();
-				await move(Math.max(cur - 1, 0));
-				return;
-			}
-			}
-			// remaining thread hotkeys only make sense in the inbox tab
+			// j/k navigation is handled above (every tab); the ops below stay
+			// inbox-scoped triage
 			if (folder() !== "inbox") return;
 			if (e.key === "V" && threads.length) {
 				e.preventDefault();
@@ -625,8 +649,9 @@ export default function AdminEmail() {
 			<Show when={folder() === "drafts"}>
 				<Show when={inbox()?.drafts?.length} fallback={<div class="muted">No open drafts. Agents push drafts via create_email_draft; compose with c in the Inbox.</div>}>
 					<For each={inbox()!.drafts}>
-						{(d) => (
+						{(d, i) => (
 							<div
+								data-thread-row=""
 								class="card"
 								style={{
 									padding: "12px 16px",
@@ -635,7 +660,10 @@ export default function AdminEmail() {
 									background: openDraft() === d.id ? "rgba(188, 156, 92, 0.12)" : undefined,
 									transition: "background 120ms",
 								}}
-								onClick={() => setOpenDraft(d.id)}
+								onClick={() => {
+									setSelIdx(i());
+									setOpenDraft(d.id);
+								}}
 							>
 								<div style={{ display: "flex", gap: "10px", "align-items": "baseline" }}>
 									<strong style={{ "font-size": "14px", flex: 1 }}>{editMeta()[d.id]?.subject ?? d.subject}</strong>
@@ -658,7 +686,20 @@ export default function AdminEmail() {
 				<Show when={inbox()?.outbox?.length} fallback={<div class="muted">Nothing queued. Schedule a draft from the Drafts tab.</div>}>
 					<For each={inbox()!.outbox}>
 						{(d) => (
-							<div class="card" style={{ padding: "14px 18px", "margin-bottom": "10px" }}>
+							<div
+								data-thread-row=""
+								class="card"
+								style={{
+									padding: "14px 18px",
+									"margin-bottom": "10px",
+									background: selOutbox() === d.id ? "rgba(188, 156, 92, 0.12)" : undefined,
+								}}
+								onClick={() => {
+									const i = (inbox()?.outbox ?? []).findIndex((o) => o.id === d.id);
+									setSelIdx(i);
+									setSelOutbox(d.id);
+								}}
+							>
 								<div style={{ display: "flex", gap: "12px", "align-items": "baseline" }}>
 									<strong style={{ "font-size": "14px" }}>{d.subject}</strong>
 									<span class="muted" style={{ "font-size": "13px" }}>to {d.toEmail}</span>
