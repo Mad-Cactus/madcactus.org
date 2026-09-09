@@ -50,7 +50,9 @@ export default function AdminEmail() {
 	const visRangeIds = (): string[] => {
 		if (!visMode()) return [];
 		const [a, b] = visRangeIdx();
-		return visibleThreads().slice(a, b + 1).map((t) => t.id);
+		// visual mode indexes whatever list is up — inbox threads or draft rows
+		const ids = folder() === "drafts" ? (inbox()?.drafts ?? []).map((d) => d.id) : visibleThreads().map((t) => t.id);
+		return ids.slice(a, b + 1);
 	};
 	const [compose, setCompose] = createSignal<{ to: string; subject: string; body: string; threadId?: string } | null>(null);
 	// client-side windowing over the full local corpus — no server pagination
@@ -351,6 +353,25 @@ export default function AdminEmail() {
 		});
 	};
 
+	// drafts-tab discard (single cursor draft or the visual range) — one
+	// confirm for a batch; discard is a hard delete, no Gmail trash
+	const askDraftDiscard = (ids: string[]) => {
+		const n = ids.length;
+		if (!n) return;
+		setPending({
+			title: `Discard ${n === 1 ? "draft" : `${n} drafts`}?`,
+			body: n === 1 ? "Deleted for good — drafts don't go to Gmail trash." : `${n} drafts deleted for good — drafts don't go to Gmail trash.`,
+			confirm: "Discard",
+			danger: true,
+			run: async () => {
+				for (const id of ids) await discardDraft(id);
+				if (openDraft() && ids.includes(openDraft()!)) setOpenDraft(null);
+				setVisMode(false);
+				flash(`discarded ${n} draft${n === 1 ? "" : "s"}`);
+			},
+		});
+	};
+
 	const askDelete = () => {
 		const s = selected();
 		if (!s) return;
@@ -507,14 +528,27 @@ export default function AdminEmail() {
 				setVisMode(false);
 				return;
 			}
-			// j/k navigation is handled above (every tab); the ops below stay
-			// inbox-scoped triage
-			if (folder() !== "inbox") return;
-			if (e.key === "V" && threads.length) {
+			// V visual mode: inbox (bulk triage) + drafts (bulk discard)
+			if (
+				e.key === "V" &&
+				(folder() === "inbox" ? threads.length : (inbox()?.drafts?.length ?? 0))
+			) {
 				e.preventDefault();
 				setVisAnchor(Math.max(selIdx(), 0));
 				setVisMode(!visMode());
-			} else if (e.key === "e") {
+				return;
+			}
+			// drafts tab: # discards the cursor draft (or the visual range)
+			if (folder() === "drafts") {
+				if (e.key === "#") {
+					const ids = visMode() ? visRangeIds() : [inbox()?.drafts?.[selIdx()]?.id].filter(Boolean) as string[];
+					askDraftDiscard(ids);
+				}
+				return;
+			}
+			// remaining triage ops are inbox-only
+			if (folder() !== "inbox") return;
+			if (e.key === "e") {
 				if (visMode()) await bulkOp(visRangeIds(), "archive");
 				else if (selected()) await threadOp(selected()!.thread.id, "archive");
 			} else if (e.key === "E" && !visMode() && selected()) {
@@ -657,7 +691,12 @@ export default function AdminEmail() {
 									padding: "12px 16px",
 									"margin-bottom": "8px",
 									cursor: "pointer",
-									background: openDraft() === d.id ? "rgba(188, 156, 92, 0.12)" : undefined,
+									background:
+										visMode() && i() >= visRangeIdx()[0] && i() <= visRangeIdx()[1]
+											? "rgba(188, 156, 92, 0.22)"
+											: openDraft() === d.id
+												? "rgba(188, 156, 92, 0.12)"
+												: undefined,
 									transition: "background 120ms",
 								}}
 								onClick={() => {
