@@ -1,9 +1,10 @@
-import { For, Show, createSignal, onMount } from "solid-js";
+import { For, Show, createSignal, onMount, onCleanup } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 import LexicalDocEditor from "~/components/LexicalDocEditor";
 import ConfirmButton from "~/components/ConfirmButton";
 import { LinkedInPreview, NewsletterEmailPreview, NewsletterWebPreview, type PreviewMode } from "~/components/DocPreviews";
 import { getDocQuery } from "~/lib/docs-queries";
+import { layoutPages } from "~/lib/doc-pages";
 
 type VersionRow = {
 	id: string;
@@ -49,6 +50,29 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 	const [liConnected, setLiConnected] = createSignal<boolean | null>(null);
 	const [preview, setPreview] = createSignal<PreviewMode | null>(null);
 	let saveTimer: ReturnType<typeof setTimeout> | undefined;
+
+	// ── pagination: title + editor blocks measured into letter pages ──
+	let pagerEl: HTMLDivElement | undefined;
+	let titleEl: HTMLInputElement | undefined;
+	let editorRoot: HTMLElement | undefined;
+	const pagerRef = (el: HTMLDivElement) => (pagerEl = el);
+	const titleRef = (el: HTMLInputElement) => (titleEl = el);
+	const setEditorRoot = (root: HTMLElement) => (editorRoot = root);
+	let layoutTimer: ReturnType<typeof setTimeout> | undefined;
+	const runLayout = () => {
+		if (pagerEl && editorRoot) layoutPages(pagerEl, titleEl ?? null, editorRoot);
+	};
+	const scheduleLayout = () => {
+		clearTimeout(layoutTimer);
+		layoutTimer = setTimeout(runLayout, 200);
+	};
+	onMount(() => {
+		const onResize = () => scheduleLayout();
+		window.addEventListener("resize", onResize);
+		// fonts can shift metrics after first paint
+		document.fonts?.ready?.then(() => scheduleLayout());
+		onCleanup(() => window.removeEventListener("resize", onResize));
+	});
 
 	// seed once when the doc resource resolves
 	onMount(() => {
@@ -219,16 +243,34 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 				}}>
 					{shareUrl() ? "Unshare" : "Share"}
 				</button>
-				<button type="button" class="btn btn-sm" onClick={() => {
-					const blob = new Blob([markdown()], { type: "text/markdown" });
-					const a = document.createElement("a");
-					a.href = URL.createObjectURL(blob);
-					a.download = `${doc().title.replace(/[^\w-]+/g, "-")}.md`;
-					a.click();
-					URL.revokeObjectURL(a.href);
-				}}>
-					Export .md
-				</button>
+				<details class="doc-export" ref={(el) => {
+				// close on any click outside the menu
+				const close = (e: MouseEvent) => {
+					if (!(e.target instanceof Element) || !e.target.closest(".doc-export")) el.removeAttribute("open");
+				};
+				document.addEventListener("click", close);
+				onCleanup(() => document.removeEventListener("click", close));
+			}}>
+				<summary class="btn btn-sm">Export ▾</summary>
+				<div class="doc-export-menu">
+					<button type="button" onClick={() => {
+						const blob = new Blob([markdown()], { type: "text/markdown" });
+						const a = document.createElement("a");
+						a.href = URL.createObjectURL(blob);
+						a.download = `${doc().title.replace(/[^\w-]+/g, "-")}.md`;
+						a.click();
+						URL.revokeObjectURL(a.href);
+					}}>Markdown (.md)</button>
+					<button type="button" onClick={async () => {
+						await save(props.id, markdown());
+						window.open(`/api/docs/${props.id}/export?format=docx`, "_blank");
+					}}>Word (.docx)</button>
+					<button type="button" onClick={async () => {
+						await save(props.id, markdown());
+						window.open(`/api/docs/${props.id}/export?format=pdf`, "_blank");
+					}}>PDF (.pdf)</button>
+				</div>
+			</details>
 				<Show
 					when={kind()}
 					fallback={
@@ -284,38 +326,44 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 					Public: <a href={shareUrl()}>{shareUrl()}</a>
 				</p>
 			</Show>
-			<input
-				class="doc-title"
-				value={doc().title}
-				placeholder="Untitled"
-				title="Click to rename"
-				onChange={(e) => {
-					const v = e.currentTarget.value.trim() || "Untitled";
-					if (v !== doc().title) void post(props.id, { op: "rename", title: v });
-					else e.currentTarget.value = doc().title;
-				}}
-				onKeyDown={(e) => {
-					if (e.key === "Enter") {
-						e.currentTarget.blur();
-						// Enter jumps into the body, like macro's title → doc navigation
-						document.querySelector<HTMLDivElement>(".doc-editor")?.focus();
-					}
-				}}
-			/>
-			<LexicalDocEditor
-				markdown={markdown()}
-				onMarkdownChange={(md) => {
-					// skip the seed-conversion echo (same md) — it would bump the
-					// version on every open
-					if (md === markdown()) return;
-					setMarkdown(md);
-					// autosave to the DB, not just local state — a refresh must not
-					// lose the doc
-					clearTimeout(saveTimer);
-					saveTimer = setTimeout(() => void save(props.id, md), 1200);
-				}}
-				onSave={(md) => save(props.id, md)}
-			/>
+			{/* the pager is the page surface: title + editor measure together so
+			    page breaks match the .docx/.pdf exports (see ~/lib/doc-pages) */}
+			<div class="doc-pager" ref={pagerRef}>
+				<input
+					class="doc-title"
+					value={doc().title}
+					placeholder="Untitled"
+					title="Click to rename"
+					onChange={(e) => {
+						const v = e.currentTarget.value.trim() || "Untitled";
+						if (v !== doc().title) void post(props.id, { op: "rename", title: v });
+						else e.currentTarget.value = doc().title;
+					}}
+					onKeyDown={(e) => {
+						if (e.key === "Enter") {
+							e.currentTarget.blur();
+							// Enter jumps into the body, like macro's title → doc navigation
+							document.querySelector<HTMLDivElement>(".doc-editor")?.focus();
+						}
+					}}
+				/>
+				<LexicalDocEditor
+					markdown={markdown()}
+					onMarkdownChange={(md) => {
+						// skip the seed-conversion echo (same md) — it would bump the
+						// version on every open
+						if (md === markdown()) return;
+						setMarkdown(md);
+						// autosave to the DB, not just local state — a refresh must not
+						// lose the doc
+						clearTimeout(saveTimer);
+						saveTimer = setTimeout(() => void save(props.id, md), 1200);
+					}}
+					onSave={(md) => save(props.id, md)}
+					onReady={(root) => setEditorRoot(root)}
+					onLayoutDirty={scheduleLayout}
+				/>
+			</div>
 			{/* first comment is a plain doc field — shown whether or not LinkedIn is
 			    connected yet (gating on liConnected unmounted it once the check resolved) */}
 			<Show when={kind() === "post"}>
