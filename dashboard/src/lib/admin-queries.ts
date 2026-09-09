@@ -1,5 +1,5 @@
 import { query, action, redirect, revalidate } from "@solidjs/router";
-import { eq, and, desc, inArray, isNull } from "drizzle-orm";
+import { eq, and, desc, inArray, isNull, ilike, gt } from "drizzle-orm";
 import { getTableColumns } from "drizzle-orm";
 import { getAuthedClient } from "./session";
 import { supabaseService } from "./supabase";
@@ -15,6 +15,7 @@ import {
 	deliverableUpdates,
 	apiKeys,
 	outreachProspects,
+	emailMessages,
 	OUTREACH_STAGES,
 } from "~/db/schema";
 import type {
@@ -25,7 +26,7 @@ import type {
 } from "~/db/schema";
 import { generateApiKey, hashKey, keyPrefix } from "~/lib/crypto";
 import { normalizeBrainTools } from "~/lib/brain-activity";
-import { autoStageReplies, contactSuggestionsFor, latestThreadFor } from "~/lib/outreach-email";
+import { contactSuggestionsFor, latestThreadFor } from "~/lib/outreach-email";
 import { triggerSyncIfStale } from "~/lib/email-queries";
 
 // ── Auth guard ────────────────────────────────────────────────────
@@ -686,8 +687,44 @@ export const revokeAdminApiKeyAction = action(async (formData: FormData) => {
 
 // ── Outreach pipeline ───────────────────────────────────────────
 
+export type ProspectEmailStatus = {
+	lastSentAt: Date | null;
+	repliedAt: Date | null;
+	replySnippet: string | null;
+};
+
+/** Email status for one prospect address, read straight from the synced
+ *  corpus: last outbound to that address + the newest inbound from it AFTER
+ *  that send (a random old email from the same address is not a reply).
+ *  ponytail: ILIKE + per-prospect queries — a handful of prospects over a
+ *  one-mailbox corpus; index if the pipeline ever grows past that. */
+async function prospectEmailStatus(email: string): Promise<ProspectEmailStatus> {
+	const [lastSent] = await db
+		.select({ date: emailMessages.date })
+		.from(emailMessages)
+		.where(and(eq(emailMessages.isSent, true), ilike(emailMessages.toEmails, `%${email}%`)))
+		.orderBy(desc(emailMessages.date))
+		.limit(1);
+	const replyCond = lastSent
+		? and(eq(emailMessages.isSent, false), eq(emailMessages.fromEmail, email), gt(emailMessages.date, lastSent.date))
+		: and(eq(emailMessages.isSent, false), eq(emailMessages.fromEmail, email));
+	const [reply] = await db
+		.select({ date: emailMessages.date, bodyText: emailMessages.bodyText })
+		.from(emailMessages)
+		.where(replyCond)
+		.orderBy(desc(emailMessages.date))
+		.limit(1);
+	return {
+		lastSentAt: lastSent?.date ?? null,
+		repliedAt: reply?.date ?? null,
+		replySnippet: reply?.bodyText?.slice(0, 120) ?? null,
+	};
+}
+
 // Both lists in one pass: filtering by `now()` on the server keeps the
-// due-now list identical between SSR and hydration.
+// due-now list identical between SSR and hydration. Each prospect also gets
+// its email status; a detected reply auto-advances a `sent` card to `replied`
+// (idempotent — the stage flip stops it re-firing).
 export const getOutreachQuery = query(async () => {
 	"use server";
 	await requireAdmin();
@@ -695,13 +732,19 @@ export const getOutreachQuery = query(async () => {
 	// synced rows, and fresh rows land on the next board load (sync is
 	// fire-and-forget — never block the board on Gmail round-trips)
 	await triggerSyncIfStale().catch(() => {});
-	// subscribe the board to replies: promote pre-reply prospects whose last
-	// synced message came from them. DB-only, fail-soft — never block the board.
-	await autoStageReplies().catch(() => {});
-	const all = await db
+	const rows = await db
 		.select()
 		.from(outreachProspects)
 		.orderBy(desc(outreachProspects.createdAt));
+	const all = [] as (typeof rows[number] & { emailStatus: ProspectEmailStatus | null })[];
+	for (const p of rows) {
+		const status = p.email ? await prospectEmailStatus(p.email) : null;
+		if (status?.repliedAt && ["proposed", "sent", "watching"].includes(p.stage)) {
+			await db.update(outreachProspects).set({ stage: "replied" }).where(eq(outreachProspects.id, p.id));
+			p.stage = "replied";
+		}
+		all.push({ ...p, emailStatus: status });
+	}
 	const now = new Date();
 	const due = all
 		.filter(

@@ -1,7 +1,7 @@
 // Self-check for gmail payload parsing + mime building (pure functions).
 // Run: DATABASE_URL=postgres://dummy bun test src/lib/gmail.test.ts
 import { describe, expect, test } from "bun:test";
-import { buildMime, extractText, addr, latestMessage, isTrashed } from "./gmail";
+import { buildMime, extractText, addr, latestMessage, isTrashed, threadSubject } from "./gmail";
 import { toBase64 } from "./crypto";
 
 const part = (mimeType: string, data: string): any => ({
@@ -79,6 +79,26 @@ describe("latestMessage", () => {
 
 	test("empty array → undefined", () => {
 		expect(latestMessage([])).toBeUndefined();
+	});
+});
+
+describe("threadSubject", () => {
+	const m = (id: string, internalDate: string, subject: string): any => ({
+		id,
+		internalDate,
+		payload: { headers: [{ name: "Subject", value: subject }] },
+	});
+
+	test("subject stays the root message's — an NDR (Delivery Status Notification) inside the thread must not rename it", () => {
+		const msgs = [
+			m("ndr", "1700010000000", "Delivery Status Notification (Failure)"),
+			m("sent", "1700000000000", "made something for Koola Logistics"),
+		];
+		expect(threadSubject(msgs)).toBe("made something for Koola Logistics");
+	});
+
+	test("missing subject header → (no subject)", () => {
+		expect(threadSubject([{ id: "x", internalDate: "1" } as any])).toBe("(no subject)");
 	});
 });
 

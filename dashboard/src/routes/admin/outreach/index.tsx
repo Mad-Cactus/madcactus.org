@@ -19,6 +19,7 @@ import {
 	type BrainDigestItem,
 } from "~/lib/admin-queries";
 import { OUTREACH_STAGES, type OutreachProspect, type OutreachStage } from "~/db/schema";
+import type { ProspectEmailStatus } from "~/lib/admin-queries";
 import { fmtDate, fmtDur, videoSummary } from "~/lib/video-summary";
 
 const STAGE_COLOR: Record<string, string> = {
@@ -346,7 +347,7 @@ function VideoSection(props: { videoUrl?: string | null; videoId: string; descri
 	);
 }
 
-function BoardCard(props: { prospect: OutreachProspect; due: boolean; onDragStart?: (id: string) => void }) {
+function BoardCard(props: { prospect: OutreachProspect & { emailStatus?: ProspectEmailStatus | null }; due: boolean; onDragStart?: (id: string) => void }) {
 	const p = () => props.prospect;
 	const setStage = useAction(setOutreachStageAction);
 	const setBrain = useAction(setOutreachBrainAction);
@@ -453,6 +454,24 @@ function BoardCard(props: { prospect: OutreachProspect; due: boolean; onDragStar
 				→ {fmtDate(p().nextActionAt)}
 				<Show when={p().nextActionNote}> — {p().nextActionNote}</Show>
 			</div>
+
+			{/* email status — matched by the prospect's address against the synced
+		    corpus; "view" opens the Email tab pre-filtered to that address */}
+			<Show when={p().emailStatus?.repliedAt || p().emailStatus?.lastSentAt}>
+				<div style={{ "font-size": "12px", margin: "5px 0" }}>
+					<Show
+						when={p().emailStatus!.repliedAt}
+						fallback={
+							<span class="muted">sent {fmtDate(p().emailStatus!.lastSentAt!)} ·{" "}</span>
+						}
+					>
+						<span class="badge" style={{ color: "#2980b9" }}>↩ replied {fmtDate(p().emailStatus!.repliedAt!)}</span>{" "}
+					</Show>
+					<Show when={p().emailStatus?.replySnippet}>
+						<div class="muted" style={{ "margin-top": "2px", "overflow-wrap": "anywhere" }}>{p().emailStatus!.replySnippet}</div>
+					</Show>
+				</div>
+			</Show>
 
 			<Show when={p().videoUrl || p().brainUrl}>
 				<div style={{ "font-size": "12px", margin: "5px 0" }}>
