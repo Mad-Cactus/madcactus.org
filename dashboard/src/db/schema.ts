@@ -497,6 +497,13 @@ export const voicePatterns = pgTable("voice_patterns", {
 	createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// lessons gate: one row per agent chat that fetched the voice lessons —
+// doc writes are rejected without a review fresher than 1h
+export const voiceLessonReviews = pgTable("voice_lesson_reviews", {
+	chatUuid: text("chat_uuid").primaryKey(),
+	reviewedAt: timestamp("reviewed_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // a human sending a draft despite its violations = signal the pattern is too
 // strict; recorded per pattern so lessons can be adapted over time
 export const voiceLintOverrides = pgTable("voice_lint_overrides", {

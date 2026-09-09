@@ -5,8 +5,8 @@ import { db } from "~/db";
 import { apiKeys, companies, outreachProspects, OUTREACH_STAGES } from "~/db/schema";
 import { brainQuery, entityFacts } from "~/lib/brain/search";
 import { brainJobs } from "~/db/schema";
-import { agentWrite, createDoc, docVoiceScope, getDoc, getDocVersionDiff, listDocVersions, listDocs } from "~/lib/docs";
-import { getVoiceLessons, listKnownGenres, lintVoiceText } from "~/lib/voice-lint-db";
+import { agentWrite, createDoc, getDoc, getDocVersionDiff, listDocVersions, listDocs } from "~/lib/docs";
+import { getVoiceLessons, hasRecentLessonReview, lintGateError, lintVoiceText, listKnownGenres, recordLessonReview } from "~/lib/voice-lint-db";
 import type { VoiceScope } from "~/lib/voice-lint";
 import { searchWorkspace, recentActivity } from "~/lib/brain/workspace-search";
 import { maybeRunCycle } from "~/lib/brain/distill";
@@ -83,6 +83,24 @@ async function gateGenre(
 	return {
 		error: `genre "${g}" is not in the vocabulary. REUSE a known_genre if one fits (preferred), or re-call with confirm_new_genre=true to mint "${g}" deliberately.`,
 		known_genres: known,
+	};
+}
+
+/** Lessons gate: every doc write requires BOTH a fresh get_voice_lessons
+ *  pull from the same chat (review row ≤1h old) AND an explicit
+ *  lessons_reviewed=true affirmation. Server-enforced — an agent cannot land
+ *  text without the lessons having been fetched into its context this hour. */
+async function gateLessons(
+	toolArgs: Record<string, unknown>,
+): Promise<{ ok: false; blocked: "lessons_not_reviewed"; error: string } | { ok: true }> {
+	const chatUuid = toolArgs.chat_uuid ? String(toolArgs.chat_uuid).trim() : "";
+	if (toolArgs.lessons_reviewed === true && chatUuid && (await hasRecentLessonReview(chatUuid))) return { ok: true };
+	return {
+		ok: false as const,
+		blocked: "lessons_not_reviewed" as const,
+		error: !chatUuid
+			? `blocked: pass chat_uuid (your session id) on this call, and call get_voice_lessons with chat_uuid set — read the lessons, then retry with lessons_reviewed=true.`
+			: `blocked: call get_voice_lessons with chat_uuid="${chatUuid}" (surface/genre matching this write), read the lessons, then retry with lessons_reviewed=true.`,
 	};
 }
 
@@ -197,13 +215,14 @@ const TOOLS = [
 	{
 		name: "get_voice_lessons",
 		description:
-			"Collin's voice lessons derived from his real edits. READ BEFORE writing any doc, post, newsletter, or email for him — then follow them. Pass surface (email|docs|post|newsletter) and genre to get the rules that apply to exactly what you're writing plus the global ones. known_genres lists the genre vocabulary — REUSE an existing genre instead of inventing near-duplicates.",
+			"Collin's voice lessons derived from his real edits. REQUIRED before any doc write: pass chat_uuid (your session id) — doc writes (write_doc/create_doc/create_post/create_newsletter) are REJECTED unless this was called with the same chat_uuid within the last hour AND the write carries lessons_reviewed=true. Also pass surface (email|docs|post|newsletter) and genre to get the rules that apply to exactly what you're writing plus the global ones. known_genres lists the genre vocabulary — REUSE an existing genre instead of inventing near-duplicates.",
 		inputSchema: {
 			type: "object",
 			properties: {
 				limit: { type: "number", description: "max lessons returned, default 25" },
 				surface: { type: "string", enum: ["email", "docs", "post", "newsletter"], description: "what you are writing — scopes the lessons" },
 				genre: { type: "string", description: "freeform subtype within the surface, e.g. marketing|informational|casual — match an existing genre spelling" },
+				chat_uuid: { type: "string", description: "Your session id — records the lessons review that doc writes gate on. Pass it every time." },
 			},
 		},
 	},
@@ -225,49 +244,52 @@ const TOOLS = [
 	{
 		name: "create_doc",
 		description:
-			"Create a plain internal markdown doc (kind=null — NOT a post/newsletter; use create_post/create_newsletter for those) and return its id. doc ids are UUIDs — use this when list_docs has no fitting doc before write_doc.",
+			"Create a plain internal markdown doc (kind=null — NOT a post/newsletter; use create_post/create_newsletter for those) and return its id. doc ids are UUIDs — use this when list_docs has no fitting doc before write_doc. The body is voice-linted BEFORE creation: any avoid-violation REJECTS the call — fix the flagged text and resubmit (no override; if a rule is wrong, tell Collin to disable it). Also requires get_voice_lessons with your chat_uuid (within 1h) and lessons_reviewed=true.",
 		inputSchema: {
 			type: "object",
 			properties: {
 				title: { type: "string" },
-				markdown: { type: "string", description: "Optional initial body." },
+				markdown: { type: "string", description: "Optional initial body — must pass voice lint (zero avoid-violations) or the call is rejected." },
 				genre: { type: "string", description: "Freeform subtype (marketing|informational|…) — scopes the voice rules. MUST be an existing genre from get_voice_lessons known_genres; new ones need confirm_new_genre=true." },
 				confirm_new_genre: { type: "boolean", description: "Set true only when no existing genre fits — mints this genre into the vocabulary." },
-				chat_uuid: { type: "string", description: "Your session id, for provenance." },
+				lessons_reviewed: { type: "boolean", description: "true = you called get_voice_lessons with this chat_uuid, read the lessons, and this text follows them. Required." },
+				chat_uuid: { type: "string", description: "Your session id — must match the chat_uuid used for get_voice_lessons." },
 			},
-			required: ["title"],
+			required: ["title", "lessons_reviewed", "chat_uuid"],
 		},
 	},
 	{
 		name: "create_post",
 		description:
-			"Create a LinkedIn post draft (kind=post). Read get_voice_lessons with surface=post first and fix every avoid-violation — the response lint is scoped to posts. Collin previews, edits, and schedules it in the dashboard; you never schedule or publish. Drafts only.",
+			"Create a LinkedIn post draft (kind=post). Read get_voice_lessons with surface=post and your chat_uuid first. HARD GATES: the call is REJECTED if the body has any avoid-violation (fix and resubmit — no override) or if get_voice_lessons wasn't called with the same chat_uuid within 1h + lessons_reviewed=true. Collin previews, edits, and schedules it in the dashboard; you never schedule or publish. Drafts only.",
 		inputSchema: {
 			type: "object",
 			properties: {
 				title: { type: "string", description: "Internal title — the post body is the markdown." },
-				markdown: { type: "string", description: "Post body — plain markdown, no headings; it renders as LinkedIn text." },
+				markdown: { type: "string", description: "Post body — plain markdown, no headings; it renders as LinkedIn text. Must pass voice lint (zero avoid-violations)." },
 				genre: { type: "string", description: "Freeform subtype, e.g. marketing|casual|story — MUST reuse an existing genre from get_voice_lessons known_genres; new ones need confirm_new_genre=true." },
 				confirm_new_genre: { type: "boolean", description: "Set true only when no existing genre fits — mints this genre into the vocabulary." },
-				chat_uuid: { type: "string", description: "Your session id, for provenance." },
+				lessons_reviewed: { type: "boolean", description: "true = you called get_voice_lessons with this chat_uuid, read the lessons, and this text follows them. Required." },
+				chat_uuid: { type: "string", description: "Your session id — must match the chat_uuid used for get_voice_lessons." },
 			},
-			required: ["title", "markdown"],
+			required: ["title", "markdown", "lessons_reviewed", "chat_uuid"],
 		},
 	},
 	{
 		name: "create_newsletter",
 		description:
-			"Create a Cactus Dispatch newsletter issue draft (kind=newsletter). Read get_voice_lessons with surface=newsletter first and fix every avoid-violation — the response lint is scoped to newsletters. Collin previews (email + web), edits, and schedules it; you never send. Drafts only.",
+			"Create a Cactus Dispatch newsletter issue draft (kind=newsletter). Read get_voice_lessons with surface=newsletter and your chat_uuid first. HARD GATES: the call is REJECTED if the body has any avoid-violation (fix and resubmit — no override) or if get_voice_lessons wasn't called with the same chat_uuid within 1h + lessons_reviewed=true. Collin previews (email + web), edits, and schedules it; you never send. Drafts only.",
 			inputSchema: {
 			type: "object",
 			properties: {
 				title: { type: "string" },
-				markdown: { type: "string", description: "Issue body — first H1 becomes the email subject." },
+				markdown: { type: "string", description: "Issue body — first H1 becomes the email subject. Must pass voice lint (zero avoid-violations)." },
 				genre: { type: "string", description: "Freeform subtype, e.g. marketing|informational — MUST reuse an existing genre from get_voice_lessons known_genres; new ones need confirm_new_genre=true." },
 				confirm_new_genre: { type: "boolean", description: "Set true only when no existing genre fits — mints this genre into the vocabulary." },
-				chat_uuid: { type: "string", description: "Your session id, for provenance." },
+				lessons_reviewed: { type: "boolean", description: "true = you called get_voice_lessons with this chat_uuid, read the lessons, and this text follows them. Required." },
+				chat_uuid: { type: "string", description: "Your session id — must match the chat_uuid used for get_voice_lessons." },
 			},
-			required: ["title", "markdown"],
+			required: ["title", "markdown", "lessons_reviewed", "chat_uuid"],
 		},
 	},
 	{
@@ -292,18 +314,19 @@ const TOOLS = [
 	{
 		name: "write_doc",
 		description:
-			"Write into a markdown doc as an attributed agent edit. mode: append (default) adds a section; replace rewrites the body. The response includes voice-lint violations scoped to the doc's kind+genre — read get_voice_lessons first, fix every avoid-violation, and rewrite. Your write lands as an agent version and re-opens the doc for human review (status=draft). Pass genre to tag/retag the doc (marketing|informational|casual…) so its edits teach and lint under the right scope — reuse an existing genre from get_voice_lessons known_genres. Pass chat_uuid = your session id for provenance.",
+			"Write into a markdown doc as an attributed agent edit. mode: append (default) adds a section; replace rewrites the body. HARD GATES: the write is REJECTED (nothing lands) if the text has any avoid-violation — fix and resubmit; no override exists, if a rule is wrong tell Collin to disable it — and it requires get_voice_lessons called with the same chat_uuid within 1h plus lessons_reviewed=true. On success the write lands as an agent version and re-opens the doc for human review (status=draft). Pass genre to tag/retag the doc (marketing|informational|casual…) so its edits teach and lint under the right scope — reuse an existing genre from get_voice_lessons known_genres.",
 		inputSchema: {
 			type: "object",
 			properties: {
 				doc_id: { type: "string" },
-				content: { type: "string" },
-				chat_uuid: { type: "string" },
+				content: { type: "string", description: "Must pass voice lint (zero avoid-violations scoped to the doc's kind+genre) or the write is rejected." },
+				chat_uuid: { type: "string", description: "Your session id — must match the chat_uuid used for get_voice_lessons." },
+				lessons_reviewed: { type: "boolean", description: "true = you called get_voice_lessons with this chat_uuid, read the lessons, and this text follows them. Required." },
 				mode: { type: "string", enum: ["append", "replace"] },
 				genre: { type: "string", description: "Tag/retag the doc — scopes which voice rules lint it and which lessons its edits teach. MUST reuse an existing genre; new ones need confirm_new_genre=true." },
 				confirm_new_genre: { type: "boolean", description: "Set true only when no existing genre fits — mints this genre into the vocabulary." },
 			},
-			required: ["doc_id", "content"],
+			required: ["doc_id", "content", "lessons_reviewed", "chat_uuid"],
 		},
 	},
 	{
@@ -546,6 +569,9 @@ export async function POST(event: APIEvent) {
 					}
 				case "get_voice_lessons": {
 					const scope = toolScope(toolArgs);
+					// the lessons gate marker: a doc write from this chat is only accepted
+					// within 1h of this call (and with lessons_reviewed=true on the write)
+					if (toolArgs.chat_uuid) await recordLessonReview(String(toolArgs.chat_uuid));
 					result = {
 						lessons: await getVoiceLessons(toolArgs.limit ? Number(toolArgs.limit) : undefined, scope),
 						known_genres: await listKnownGenres(),
@@ -563,12 +589,23 @@ export async function POST(event: APIEvent) {
 						result = gate;
 						break;
 					}
-					const d = await createDoc(String(toolArgs.title ?? "Untitled"), toolArgs.markdown ? String(toolArgs.markdown) : "", {
+					const lessons = await gateLessons(toolArgs);
+					if (!lessons.ok) {
+						result = lessons;
+						break;
+					}
+					const docMarkdown = toolArgs.markdown ? String(toolArgs.markdown) : "";
+					const docLint = await lintVoiceText(docMarkdown, { surface: "docs", genre: gate.genre ?? null });
+					if (docLint.avoidCount > 0) {
+						result = lintGateError(docLint);
+						break;
+					}
+					const d = await createDoc(String(toolArgs.title ?? "Untitled"), docMarkdown, {
 						author: "agent",
 						chatUuid: toolArgs.chat_uuid ? String(toolArgs.chat_uuid) : undefined,
 						genre: gate.genre,
 					});
-					result = { id: d.id, title: d.title, version: d.version, kind: null, genre: d.genre };
+					result = { id: d.id, title: d.title, version: d.version, kind: null, genre: d.genre, lint: docLint };
 					break;
 				}
 				case "create_post":
@@ -578,16 +615,25 @@ export async function POST(event: APIEvent) {
 						result = gate;
 						break;
 					}
+					const lessons = await gateLessons(toolArgs);
+					if (!lessons.ok) {
+						result = lessons;
+						break;
+					}
 					const kind = toolName === "create_post" ? ("post" as const) : ("newsletter" as const);
 					const markdown = String(toolArgs.markdown ?? "");
+					// hard gate: reject BEFORE the doc exists — no advisory landing
+					const lint = await lintVoiceText(markdown, { surface: kind, genre: gate.genre ?? null });
+					if (lint.avoidCount > 0) {
+						result = lintGateError(lint);
+						break;
+					}
 					const d = await createDoc(String(toolArgs.title ?? "Untitled"), markdown, {
 						author: "agent",
 						kind,
 						genre: gate.genre,
 						chatUuid: toolArgs.chat_uuid ? String(toolArgs.chat_uuid) : undefined,
 					});
-					// scoped lint rides back like write_doc — agent fixes before finishing
-					const lint = await lintVoiceText(markdown, docVoiceScope(d));
 					result = { id: d.id, title: d.title, kind, genre: d.genre, version: d.version, status: d.status, lint };
 					break;
 				}
@@ -619,6 +665,13 @@ export async function POST(event: APIEvent) {
 							result = gate;
 							break;
 						}
+						const lessons = await gateLessons(toolArgs);
+						if (!lessons.ok) {
+							result = lessons;
+							break;
+						}
+						// agentWrite runs the hard lint gate itself: lint before save,
+						// rejected writes leave the doc untouched
 						result = await agentWrite({
 							docId: String(toolArgs.doc_id ?? ""),
 							content: String(toolArgs.content ?? ""),
