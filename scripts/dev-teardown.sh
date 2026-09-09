@@ -7,8 +7,12 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# Same compose selection as dev-setup.sh: main checkout = docker-compose.yml, others = worktree file.
+DIR=$(basename "$PWD")
+if [[ "$DIR" == "madcactus.org" ]]; then COMPOSE=(docker compose); else COMPOSE=(docker compose -f docker-compose.worktree.yml); fi
+
 echo "→ stopping compose stack and removing its data volume"
-docker compose --profile app down -v --remove-orphans
+"${COMPOSE[@]}" --profile app down -v --remove-orphans
 
 if [[ "${1:-}" != "--keep-env" && -f dashboard/.env ]]; then
 	rm dashboard/.env

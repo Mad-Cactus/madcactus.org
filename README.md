@@ -11,12 +11,25 @@ Mad Cactus monorepo.
 ## Dashboard quickstart
 
 ```sh
-cd dashboard
-bun install
-cp .env.example .env   # fill in real values
-bun run db:push        # local dev uses Docker postgres
-bun dev
+flyctl auth login                    # once, only for the initial secret pull
+./scripts/pull-env.sh --refresh      # real secrets → macOS Keychain (this machine)
+flyctl auth logout                   # optional but recommended: nothing local needs Fly now
+./scripts/dev-setup.sh               # Postgres + schema + seed, in any worktree
 ```
+
+Then `cd dashboard && bun dev` → http://localhost:3000/admin.
+
+- Secrets come from a machine-local Keychain cache — no Fly token exists locally,
+  so nothing in a worktree can deploy. Deploys ship via GitHub Actions on merge.
+  Refresh the cache after changing Fly secrets: `./scripts/pull-env.sh --refresh`.
+- Default `DATABASE_URL` is the per-worktree local Postgres (writes fine).
+- `--prod-db` tests against real prod data via a **SELECT-only** role — writes fail
+  at Postgres level. One-time setup: run `supabase/create-readonly-role.sql` in the
+  Supabase SQL Editor, put `PROD_RO_DB_URL=…` in `dashboard/.env`, re-run.
+  Second guard: `db:push`/`db:migrate` refuse any non-local `DATABASE_URL`
+  (`dashboard/scripts/db-guard.sh`; `ALLOW_REMOTE=1` overrides the guard, never the role).
+- Each worktree gets its own Postgres port (per-directory hash); set
+  `WORKTREE_DB_PORT` to pin one. `./scripts/dev-teardown.sh` removes it all.
 
 Commit hook typechecks (`bunx tsc --noEmit`) — run `bun install` first.
 

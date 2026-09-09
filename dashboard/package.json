@@ -10,8 +10,8 @@
     "test": "DATABASE_URL=postgres://dummy@localhost:5/dummy bun test src/lib",
     "preview": "bun --bun vite preview",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
-    "db:push": "drizzle-kit push",
+    "db:migrate": "bash scripts/db-guard.sh migrate",
+    "db:push": "bash scripts/db-guard.sh push",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
