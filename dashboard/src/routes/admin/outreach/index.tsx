@@ -12,6 +12,9 @@ import {
 	setOutreachVideoAction,
 	getBrainDigestQuery,
 	getBrainActivityQuery,
+	setOutreachContactAction,
+	resetBrainActivityAction,
+	getProspectEmailCardQuery,
 	type BrainActivity,
 	type BrainDigestItem,
 } from "~/lib/admin-queries";
@@ -92,8 +95,23 @@ function DigestSection(props: { brainUrl: string }) {
 	);
 }
 
-function ActivityDetails(props: { prospectId: string }) {
-	const activity = createAsync(() => getBrainActivityQuery(props.prospectId));
+function ActivityDetails(props: { prospect: OutreachProspect }) {
+	const activity = createAsync(() => getBrainActivityQuery(props.prospect.id));
+	const reset = useAction(resetBrainActivityAction);
+	const [resetMsg, setResetMsg] = createSignal("");
+	async function handleReset() {
+		if (
+			!confirm(
+				`Reset ${props.prospect.company} brain metrics? Wipes visits, clicks, scroll, dwell and tool history on the brain. Cannot be undone.`,
+			)
+		)
+			return;
+		setResetMsg("");
+		const fd = new FormData();
+		fd.set("id", props.prospect.id);
+		const r = (await reset(fd)) as { error?: string; success?: string };
+		setResetMsg(r.error ?? r.success ?? "");
+	}
 	return (
 		<Suspense fallback={<p class="muted" style={{ "font-size": "12px" }}>Loading…</p>}>
 			<Show when={activity()}>
@@ -107,10 +125,58 @@ function ActivityDetails(props: { prospectId: string }) {
 						}
 					>
 						<ActivityMetrics activity={(a() as { activity: BrainActivity }).activity} />
+						<ActivityChart days={(a() as { activity: BrainActivity }).activity.days} />
+						<div style={{ display: "flex", gap: "8px", "align-items": "center", "margin-top": "6px", "flex-wrap": "wrap" }}>
+							<button type="button" class="btn btn-sm" onClick={handleReset}>
+								reset metrics
+							</button>
+							<Show when={resetMsg()}>
+								<span class="muted" style={{ "font-size": "12px" }}>{resetMsg()}</span>
+							</Show>
+						</div>
 					</Show>
 				)}
 			</Show>
 		</Suspense>
+	);
+}
+
+function ActivityChart(props: { days: { dd: string; v: number; t: number }[] }) {
+	// brains only report days with activity — fill a 14-slot window ending today
+	// so "gaps" read as gaps, not as a shorter chart
+	const byDay = new Map(props.days.map((d) => [d.dd, d]));
+	const slots = Array.from({ length: 14 }, (_, i) => {
+		const dd = new Date(Date.now() - (13 - i) * 86_400_000).toISOString().slice(0, 10);
+		return byDay.get(dd) ?? { dd, v: 0, t: 0 };
+	});
+	const max = Math.max(1, ...slots.map((s) => s.v + s.t));
+	return (
+		<div>
+			<svg
+				viewBox="0 0 140 30"
+				style={{ width: "100%", height: "34px", display: "block", "margin-top": "4px" }}
+				role="img"
+				aria-label="visits and agent tool calls per day, last 14 days"
+			>
+				<For each={slots}>
+					{(s, i) => {
+						const x = i() * 10;
+						const vh = (s.v / max) * 26;
+						const th = (s.t / max) * 26;
+						return (
+							<>
+								<rect x={x} y={28 - vh} width={6} height={vh} fill="#2980b9" rx={1} />
+								<rect x={x + 6.5} y={28 - th} width={3} height={th} fill="#8e7cc3" rx={1} />
+							</>
+						);
+					}}
+				</For>
+				<line x1={0} y1={28.5} x2={140} y2={28.5} stroke="rgba(127,127,127,0.35)" stroke-width={1} />
+			</svg>
+			<div class="muted" style={{ "font-size": "11px" }}>
+				last 14 days — <span style={{ color: "#2980b9" }}>▮</span> visits <span style={{ color: "#8e7cc3" }}>▮</span> agent tool calls
+			</div>
+		</div>
 	);
 }
 
@@ -137,6 +203,9 @@ function ActivityMetrics(props: { activity: BrainActivity }) {
 						<Show when={a().tools.length}> — {a().tools.join(", ")}</Show>
 					</div>
 				</Show>
+				<Show when={a().agent}>
+					<div>agent: {a().agent}</div>
+				</Show>
 			</div>
 		</Show>
 	);
@@ -147,6 +216,90 @@ function ActivityMetrics(props: { activity: BrainActivity }) {
 function brainHref(p: OutreachProspect): string {
 	const base = (p.brainUrl ?? "").replace(/\/+$/, "");
 	return p.brainActivityKey ? `${base}/?key=${p.brainActivityKey}` : base;
+}
+
+/** Email preview card: latest synced thread for the prospect's address,
+ *  who-has-the-ball badge, one-click address linking from thread history. */
+function EmailSection(props: { prospect: OutreachProspect }) {
+	const p = () => props.prospect;
+	const data = createAsync(() => getProspectEmailCardQuery(p().id));
+	const setContact = useAction(setOutreachContactAction);
+	const [linkMsg, setLinkMsg] = createSignal("");
+	async function linkAddress(addr: string) {
+		setLinkMsg("");
+		const fd = new FormData();
+		fd.set("id", p().id);
+		fd.set("contact_name", p().contactName ?? "");
+		fd.set("email", addr);
+		const r = (await setContact(fd)) as { error?: string };
+		if (r.error) setLinkMsg(r.error);
+	}
+	return (
+		<Suspense fallback={<p class="muted" style={{ "font-size": "12px" }}>Loading email…</p>}>
+			<Show when={data()}>
+				{(d) => (
+					<div
+						style={{
+							background: "rgba(0, 0, 0, 0.04)",
+							"border-radius": "6px",
+							padding: "8px",
+							margin: "5px 0",
+							display: "grid",
+							gap: "4px",
+						}}
+					>
+						<div style={{ display: "flex", "align-items": "baseline", gap: "6px" }}>
+							<span style={{ "font-weight": "600", "font-size": "12px" }}>Email</span>
+							<Show
+								when={(d() as { card: unknown }).card}
+								fallback={<span class="muted" style={{ "font-size": "12px" }}>no synced threads with this address</span>}
+							>
+								<span
+									class="badge"
+									style={{
+										color: (d() as { card: { replied: boolean } }).card.replied ? "var(--green)" : "var(--text-subtle)",
+										"margin-left": "auto",
+									}}
+								>
+									{(d() as { card: { replied: boolean } }).card.replied ? "they replied" : "waiting on them"}
+								</span>
+								<a class="muted" style={{ "font-size": "12px" }} href={`/admin/email?q=${encodeURIComponent((d() as { email: string }).email)}`}>
+									thread ↗
+								</a>
+							</Show>
+						</div>
+						<Show when={(d() as { card: { subject: string; lastMessageAt: Date } }).card}>
+							{(c) => (
+								<>
+									<div class="muted" style={{ "font-size": "12px" }}>
+										{c().subject} · {fmtDate(c().lastMessageAt)}
+									</div>
+									<div class="muted" style={{ "font-size": "12px", "white-space": "nowrap", overflow: "hidden", "text-overflow": "ellipsis" }}>
+										{((d() as { card: { snippet: string | null } }).card.snippet ?? "").replace(/\s+/g, " ")}
+									</div>
+								</>
+							)}
+						</Show>
+						<Show when={(d() as { suggestions: { email: string }[] }).suggestions.length}>
+							<div style={{ display: "flex", gap: "6px", "flex-wrap": "wrap", "margin-top": "4px" }}>
+								<span class="muted" style={{ "font-size": "12px", "align-self": "center" }}>link:</span>
+								<For each={(d() as { suggestions: { email: string; lastAt: Date }[] }).suggestions}>
+									{(s) => (
+										<button type="button" class="btn btn-sm" title={fmtDate(s.lastAt)} onClick={() => linkAddress(s.email)}>
+											{s.email}
+										</button>
+									)}
+								</For>
+							</div>
+						</Show>
+						<Show when={linkMsg()}>
+							<span class="login-error" style={{ "font-size": "12px" }}>{linkMsg()}</span>
+						</Show>
+					</div>
+				)}
+			</Show>
+		</Suspense>
+	);
 }
 
 /** Boxed video block: description + copy email/test buttons + cap link. */
@@ -194,7 +347,9 @@ function BoardCard(props: { prospect: OutreachProspect; due: boolean; onDragStar
 	const setBrain = useAction(setOutreachBrainAction);
 	const setVideo = useAction(setOutreachVideoAction);
 	const setNextAction = useAction(setOutreachNextActionAction);
+	const setContact = useAction(setOutreachContactAction);
 	const [editing, setEditing] = createSignal(false);
+	const [showMetrics, setShowMetrics] = createSignal(false);
 	const [error, setError] = createSignal("");
 	const [dragging, setDragging] = createSignal(false);
 	const [open, setOpen] = createSignal(false);
@@ -228,6 +383,15 @@ function BoardCard(props: { prospect: OutreachProspect; due: boolean; onDragStar
 		if (res.error) {
 			setError(res.error);
 			return;
+		}
+		const contactName = String(fd.get("contact_name") || "").trim();
+		const email = String(fd.get("email") || "").trim();
+		if (contactName !== (p().contactName ?? "") || email !== (p().email ?? "")) {
+			const rc = (await setContact(fd)) as { error?: string };
+			if (rc.error) {
+				setError(rc.error);
+				return;
+			}
 		}
 		const brainUrl = String(fd.get("brain_url") || "").trim();
 		const brainKey = String(fd.get("brain_activity_key") || "").trim();
@@ -298,11 +462,19 @@ function BoardCard(props: { prospect: OutreachProspect; due: boolean; onDragStar
 				<p class="muted" style={{ "font-size": "12px", margin: "5px 0" }}>{p().notes}</p>
 			</Show>
 
-			<div style={{ "margin-top": "8px" }}>
+			<div style={{ "margin-top": "8px", display: "flex", gap: "6px", "flex-wrap": "wrap" }}>
 				<button type="button" class="btn btn-sm" onClick={() => setEditing(!editing())}>
 					{editing() ? "Cancel" : "Edit"}
 				</button>
+				<Show when={p().brainUrl}>
+					<button type="button" class="btn btn-sm" onClick={() => setShowMetrics(!showMetrics())}>
+						{showMetrics() ? "hide metrics" : "metrics"}
+					</button>
+				</Show>
 			</div>
+			<Show when={showMetrics()}>
+				<ActivityDetails prospect={p()} />
+			</Show>
 
 			<Show when={error()}>
 				<p class="login-error">{error()}</p>
@@ -312,6 +484,8 @@ function BoardCard(props: { prospect: OutreachProspect; due: boolean; onDragStar
 			<Show when={editing()}>
 				<form onSubmit={handleSave} style={{ display: "grid", gap: "8px", "margin-top": "8px" }}>
 					<input type="hidden" name="id" value={p().id} />
+					<input type="text" name="contact_name" placeholder="Contact name" value={p().contactName ?? ""} />
+					<input type="email" name="email" placeholder="Email (sent-to address)" value={p().email ?? ""} />
 					<select name="stage" value={p().stage}>
 						<For each={OUTREACH_STAGES}>{(s) => <option value={s}>{s}</option>}</For>
 					</select>
@@ -338,9 +512,21 @@ function BoardCard(props: { prospect: OutreachProspect; due: boolean; onDragStar
 				<Show when={open()}>
 					<div style={{ display: "flex", "align-items": "center", gap: "8px" }}>
 						<h2 style={{ margin: "0", "font-size": "15px" }}>{p().company}</h2>
-						<button type="button" class="btn btn-sm" style={{ "margin-left": "auto" }} onClick={() => dialogRef.close()}>
-							Close
-						</button>
+						<div style={{ "margin-left": "auto", display: "flex", gap: "6px" }}>
+							<button
+								type="button"
+								class="btn btn-sm"
+								onClick={() => {
+									dialogRef.close();
+										setEditing(true);
+									}}
+								>
+									Edit
+								</button>
+								<button type="button" class="btn btn-sm" onClick={() => dialogRef.close()}>
+									Close
+								</button>
+							</div>
 					</div>
 					<Show when={p().contactName || p().email}>
 						<p style={{ margin: "10px 0", "font-size": "13px" }}>
@@ -349,6 +535,9 @@ function BoardCard(props: { prospect: OutreachProspect; due: boolean; onDragStar
 								<a href={`mailto:${p().email}`}>{p().email}</a>
 							</Show>
 						</p>
+					</Show>
+					<Show when={p().email}>
+						<EmailSection prospect={p()} />
 					</Show>
 					<div class="muted" style={{ "font-size": "12px", margin: "8px 0", color: props.due ? "var(--orange)" : undefined }}>
 						→ {fmtDate(p().nextActionAt)}
@@ -361,8 +550,11 @@ function BoardCard(props: { prospect: OutreachProspect; due: boolean; onDragStar
 						<VideoSection videoUrl={p().videoUrl} videoId={p().id} description={p().videoDescription} />
 					</div>
 					<Show when={p().brainUrl}>
-						<DigestSection brainUrl={p().brainUrl!} />
-						<ActivityDetails prospectId={p().id} />
+						<ActivityDetails prospect={p()} />
+						<details style={{ "margin-top": "8px" }}>
+							<summary class="muted" style={{ cursor: "pointer", "font-size": "12px" }}>What to mention (digest)</summary>
+							<DigestSection brainUrl={p().brainUrl!} />
+						</details>
 					</Show>
 					<Show when={p().videoUrl && videoSummary(p())}>
 						<div style={{ color: "var(--orange)", "font-size": "12px", margin: "8px 0" }}>{videoSummary(p())}</div>
