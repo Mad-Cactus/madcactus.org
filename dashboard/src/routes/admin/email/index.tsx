@@ -31,6 +31,9 @@ export default function AdminEmail() {
 
 	const [q, setQ] = createSignal(String(searchParams.q ?? ""));
 	const [selected, setSelected] = createSignal<ThreadFull | null>(null);
+	// older messages collapse to one line — the latest stays expanded; this is
+	// the index of a manually expanded one, reset on every thread paint
+	const [openMsg, setOpenMsg] = createSignal(-1);
 	const [selIdx, setSelIdx] = createSignal(0);
 	// optimistic triage state — ops mutate these instead of refetching the
 	// whole list; the next sync (≤10min or the Sync button) reconciles
@@ -92,6 +95,7 @@ export default function AdminEmail() {
 		prefetch(list[idx + 1]);
 		const paint = (data: ThreadFull) => {
 			setSelected(data);
+			setOpenMsg(-1);
 			const row = document.querySelectorAll("[data-thread-row]")[idx];
 			row?.scrollIntoView({ block: "nearest" });
 		};
@@ -783,14 +787,29 @@ export default function AdminEmail() {
 						<h2 style={{ "font-size": "18px", margin: "0 0 4px" }}>{selected()!.thread.subject}</h2>
 						<div class="muted" style={{ "font-size": "13px", "margin-bottom": "12px" }}>{selected()!.thread.fromEmail}</div>
 						<For each={selected()!.messages}>
-							{(m) => (
-								<div style={{ "margin-bottom": "16px", "padding-bottom": "16px", "border-bottom": "1px solid rgba(0,0,0,0.08)" }}>
-									<div class="muted" style={{ "font-size": "12px", "margin-bottom": "6px" }}>
-										{m.fromName ?? m.fromEmail} · {new Date(m.date).toLocaleString()}
+							{(m, i) => {
+								// newest message open, everything before it one line — click to expand
+								const isLast = i() === selected()!.messages.length - 1;
+								if (isLast || openMsg() === i()) {
+									return (
+										<div style={{ "margin-bottom": "16px", "padding-bottom": "16px", "border-bottom": "1px solid rgba(0,0,0,0.08)" }}>
+											<div class="muted" style={{ "font-size": "12px", "margin-bottom": "6px" }}>
+												{m.fromName ?? m.fromEmail} · {new Date(m.date).toLocaleString()}
+											</div>
+											<pre style={{ "white-space": "pre-wrap", "font-family": "inherit", "font-size": "14px", margin: 0 }}>{m.bodyText}</pre>
+										</div>
+									);
+								}
+								return (
+									<div
+										class="muted"
+										style={{ "font-size": "13px", cursor: "pointer", "margin-bottom": "8px", "padding-bottom": "8px", "border-bottom": "1px solid rgba(0,0,0,0.08)" }}
+										onClick={() => setOpenMsg(i())}
+									>
+										{m.fromName ?? m.fromEmail} · {new Date(m.date).toLocaleString()} — {m.bodyText?.slice(0, 80)}…
 									</div>
-									<pre style={{ "white-space": "pre-wrap", "font-family": "inherit", "font-size": "14px", margin: 0 }}>{m.bodyText}</pre>
-								</div>
-							)}
+								);
+							}}
 						</For>
 						<div style={{ display: "flex", gap: "8px", "margin-top": "8px" }}>
 							<button type="button" class="btn btn-sm" onClick={() => threadOp(selected()!.thread.id, "archive")}>Done (e)</button>
