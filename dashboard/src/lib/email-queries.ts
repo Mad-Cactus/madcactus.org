@@ -1,4 +1,4 @@
-import { query, action, redirect } from "@solidjs/router";
+import { query, action, redirect, revalidate } from "@solidjs/router";
 import { and, asc, desc, eq, isNotNull, isNull, ne } from "drizzle-orm";
 import { db } from "~/db";
 import { emailOutbox } from "~/db/schema";
@@ -33,21 +33,23 @@ export const getEmailStatusQuery = query(async () => {
 	return account ? { email: account.email, lastSyncAt: account.lastSyncAt } : null;
 }, "email-status");
 
-/** Account ids with a sync currently running (see getInboxQuery). */
+/** Account ids with a sync currently running (see triggerSyncIfStale). */
 const syncingAccounts = new Set<string>();
 
-export const getInboxQuery = query(async (opts: { q?: string } = {}) => {
+/** Kick a Gmail sync if the account is stale (>10min) — fire-and-forget.
+ *  No background worker at this volume: the Fly machine that runs this also
+ *  auto-stops when idle, so a cron-style syncer would be dead anyway. Instead
+ *  every page that consumes synced mail (email tab, outreach board) pokes
+ *  this on load; the in-flight guard keeps repeated reads from stacking
+ *  concurrent syncs (lastSyncAt only updates at the end). Fresh rows land on
+ *  the NEXT load — callers render from what's already in the DB. */
+export async function triggerSyncIfStale(): Promise<void> {
+	// "use server" keeps this server-only: without it the directive-less export
+	// travels into the client graph when admin-queries imports it, dragging
+	// the db chain into the bundle (check-client-bundle trips).
 	"use server";
-	await requireAdmin();
 	const account = await getPrimaryAccount();
-	if (!account) return { connected: false as const, threads: [], drafts: [], sent: [], outbox: [] };
-	// sync on read if stale >10min — no background worker at this volume.
-	// Fire-and-forget: awaiting it here blocks SSR for the whole first sync
-	// (50 threads × round-trips) and renders a white page. The email route
-	// polls revalidate() until the rows land. In-flight guard keeps repeated
-	// reads from stacking concurrent syncs (lastSyncAt only updates at the end).
-	// This query's only caller is the email page, so syncs only fire while
-	// you're there — and at most every 10 minutes.
+	if (!account) return;
 	const stale = !account.lastSyncAt || Date.now() - account.lastSyncAt.getTime() > 10 * 60_000;
 	if (stale && !syncingAccounts.has(account.id)) {
 		syncingAccounts.add(account.id);
@@ -55,6 +57,14 @@ export const getInboxQuery = query(async (opts: { q?: string } = {}) => {
 			.catch(() => {})
 			.finally(() => syncingAccounts.delete(account.id));
 	}
+}
+
+export const getInboxQuery = query(async (opts: { q?: string } = {}) => {
+	"use server";
+	await requireAdmin();
+	const account = await getPrimaryAccount();
+	if (!account) return { connected: false as const, threads: [], drafts: [], sent: [], outbox: [] };
+	await triggerSyncIfStale();
 	// Gmail's search index covers the whole mailbox — non-archived matches stay
 	// in `threads` (Inbox tab), sent matches ride along in `sent` (Sent tab).
 	const matches = await listInbox(account, { q: opts.q });
@@ -98,7 +108,11 @@ export const syncEmailAction = action(async () => {
 	"use server";
 	await requireAdmin();
 	const account = await requireAccount();
-	return syncAccount(account);
+	const out = await syncAccount(account);
+	// the header reads email-status — without this the button synced but the
+	// "last sync" timestamp stayed stale until a full reload
+	await revalidate(getEmailStatusQuery.key);
+	return out;
 }, "syncEmail");
 
 export const archiveEmailAction = action(async (formData: FormData) => {
