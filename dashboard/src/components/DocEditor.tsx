@@ -203,6 +203,19 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 		} else setStatus(r.error ?? "unschedule failed");
 	};
 
+	// schedule-at-now: the 60s ticker picks it up — same dispatch path as a
+	// scheduled send, so nothing new can break
+	const publishNow = async () => {
+		await save(props.id, markdown());
+		const r = await post(props.id, { op: "schedule", scheduledFor: new Date().toISOString() });
+		if (r.ok) {
+			setDocStatus("scheduled");
+			setSchedFor(r.scheduledFor ?? new Date().toISOString());
+			setPublishError(null);
+			setStatus("publishing — goes out within 60 seconds");
+		} else setStatus(r.error ?? "publish failed");
+	};
+
 	// manual state fix — posts deleted on LinkedIn, hiding a sent newsletter
 	// from the site, or marking something that actually went out
 	const setPublishStateState = async (state: "final" | "published") => {
@@ -324,6 +337,9 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 				>
 					<Show when={kind() === "post" && liConnected() !== true} fallback={
 						<>
+							<button type="button" class="btn btn-primary btn-sm" onClick={() => void publishNow()}>
+								Publish now
+							</button>
 							<input
 								type="datetime-local"
 								class="doc-sched-input"
@@ -344,6 +360,13 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 						<a class="btn btn-sm" target="_top" href="/api/social/linkedin?start=1">Connect LinkedIn to schedule</a>
 					</Show>
 					<Show when={docStatus() === "published"}>
+						<Show when={kind() === "newsletter"}>
+							{/* human saves keep status=published and the site SSRs from
+							    the DB — editing + save IS the web update */}
+							<a class="btn btn-sm" target="_blank" href={`/newsletter/${props.id}`}>
+								View live page ↗
+							</a>
+						</Show>
 						<button type="button" class="btn btn-sm" onClick={() => void setPublishStateState("final")}>
 							{kind() === "newsletter" ? "Hide from site" : "Mark as unposted"}
 						</button>
@@ -445,7 +468,7 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 								<NewsletterEmailPreview markdown={markdown()} title={doc().title} />
 							</Show>
 							<Show when={preview() === "web"}>
-								<NewsletterWebPreview markdown={markdown()} title={doc().title} />
+								<NewsletterWebPreview docId={props.id} />
 							</Show>
 						</div>
 					</aside>

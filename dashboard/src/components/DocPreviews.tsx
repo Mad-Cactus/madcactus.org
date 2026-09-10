@@ -1,5 +1,5 @@
 import { Show, createSignal, createMemo } from "solid-js";
-import { markdownToPostText, newsletterSubject, markdownToHtml } from "~/lib/publish-core";
+import { markdownToPostText, newsletterSubject, markdownToHtml, EMAIL_FOOTER_HTML } from "~/lib/publish-core";
 
 export type PreviewMode = "linkedin" | "email" | "web";
 
@@ -97,8 +97,24 @@ export function LinkedInPreview(props: { markdown: string; title: string; firstC
 	);
 }
 
-/** What the Resend broadcast will look like in an inbox — 600px frame. */
+/** What the Resend broadcast will look like in an inbox.
+ *
+ *  Rendered inside an <iframe srcdoc>: the email HTML is the ONLY stylesheet
+ *  in its document, exactly like a real email client. Inlining it in the admin
+ *  page let admin CSS stomp the issue's h2/p margins — that was the squashed
+ *  "wall of text" preview. Includes the code-owned footer so it is byte-for-
+ *  byte what sendNewsletter puts in the broadcast.
+ */
 export function NewsletterEmailPreview(props: { markdown: string; title: string }) {
+	const emailHtml = () =>
+		`<!doctype html><html><head><meta charset="utf-8">` +
+		`<meta name="viewport" content="width=device-width,initial-scale=1"></head>` +
+		`<body style="margin:0;background:#ffffff;">` +
+		`<div style="max-width:640px;margin:0 auto;padding:20px 24px;font-family:Georgia,'Times New Roman',serif;` +
+		`font-size:16px;line-height:1.6;color:#1a1a1a;">` +
+		markdownToHtml(props.markdown, "email") +
+		EMAIL_FOOTER_HTML +
+		`</div></body></html>`;
 	return (
 		<div style={{ width: "100%", "max-width": "640px" }}>
 			<div class="muted" style={{ "font-size": "12px", "margin-bottom": "8px" }}>
@@ -109,37 +125,32 @@ export function NewsletterEmailPreview(props: { markdown: string; title: string 
 					<div style={{ "font-weight": 600, "font-size": "15px" }}>{newsletterSubject({ markdown: props.markdown, title: props.title })}</div>
 					<div class="muted" style={{ "font-size": "12px" }}>Collin Pfeifer · The Cactus Dispatch</div>
 				</div>
-				<div
-					class="dispatch-body"
-					style={{ padding: "20px 24px", "font-size": "15px", "line-height": "1.6", color: "var(--text)" }}
-					// same marked html the send uses — identical trust boundary as publishDoc
-					innerHTML={markdownToHtml(props.markdown)}
+				<iframe
+					// ponytail: srcdoc reloads (scroll reset) on each keystroke while
+					// typing with the tab open — debounce here if it gets annoying.
+					srcdoc={emailHtml()}
+					title="Email preview"
+					style={{ width: "100%", height: "70vh", border: "0", background: "#fff", display: "block" }}
 				/>
 			</div>
 		</div>
 	);
 }
 
-/** The Cactus Dispatch web-article look. ponytail: approximates the marketing
- *  issue pages inline; if the site styling drifts, port the real Astro styles. */
-export function NewsletterWebPreview(props: { markdown: string; title: string }) {
+/** The live marketing page itself, served by
+ *  /admin/docs/issue-preview/[id] — the SAME components and CSS the public
+ *  /newsletter/<id> route renders. What you see is what ships. */
+export function NewsletterWebPreview(props: { docId: string }) {
 	return (
-		<div style={{ width: "100%", "max-width": "680px", margin: "0 auto" }}>
+		<div style={{ width: "100%" }}>
 			<div class="muted" style={{ "font-size": "12px", "margin-bottom": "8px", "text-align": "center" }}>
-				Web preview — how the issue reads on madcactus.org
+				Web preview — the real madcactus.org issue page (updates on save)
 			</div>
-			<article class="dispatch-web">
-				<header style={{ "border-bottom": "2px solid var(--text)", "padding-bottom": "12px", "margin-bottom": "20px", "text-align": "center" }}>
-					<div style={{ "letter-spacing": "0.25em", "text-transform": "uppercase", "font-size": "11px" }}>The Cactus Dispatch</div>
-					<h1 style={{ "font-size": "28px", "margin": "10px 0 4px", "font-family": "Georgia, 'Times New Roman', serif" }}>
-						{newsletterSubject({ markdown: props.markdown, title: props.title })}
-					</h1>
-				</header>
-				<div
-					style={{ "font-size": "16px", "line-height": "1.7", color: "var(--text)" }}
-					innerHTML={markdownToHtml(props.markdown)}
-				/>
-			</article>
+			<iframe
+				src={`/admin/docs/issue-preview/${props.docId}`}
+				title="Web preview"
+				style={{ width: "100%", height: "70vh", border: "1px solid var(--border, rgb(0 0 0 / 0.15))", "border-radius": "8px", background: "#fff", display: "block" }}
+			/>
 		</div>
 	);
 }
