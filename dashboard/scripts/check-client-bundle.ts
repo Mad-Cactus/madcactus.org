@@ -13,7 +13,9 @@ const ASSETS = ".output/public/_build/assets";
 // Every marker names a module that must stay server-side. Add more as new
 // server-only chains appear — the point is catching the leak, not the culprit.
 const MARKERS: Array<[RegExp, string]> = [
-	[/Buffer\.[A-Za-z$_]/, "Node Buffer referenced (db/postgres chain or node lib leaked)"],
+	// globalThis.Buffer-qualified refs are feature-detected fallbacks (safe in
+	// browsers); a bare Buffer.* is a real server-chain leak
+	[/(?<!globalThis\.)Buffer\.[A-Za-z$_]/, "Node Buffer referenced (db/postgres chain or node lib leaked)"],
 	[/allocUnsafe/, "postgres.js internals"],
 	[/DATABASE_URL is not set/, "src/db/index.ts in client graph"],
 	[/pg_is_in_recovery/, "postgres.js type parsers"],
