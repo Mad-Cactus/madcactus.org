@@ -50,15 +50,14 @@ export async function POST(event: APIEvent) {
 			.send({
 				from: "Collin Pfeifer <dispatch@madcactus.org>",
 				to: [email],
-				subject: "You're in — The Cactus Dispatch",
+				subject: "You're in: The Cactus Dispatch",
 				text:
-					`Hey — you just got added to The Cactus Dispatch.\n\n` +
-					`Every week I tear down a real AI deployment: what was built, what broke, ` +
-					`and the copy-paste prompt so you can run the same play.\n\n` +
-					`First issue lands Tuesday. Past issues live here:\n` +
-					`https://madcactus.org/newsletter?utm_source=newsletter&utm_medium=email&utm_campaign=welcome\n\n` +
-					`Hit reply and say hi — I read every response.\n\n` +
-					`— Collin\nMad Cactus`,
+					`Hey, you're in. You just got added to The Cactus Dispatch.\n\n` +
+					`Every week I tear down a real AI deployment: what we built, what broke, and the copy-paste prompt so you can run the same play. No theory, no hype.\n\n` +
+					`New issues land Tuesday morning. Read the last one:\n` +
+					`madcactus.org/newsletter\n\n` +
+					`One ask: hit reply and tell me what you're trying to automate. I read and answer every response.\n\n` +
+					`Collin\nMad Cactus`,
 			})
 			.catch((e) => console.error("[newsletter] welcome email failed:", e));
 	}
