@@ -6,9 +6,9 @@
 import { Resend } from "resend";
 import type { Doc } from "~/db/schema";
 import { postToLinkedIn, commentOnLinkedIn } from "~/lib/social";
-import { markdownToPostText, newsletterSubject, markdownToHtml } from "~/lib/publish-core";
+import { markdownToPostText, newsletterSubject, markdownToHtml, EMAIL_FOOTER_HTML } from "~/lib/publish-core";
 
-export { markdownToPostText, newsletterSubject, markdownToHtml };
+export { markdownToPostText, newsletterSubject, markdownToHtml, EMAIL_FOOTER_HTML };
 
 const ALERT_EMAIL = process.env.ALERT_EMAIL ?? "cpfeifer@madcactus.org";
 const NEWSLETTER_FROM = process.env.NEWSLETTER_FROM ?? "Collin Pfeifer <dispatch@madcactus.org>";
@@ -43,7 +43,7 @@ async function sendNewsletter(doc: Doc): Promise<string> {
 		segmentId,
 		from: NEWSLETTER_FROM,
 		subject: newsletterSubject(doc),
-		html: markdownToHtml(doc.markdown),
+		html: markdownToHtml(doc.markdown, "email") + EMAIL_FOOTER_HTML,
 	});
 	if (error) throw new Error(`resend broadcast create failed: ${error.message}`);
 	const sent = await resend.broadcasts.send(data.id);

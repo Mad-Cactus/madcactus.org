@@ -12,6 +12,7 @@ export default function DocList(props: {
 	const docs = createAsync(() => getDocsQuery(), { deferStream: true });
 	const create = useAction(createDocAction);
 	const [creating, setCreating] = createSignal(false);
+	const [genre, setGenre] = createSignal("");
 
 	return (
 		<>
@@ -33,12 +34,32 @@ export default function DocList(props: {
 					}}
 				>
 					<input name="title" placeholder={props.createPlaceholder} style={{ width: "260px" }} autofocus />
-					<input name="genre" placeholder="genre (marketing, informational…)" list="doc-genres" style={{ width: "200px" }} />
-					<datalist id="doc-genres">
-						<option value="marketing" />
-						<option value="informational" />
-						<option value="casual" />
-					</datalist>
+					{/* genre is freeform (the voice engine learns new ones) — plain input
+					    plus tap-to-fill chips. The native <datalist> popup rendered
+					    detached from the input on macOS, so it's gone. */}
+					<div>
+						<input
+							name="genre"
+							placeholder="genre (optional)"
+							style={{ width: "200px" }}
+							value={genre()}
+							onInput={(e) => setGenre(e.currentTarget.value)}
+						/>
+						<div style={{ display: "flex", gap: "6px", "margin-top": "6px" }}>
+							<For each={["marketing", "informational", "casual"]}>
+								{(g) => (
+									<button
+										type="button"
+										class="btn btn-sm"
+										style={{ padding: "2px 10px", "font-size": "12px", opacity: genre() === g ? 1 : 0.7 }}
+										onClick={() => setGenre(g)}
+									>
+										{g}
+									</button>
+								)}
+							</For>
+						</div>
+					</div>
 					<input type="hidden" name="kind" value={props.kind ?? ""} />
 					<button type="submit" class="btn btn-sm">Create</button>
 				</form>

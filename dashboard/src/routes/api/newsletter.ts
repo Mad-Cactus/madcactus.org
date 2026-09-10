@@ -42,6 +42,26 @@ export async function POST(event: APIEvent) {
 		properties: { source: scoreData ? "scorecard" : "newsletter" },
 	}).catch(() => {});
 
+	// Newsletter signup → plain-text welcome (no scorecard PDF involved).
+	// Plain text on purpose: lands in the primary inbox and builds deliverability
+	// before the first HTML issue. Best-effort — never blocks the signup response.
+	if (!scoreData) {
+		resend.emails
+			.send({
+				from: "Collin Pfeifer <dispatch@madcactus.org>",
+				to: [email],
+				subject: "The Cactus Dispatch",
+				text:
+					`You just got added to The Cactus Dispatch.\n\n` +
+					`Every week I tear down a real AI deployment: what we built, what broke, and the copy-paste prompt so you can do the same.\n\n` +
+					`New issues land Tuesday morning. Read the last one:\n` +
+					`madcactus.org/newsletter\n\n` +
+					`P.S. Hit reply and tell me what you're trying to automate. I read and answer every response.\n\n` +
+					`Collin`,
+			})
+			.catch((e) => console.error("[newsletter] welcome email failed:", e));
+	}
+
 	// If score data present, generate personalized PDF and email it
 	if (scoreData) {
 		try {

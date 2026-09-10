@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { markdownToPostText, newsletterSubject } from "./publish";
+import { markdownToHtml, markdownToPostText, newsletterSubject } from "./publish";
 
 // markdownToPostText must produce plain text that reads like a human wrote it
 describe("markdownToPostText", () => {
@@ -30,7 +30,16 @@ describe("markdownToPostText", () => {
 	});
 });
 
-describe("newsletterSubject", () => {
+	describe("newsletterSubject", () => {
+	test("leading Subject: line wins over h1 and title", () => {
+		const doc = {
+			id: "x",
+			title: "The Cactus Dispatch — Issue 01",
+			markdown: "Subject: A tool that surfaces warm leads\n\n# Some heading\n\nbody",
+		} as Parameters<typeof newsletterSubject>[0];
+		expect(newsletterSubject(doc)).toBe("A tool that surfaces warm leads");
+	});
+
 	test("prefers first h1 heading over title", () => {
 		const doc = {
 			id: "x",
@@ -45,5 +54,37 @@ describe("newsletterSubject", () => {
 			typeof newsletterSubject
 		>[0];
 		expect(newsletterSubject(doc)).toBe("Issue 8");
+	});
+});
+
+describe("markdownToHtml channels", () => {
+	const md = [
+		"Subject: The hook",
+		"",
+		"Body intro.",
+		"",
+		"<!-- email-only -->",
+		"**P.S.** Reply to this email.",
+		"<!-- /email-only -->",
+		"",
+		"> paste this prompt",
+	].join("\n");
+
+	test("subject line never renders as body copy", () => {
+		for (const channel of ["web", "email"] as const) {
+			expect(markdownToHtml(md, channel)).not.toContain("Subject:");
+		}
+	});
+
+	test("web drops email-only blocks, email keeps them", () => {
+		expect(markdownToHtml(md, "web")).not.toContain("Reply to this email");
+		expect(markdownToHtml(md, "email")).toContain("Reply to this email");
+	});
+
+	test("email swaps blockquote for a collapsible-proof div, web keeps blockquote", () => {
+		const email = markdownToHtml(md, "email");
+		expect(email).not.toContain("<blockquote>");
+		expect(email).toContain("paste this prompt");
+		expect(markdownToHtml(md, "web")).toContain("<blockquote>");
 	});
 });

@@ -38,6 +38,41 @@ Two places capture emails, both POST to the same endpoint:
 
 All call `POST https://madcactus.org/api/newsletter` with `{ email }`. The endpoint handles dedup (duplicate email → success). CORS is open (`*`).
 
+### Email vs web: one doc, two channels
+
+The web archive (`/newsletter/<id>`) and the Resend broadcast render the SAME
+markdown through `markdownToHtml(md, channel)`. Channel differences live in
+markers and code, not in duplicated docs:
+
+- **Subject front-matter** — a leading `Subject: ...` line sets the email
+  subject and never renders as body copy (the `Subject:` word at the top of
+  issue 01's body was this bug).
+- **`<!-- email-only -->` ... `<!-- /email-only -->`** — renders in the email,
+  hidden on the web (e.g. "reply to this email" offers — replying makes no
+  sense on a web page).
+- **`<!-- web-only -->` ... `<!-- /web-only -->`** — the inverse.
+- **Email footer** — the standard footer (boilerplate + reply prompt) is
+  appended by code in `publish.ts` (`EMAIL_FOOTER_HTML`); keep it out of the
+  doc. The web page shows its own scorecard CTA below the article instead.
+- **Blockquote prompts** — in email mode blockquotes render as bordered boxes
+  (Gmail collapses `<blockquote>` as trimmed quoted content, which hid issue
+  01's copy-paste prompt). Web keeps real blockquotes.
+
+### Welcome email
+
+`POST /api/newsletter` (newsletter signups, not scorecard) immediately sends a
+**plain-text** confirmation: "you just got added to The Cactus Dispatch." Plain
+text on purpose — it lands in the primary inbox and warms up deliverability
+before the first HTML issue arrives. Best-effort; signup never fails because
+of it.
+
+### Open tracking
+
+Resend broadcasts track opens per contact (Resend dashboard → Broadcasts →
+open rate, and per-contact activity). No code needed — check rates there after
+each send. Treat as directional, not exact (Apple Mail privacy proxy inflates
+opens).
+
 ### UTM tracking for links
 
 Always add UTM params to links in emails and social posts. Without them, email clicks are indistinguishable from direct traffic (email clients strip referrer headers).
@@ -115,12 +150,18 @@ Issue 1 is pure give. The P.S. reply trigger qualifies interest without a hard a
 
 ## Publishing workflow (weekly)
 
-1. **Write** the teardown in markdown using the template above.
-2. **Send via Resend** — either:
-   - Dashboard → Broadcasts → compose → send to Audience, or
-   - API: `resend.emails.send({ from, to: audience, subject, html })`
-3. **Create the GitHub repo** — README + prompt + sample data. Stub is fine. The repo is its own lead magnet (people who star it self-identify as your audience).
-4. **Cross-post** (same day):
+1. **Write** the teardown in the dashboard editor. The **Email preview** and
+   **Web preview** tabs render the real thing: email = the exact HTML in an
+   isolated frame (same bytes as the send), web = the actual marketing page
+   components at `/admin/docs/issue-preview/<id>`.
+2. **Send** — hit **Publish now** (goes out within 60s via the scheduler) or
+   pick a time and **Schedule**.
+3. **Fixing a published issue** — just edit the markdown and save. Human saves
+   keep status=published and the site SSRs from the DB, so the web page updates
+   instantly. This never re-sends the email. "View live page ↗" opens the
+   public URL to confirm.
+4. **Create the GitHub repo** — README + prompt + sample data. Stub is fine. The repo is its own lead magnet (people who star it self-identify as your audience).
+5. **Cross-post** (same day):
    - **LinkedIn:** Take the tension hook as the first line. Compress "What we did" into 3 sentences. Post the prompt as a screenshot or carousel. Link to the full issue in the first comment. The "What broke" section is your highest-engagement beat for social.
    - **X / Twitter:** Thread version of the above.
 5. **Archive** — add the issue to the `/newsletter` archive section.
