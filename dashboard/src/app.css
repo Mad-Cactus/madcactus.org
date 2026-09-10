@@ -1045,7 +1045,7 @@ input:not(.form-group input):not(.doc-title):focus {
 	font-family: Arial, Helvetica, sans-serif;
 	font-weight: 700;
 	font-size: 29.33px;   /* 22pt — matches PDF title */
-	line-height: 0.925;
+	line-height: 1.15;
 	letter-spacing: -0.5px;
 	background: transparent;
 	border: none;
@@ -1055,6 +1055,7 @@ input:not(.form-group input):not(.doc-title):focus {
 	color: inherit;
 	width: 645.34px;
 }
+textarea.doc-title { resize: none; overflow: hidden; display: block; height: auto; }
 .doc-title:hover,
 .doc-title:focus {
 	border-bottom-color: rgba(188, 156, 92, 0.5);
@@ -1150,6 +1151,8 @@ input:not(.form-group input):not(.doc-title):focus {
 	margin: 14px auto 28px;
 	padding-top: 85.33px;
 }
+/* each sheet IS a page: white card with shadow, 28px of app background
+   between pages — the physical page-gap look (breaks land on card edges) */
 .doc-sheet {
 	position: absolute;
 	left: 0;
@@ -1179,7 +1182,7 @@ input:not(.form-group input):not(.doc-title):focus {
 	min-height: 60px;
 	font-family: Arial, Helvetica, sans-serif;
 	font-size: 14.67px;   /* 11pt */
-	line-height: 0.925;   /* Helvetica ascent+descent — pdfkit's line height */
+	line-height: 1.35;    /* browser-readable; pdfkit uses its own leading (SPEC.lh) */
 	outline: none;
 	caret-color: var(--gold, #bc9c5c);
 }
@@ -1237,7 +1240,7 @@ input:not(.form-group input):not(.doc-title):focus {
 	border-radius: 0;
 	font-family: "Courier New", Courier, monospace;
 	font-size: 12px;      /* 9pt */
-	line-height: 0.786;   /* Courier ascent+descent */
+	line-height: 1.4;     /* 0.786 (Courier metrics) overlaps badly in browsers */
 }
 .doc-editor pre code { background: transparent; padding: 0; font-size: 12px; }
 .doc-editor a { color: var(--text); text-decoration: underline; text-decoration-color: var(--gold, #bc9c5c); }
@@ -1263,7 +1266,7 @@ input:not(.form-group input):not(.doc-title):focus {
 	border: 1px solid rgba(0, 0, 0, 0.18);
 	padding: 5.33px 8px;
 	vertical-align: top;
-	line-height: 0.925;
+	line-height: 1.35;
 	box-sizing: border-box;
 	overflow-wrap: break-word;
 }

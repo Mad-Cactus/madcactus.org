@@ -3,8 +3,9 @@ import { useNavigate } from "@solidjs/router";
 import LexicalDocEditor from "~/components/LexicalDocEditor";
 import ConfirmButton from "~/components/ConfirmButton";
 import { LinkedInPreview, NewsletterEmailPreview, NewsletterWebPreview, type PreviewMode } from "~/components/DocPreviews";
+import type { DocEditorApi } from "~/components/LexicalDocEditor";
 import { getDocQuery } from "~/lib/docs-queries";
-import { layoutPages } from "~/lib/doc-pages";
+import { computeBreaks } from "~/lib/doc-pages";
 
 type VersionRow = {
 	id: string;
@@ -53,18 +54,53 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 
 	// ── pagination: title + editor blocks measured into letter pages ──
 	let pagerEl: HTMLDivElement | undefined;
-	let titleEl: HTMLInputElement | undefined;
+	let titleEl: HTMLTextAreaElement | undefined;
 	let editorRoot: HTMLElement | undefined;
 	const pagerRef = (el: HTMLDivElement) => (pagerEl = el);
-	const titleRef = (el: HTMLInputElement) => (titleEl = el);
+	const titleRef = (el: HTMLTextAreaElement) => (titleEl = el);
 	const setEditorRoot = (root: HTMLElement) => (editorRoot = root);
+	let docApi: DocEditorApi | undefined;
 	let layoutTimer: ReturnType<typeof setTimeout> | undefined;
+	const editing = () => {
+		const a = document.activeElement;
+		if (!a || a === document.body) return false;
+		// parentElement covers Lexical's floating toolbar too — clicking Bold
+		// must not trigger an instant re-layout any more than typing does
+		const zone = editorRoot?.parentElement;
+		return a === titleEl || Boolean(zone && zone.contains(a));
+	};
+	const caretViewAnchor = (): number | null => {
+		const sel = document.getSelection();
+		if (!sel || !sel.rangeCount) return null;
+		const r = sel.getRangeAt(0).getBoundingClientRect();
+		if (r.top || r.bottom) return r.top;
+		// collapsed ranges often report a zero rect — fall back to the host block
+		const el = sel.anchorNode instanceof HTMLElement ? sel.anchorNode : sel.anchorNode?.parentElement;
+		return el ? el.getBoundingClientRect().top : null;
+	};
 	const runLayout = () => {
-		if (pagerEl && editorRoot) layoutPages(pagerEl, titleEl ?? null, editorRoot);
+		if (!docApi || !pagerEl || !editorRoot) return;
+		// re-paginating moves blocks — scroll-compensate so the caret stays
+		// visually planted (text snaps around it, no teleport); only while the
+		// caret is live in the editor — a stale selection must not scroll-jack
+		const anchor = editing() ? caretViewAnchor() : null;
+		let r = computeBreaks(pagerEl, titleEl ?? null, editorRoot);
+		// tables that cross a boundary split at a row edge, then re-layout;
+		// capped — a degenerate table (one huge row) just overflows like before
+		for (let i = 0; i < 4 && r.splits.length; i++) {
+			if (!docApi.splitTables(r.splits)) break;
+			r = computeBreaks(pagerEl, titleEl ?? null, editorRoot);
+		}
+		if (anchor !== null) {
+			const after = caretViewAnchor();
+			if (after !== null) window.scrollBy(0, after - anchor);
+		}
 	};
 	const scheduleLayout = () => {
 		clearTimeout(layoutTimer);
-		layoutTimer = setTimeout(runLayout, 200);
+		// while editing, reconcile after a 1s pause (stale breaks would otherwise
+		// leave whitespace holes); unfocused changes settle in 200ms
+		layoutTimer = setTimeout(runLayout, editing() ? 1000 : 200);
 	};
 	onMount(() => {
 		const onResize = () => scheduleLayout();
@@ -84,6 +120,10 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 				if (d.status === "scheduled" && d.scheduledFor) setSchedInput(toLocalInput(new Date(d.scheduledFor)));
 				setFirstComment(d.firstComment ?? "");
 				setGenre(d.genre ?? "");
+				if (titleEl) {
+					titleEl.style.height = "auto";
+					titleEl.style.height = `${titleEl.scrollHeight}px`;
+				}
 				clearInterval(stop);
 			}
 		}, 50);
@@ -194,26 +234,25 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 					{status() || `v${verNum()}`}
 				</span>
 				<div style={{ flex: 1 }} />
-				<Show when={kind()}>
-					{/* genre scopes the voice rules this doc teaches/lints under */}
-					<input
-						type="text"
-						class="doc-sched-input"
-						aria-label="Genre"
-						placeholder="genre"
-						list="doc-genres"
-						value={genre()}
-						onChange={(e) => {
-							setGenre(e.currentTarget.value);
-							void post(props.id, { op: "set-genre", genre: e.currentTarget.value });
-						}}
-					/>
-					<datalist id="doc-genres">
-						<option value="marketing" />
-						<option value="informational" />
-						<option value="casual" />
-					</datalist>
-				</Show>
+				{/* genre scopes the voice rules this doc teaches/lints under — shown
+				    for every kind; docs created on /admin/docs have kind=null */}
+				<input
+					type="text"
+					class="doc-sched-input"
+					aria-label="Genre"
+					placeholder="genre"
+					list="doc-genres"
+					value={genre()}
+					onChange={(e) => {
+						setGenre(e.currentTarget.value);
+						void post(props.id, { op: "set-genre", genre: e.currentTarget.value });
+					}}
+				/>
+				<datalist id="doc-genres">
+					<option value="marketing" />
+					<option value="informational" />
+					<option value="casual" />
+				</datalist>
 				<Show when={kind() === "post"}>
 					<button type="button" class="btn btn-sm" classList={{ active: preview() === "linkedin" }} onClick={() => setPreview(preview() === "linkedin" ? null : "linkedin")}>
 						Preview
@@ -329,26 +368,36 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 			{/* the pager is the page surface: title + editor measure together so
 			    page breaks match the .docx/.pdf exports (see ~/lib/doc-pages) */}
 			<div class="doc-pager" ref={pagerRef}>
-				<input
+				<textarea
 					class="doc-title"
-					value={doc().title}
+					ref={titleRef}
+					rows={1}
 					placeholder="Untitled"
 					title="Click to rename"
+					onInput={(e) => {
+						const el = e.currentTarget;
+						el.style.height = "auto";
+						el.style.height = `${el.scrollHeight}px`;
+					}}
 					onChange={(e) => {
 						const v = e.currentTarget.value.trim() || "Untitled";
 						if (v !== doc().title) void post(props.id, { op: "rename", title: v });
 						else e.currentTarget.value = doc().title;
 					}}
 					onKeyDown={(e) => {
-						if (e.key === "Enter") {
+						if (e.key === "Enter" && !e.shiftKey) {
+							e.preventDefault();
 							e.currentTarget.blur();
 							// Enter jumps into the body, like macro's title → doc navigation
 							document.querySelector<HTMLDivElement>(".doc-editor")?.focus();
 						}
 					}}
-				/>
+				>
+					{doc().title}
+				</textarea>
 				<LexicalDocEditor
 					markdown={markdown()}
+					onBlur={() => scheduleLayout()}
 					onMarkdownChange={(md) => {
 						// skip the seed-conversion echo (same md) — it would bump the
 						// version on every open
@@ -360,7 +409,10 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 						saveTimer = setTimeout(() => void save(props.id, md), 1200);
 					}}
 					onSave={(md) => save(props.id, md)}
-					onReady={(root) => setEditorRoot(root)}
+					onReady={(api) => {
+						docApi = api;
+						setEditorRoot(api.root);
+					}}
 					onLayoutDirty={scheduleLayout}
 				/>
 			</div>

@@ -57,3 +57,27 @@ test("renderPdf: valid .pdf, and page break makes 2+ pages", async () => {
 	const pages = (s.match(/\/Type\s*\/Page[^s]/g) ?? []).length;
 	expect(pages).toBe(2);
 });
+
+// ── blank-line fidelity: GDocs paste → empty paragraphs → markers → reload ──
+const BLANK_MD = "para one\n\n<!-- blank -->\n\n<!-- blank -->\n\npara two\n";
+
+test("blank round-trip: markers reload as empty paragraphs, not dropped", () => {
+	const ed = createHeadlessEditor({ nodes: DOC_NODES, onError: (e) => { throw e; } });
+	ed.update(() => $convertFromMarkdownString(BLANK_MD, DOC_TRANSFORMERS), { discrete: true });
+	let paras = 0;
+	let blanks = 0;
+	let out = "";
+	ed.read(() => {
+		const root = JSON.parse(JSON.stringify(ed.getEditorState().toJSON())) as { root: { children: { type: string }[] } };
+		paras = root.root.children.filter((c) => c.type === "paragraph").length;
+		blanks = paras - 2; // two content paragraphs; the rest are blanks
+		out = $convertToMarkdownString(DOC_TRANSFORMERS);
+	});
+	expect(blanks).toBe(2); // 2 markers → 2 empty paragraphs (GDocs look preserved)
+	expect(out).toBe("para one\n\n<!-- blank -->\n\n<!-- blank -->\n\npara two"); // stable re-export (trailing \n dropped)
+});
+
+test("parseBlocks: blank marker detected for .docx/.pdf", () => {
+	const blocks = parseBlocks(BLANK_MD);
+	expect(blocks.filter((b) => b.t === "blank").length).toBe(2);
+});

@@ -34,6 +34,8 @@ import {
 	DecoratorNode,
 	$isParagraphNode,
 	$isTextNode,
+	$createParagraphNode,
+	$createLineBreakNode,
 	type LexicalNode,
 	type EditorConfig,
 	type SerializedElementNode,
@@ -43,12 +45,12 @@ import {
 // node — a visible divider in the editor, a real page break in .docx/.pdf
 // exports (the server parses the same token). Keyboard-selectable (arrows)
 // and deletable with Backspace.
-class PageBreakNode extends DecoratorNode<null> {
+export class PageBreakNode extends DecoratorNode<null> {
 	static getType(): string {
 		return "page-break";
 	}
 	static clone(node: PageBreakNode): PageBreakNode {
-		return new PageBreakNode(node.__key);
+		return new PageBreakNode();
 	}
 	static importJSON(): PageBreakNode {
 		return $createPageBreakNode();
@@ -79,7 +81,7 @@ class PageBreakNode extends DecoratorNode<null> {
 	}
 }
 const $createPageBreakNode = () => new PageBreakNode();
-const $isPageBreakNode = (node: LexicalNode | null | undefined): node is PageBreakNode => node instanceof PageBreakNode;
+export const $isPageBreakNode = (node: LexicalNode | null | undefined): node is PageBreakNode => node instanceof PageBreakNode;
 
 const PAGEBREAK: ElementTransformer = {
 	type: "element",
@@ -91,6 +93,27 @@ const PAGEBREAK: ElementTransformer = {
 		const pb = $createPageBreakNode();
 		parentNode.replace(pb);
 		pb.selectNext();
+	},
+};
+
+// Empty-paragraph marker: a Google-Docs blank line pastes in as an empty
+// paragraph. Stock markdown export turns each into a bare `\n` line and
+// import's cleanup deletes empty paragraphs — so a pasted doc tightened on
+// every reload (never looked like the GDoc again). This transformer gives
+// blank lines an explicit round-trippable token instead: same look after
+// paste, save, and reload. Import appends a LineBreakNode so the paragraph
+// survives createMarkdownImport's empty-paragraph sweep (only paragraphs
+// whose single child is a text node get removed); `<p><br></p>` renders as
+// one empty line — identical to the paste-time blank.
+const BLANK: ElementTransformer = {
+	type: "element",
+	dependencies: [],
+	export: (node) => ($isParagraphNode(node) && !node.getTextContent().trim() ? "<!-- blank -->" : null),
+	regExp: /^<!--\s*blank\s*-->$/,
+	replace: (parentNode) => {
+		const p = $createParagraphNode();
+		p.append($createLineBreakNode());
+		parentNode.replace(p);
 	},
 };
 
@@ -227,6 +250,7 @@ export const DOC_TRANSFORMERS = [
 	ORDERED_LIST,
 	TABLE,
 	PAGEBREAK,
+	BLANK,
 	...MULTILINE_ELEMENT_TRANSFORMERS,
 	...TEXT_FORMAT_TRANSFORMERS,
 	...TEXT_MATCH_TRANSFORMERS,

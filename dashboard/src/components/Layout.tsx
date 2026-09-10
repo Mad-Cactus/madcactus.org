@@ -1,8 +1,14 @@
 import { A } from "@solidjs/router";
+import { clientOnly } from "@solidjs/start";
 import { For, ParentComponent, Show, createEffect, createSignal, onMount } from "solid-js";
 import Timer from "~/components/Timer";
 import CommandPalette from "~/components/CommandPalette";
-import { FeedbackWidget } from "@aspectrr/feedback-widget";
+
+// clientOnly: the widget mounts via <Portal> and throws during hydration in
+// dev ("create new DOM elements during hydration") — render it post-hydration.
+const FeedbackWidget = clientOnly(() =>
+	import("@aspectrr/feedback-widget").then((m) => ({ default: m.FeedbackWidget })),
+);
 
 // Single-path stroke icons (24×24, lucide-style) so the collapsed rail can
 // show them without an icon-font dependency.
