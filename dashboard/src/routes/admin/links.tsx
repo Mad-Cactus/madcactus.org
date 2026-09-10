@@ -1,6 +1,7 @@
 import { Title } from "@solidjs/meta";
 import { createAsync } from "@solidjs/router";
 import { For, Show, createSignal, onMount } from "solid-js";
+import ConfirmButton from "~/components/ConfirmButton";
 import Layout from "~/components/Layout";
 import { getUserQuery } from "~/lib/queries";
 
@@ -70,7 +71,47 @@ export default function AdminLinks() {
 	}
 
 	async function remove(slug: string) {
-		await fetch(`/api/links?slug=${encodeURIComponent(slug)}`, { method: "DELETE" });
+		const r = await fetch(`/api/links?slug=${encodeURIComponent(slug)}`, { method: "DELETE" });
+		if (!r.ok) return { error: ((await r.json()) as { error?: string }).error ?? "Delete failed" };
+		await refresh();
+	}
+
+	const [copied, setCopied] = createSignal("");
+	async function copyLink(l: Link) {
+		await navigator.clipboard.writeText(`${location.origin}/l/${l.slug}`);
+		setCopied(l.slug);
+		setTimeout(() => setCopied(""), 1200);
+	}
+
+	// edit dialog — native <dialog>, no modal lib
+	const [editing, setEditing] = createSignal<{ slug: string; target: string } | null>(null);
+	const [editError, setEditError] = createSignal("");
+	let dialogRef: HTMLDialogElement | undefined;
+
+	function openEdit(l: Link) {
+		setEditing({ slug: l.slug, target: l.target });
+		setEditError("");
+		dialogRef?.showModal();
+	}
+
+	async function saveEdit(e: Event) {
+		e.preventDefault();
+		const cur = editing();
+		if (!cur) return;
+		const fd = new FormData(e.target as HTMLFormElement);
+		const r = await fetch("/api/links", {
+			method: "PATCH",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				slug: cur.slug,
+				newSlug: String(fd.get("slug") ?? "").trim(),
+				target: String(fd.get("target") ?? "").trim(),
+			}),
+		});
+		const body = (await r.json()) as { error?: string };
+		if (!r.ok) return setEditError(body.error ?? "Save failed");
+		dialogRef?.close();
+		setEditing(null);
 		await refresh();
 	}
 
@@ -136,18 +177,51 @@ export default function AdminLinks() {
 						{(l) => (
 							<tr style={{ "border-bottom": "1px solid #eee" }}>
 								<td style={{ padding: "8px" }}>
-									<code>/l/{l.slug}</code>
+									<code>{l.slug}</code>
 								</td>
 								<td style={{ padding: "8px", "max-width": "420px", overflow: "hidden", "text-overflow": "ellipsis", "white-space": "nowrap" }}>{l.target}</td>
 								<td style={{ padding: "8px", "font-variant-numeric": "tabular-nums" }}>{l.clicks}</td>
 								<td style={{ padding: "8px" }}>
-									<button type="button" onClick={() => void remove(l.slug)} style={{ cursor: "pointer" }}>Delete</button>
+									<span style={{ display: "inline-flex", gap: "6px", "align-items": "center" }}>
+									<button type="button" class="btn btn-sm" onClick={() => void copyLink(l)}>
+										{copied() === l.slug ? "Copied" : "Copy link"}
+									</button>
+									<button type="button" class="btn btn-sm" onClick={() => openEdit(l)}>Edit</button>
+									<ConfirmButton label="Delete" danger onConfirm={() => remove(l.slug)} />
+								</span>
 								</td>
 							</tr>
 						)}
 					</For>
 				</tbody>
 			</table>
+
+			<dialog
+				ref={dialogRef}
+				onClose={() => setEditing(null)}
+				style={{ border: "1px solid #ddd", padding: "24px", "min-width": "440px", "max-width": "90vw" }}
+			>
+				<Show when={editing()}>
+					<h2 style={{ margin: "0 0 12px", "font-size": "18px" }}>Edit link</h2>
+					<form onSubmit={saveEdit} style={{ display: "grid", gap: "8px" }}>
+						<label style={{ display: "grid", gap: "4px" }}>
+							Slug — changing it changes the share URL; the old link stops working
+							<input name="slug" value={editing()!.slug} required style={{ padding: "8px" }} />
+						</label>
+						<label style={{ display: "grid", gap: "4px" }}>
+							Target URL
+							<input name="target" value={editing()!.target} required style={{ padding: "8px" }} />
+						</label>
+						<Show when={editError()}>
+							<p style={{ color: "#b91c1c" }}>{editError()}</p>
+						</Show>
+						<div style={{ display: "flex", gap: "8px", "justify-content": "flex-end", "margin-top": "4px" }}>
+							<button type="button" class="btn btn-sm" onClick={() => dialogRef?.close()}>Cancel</button>
+							<button type="submit" class="btn btn-sm btn-primary">Save</button>
+						</div>
+					</form>
+				</Show>
+			</dialog>
 		</Layout>
 	);
 }

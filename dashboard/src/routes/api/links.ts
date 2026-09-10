@@ -1,6 +1,7 @@
 // Short links admin API — session-guarded.
 // GET  /api/links            → [{ slug, target, clicks, createdAt }]
 // POST /api/links {slug,target} → upsert (create or retarget)
+// PATCH /api/links {slug,newSlug?,target} → rename slug and/or retarget
 // DELETE /api/links?slug=x   → remove
 import type { APIEvent } from "@solidjs/start/server";
 import { desc, eq } from "drizzle-orm";
@@ -55,6 +56,25 @@ export const POST = async (event: APIEvent) => {
 		}
 	}
 	return json({ error: "Could not generate a unique slug — try again" }, 500);
+};
+
+export const PATCH = async (event: APIEvent) => {
+	if ((await getAuthedClient()) === null) return json({ error: "Unauthorized" }, 401);
+	const body = (await event.request.json().catch(() => ({}))) as { slug?: string; newSlug?: string; target?: string };
+	const slug = (body.slug ?? "").trim().toLowerCase();
+	const newSlug = (body.newSlug ?? slug).trim().toLowerCase();
+	const target = (body.target ?? "").trim();
+	if (!SLUG_RE.test(slug) || !SLUG_RE.test(newSlug))
+		return json({ error: "Slug must be lowercase letters, digits, dashes (max 49)" }, 400);
+	if (!TARGET_RE.test(target)) return json({ error: "Target must be an http(s) URL" }, 400);
+	try {
+		await db.update(shortLinks).set({ slug: newSlug, target }).where(eq(shortLinks.slug, slug));
+	} catch (e) {
+		if (e instanceof Error && e.message.includes("duplicate key"))
+			return json({ error: "That slug is already taken" }, 409);
+		throw e;
+	}
+	return json({ ok: true, slug: newSlug });
 };
 
 export const DELETE = async (event: APIEvent) => {
