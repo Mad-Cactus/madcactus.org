@@ -42,10 +42,14 @@ jobs:
 
       - name: No pending migrations
         run: |
-          out=$(supabase migration list </dev/null 2>/dev/null || true)
-          pending=$(echo "$out" | grep -o '"local":"[^"]*","remote":""' || true)
-          if [ -n "$pending" ]; then
-            echo "::error::Migrations on main not applied to prod (auto-apply broken?): $pending"
+          # Failure = red: an unverifiable check must not pass. The old version
+          # swallowed connection errors and grepped raw JSON, so a dead check
+          # reported "Prod is up to date" while a migration sat unapplied.
+          out=$(supabase migration list </dev/null)
+          pending=$(echo "$out" | jq '[.migrations[] | select(.local != "" and .remote == "")]')
+          if [ "$pending" != "[]" ]; then
+            echo "::error::Migrations on main not applied to prod (auto-apply broken?):"
+            echo "$pending"
             exit 1
           fi
           echo "Prod is up to date with main."
@@ -54,10 +58,14 @@ jobs:
 
       - name: No unversioned schema on prod
         run: |
-          supabase db diff --linked -f /tmp/drift.sql </dev/null
-          if [ -s /tmp/drift.sql ]; then
+          # db diff prints its JSON to stdout. The old version used -f /tmp/drift.sql,
+          # but -f takes a migration NAME and writes into supabase/migrations/, so
+          # /tmp/drift.sql never existed and this check passed unconditionally.
+          out=$(supabase db diff --linked </dev/null)
+          diff_sql=$(echo "$out" | jq -r '.diff // ""')
+          if [ -n "$diff_sql" ]; then
             echo "::error::Prod schema differs from what migrations produce — someone changed the DB outside migrations."
-            cat /tmp/drift.sql
+            echo "$diff_sql"
             exit 1
           fi
           echo "No drift: prod matches migrations."
