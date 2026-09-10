@@ -8,7 +8,12 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 export default defineConfig({
-  plugins: [
+	// feedback-widget ships a pre-bundled dist; left external it gets a second
+	// copy of solid-js/web in dev → hydration throws "create new DOM elements".
+	// noExternal (SSR) + exclude (client pre-bundle) keep one shared copy.
+	ssr: { noExternal: ["@aspectrr/feedback-widget"] },
+	optimizeDeps: { exclude: ["@aspectrr/feedback-widget"] },
+	plugins: [
 		solidStart(),
 		// static marketing pages — prerendered at build. Requires the build to
 		// run under Bun (bun --bun vite build): nitro's prerenderer executes in
