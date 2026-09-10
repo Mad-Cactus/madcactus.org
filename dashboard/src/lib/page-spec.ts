@@ -10,7 +10,7 @@ export const SPEC = {
 	pageW: 816, // 8.5in @96dpi
 	pageH: 1056, // 11in @96dpi
 	pad: 85.33, // 64pt margins
-	gap: 28, // visual gap between sheets (editor only — cosmetic)
+	gap: 28, // visual gap between sheet cards (editor only — cosmetic; exports ignore it)
 	title: 29.33, // 22pt doc title
 	titleAfter: 13.33, // 10pt
 	body: 14.67, // 11pt

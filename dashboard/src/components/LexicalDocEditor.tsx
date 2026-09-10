@@ -9,10 +9,11 @@
 // ~/lib/doc-markdown so they stay testable headless.
 import { onCleanup, onMount, createEffect, createSignal, Show } from "solid-js";
 import { DOC_NODES, DOC_TRANSFORMERS } from "~/lib/doc-markdown";
-import { TableCellNode, TableRowNode, $isTableCellNode, $isTableRowNode } from "@lexical/table";
+import { TableCellNode, TableRowNode, TableNode, $isTableNode, $createTableNode, $isTableCellNode, $isTableRowNode } from "@lexical/table";
 import type { LexicalNode } from "lexical";
 import { $convertFromMarkdownString, $convertToMarkdownString, registerMarkdownShortcuts } from "@lexical/markdown";
 import {
+	$getNearestNodeFromDOMNode,
 	createEditor,
 	FORMAT_TEXT_COMMAND,
 	INSERT_PARAGRAPH_COMMAND,
@@ -37,6 +38,7 @@ import { registerHistory, createEmptyHistoryState } from "@lexical/history";
 import { CodeNode, CodeHighlightNode, $isCodeNode } from "@lexical/code";
 import { LinkNode, AutoLinkNode, TOGGLE_LINK_COMMAND, toggleLink } from "@lexical/link";
 import { $setBlocksType } from "@lexical/selection";
+import type { TableSplit } from "~/lib/doc-pages";
 
 // CHECK_LIST converts on Enter (triggerOnEnter), so "- [ ] item" + Enter
 // becomes a checkbox while "- " alone becomes a plain bullet on space —
@@ -49,15 +51,24 @@ type ToolbarApi = {
 	link: () => void;
 };
 
+/** What the pager (DocEditor.runLayout) can ask the editor to do. */
+export type DocEditorApi = {
+	root: HTMLElement;
+	/** split crossing tables at row boundaries (page pagination); returns true when any split */
+	splitTables: (splits: TableSplit[]) => boolean;
+};
+
 export default function LexicalDocEditor(props: {
 	markdown: string;
 	onMarkdownChange: (md: string) => void;
 	onSave?: (md: string) => void;
 	readOnly?: boolean;
-	/** editor root is live — caller can start paginating against it */
-	onReady?: (root: HTMLElement) => void;
 	/** content changed — pager should re-measure (debounced by caller) */
 	onLayoutDirty?: () => void;
+	/** caret left the editor — pager reconciles frozen pushes */
+	onBlur?: () => void;
+	/** live pager API: root + break/sanitize operations (see DocEditorApi) */
+	onReady?: (api: DocEditorApi) => void;
 }) {
 	let host!: HTMLDivElement;
 	let api: ToolbarApi | undefined;
@@ -73,7 +84,45 @@ export default function LexicalDocEditor(props: {
 			onError: (e) => console.error(e),
 		});
 		ed.setRootElement(host);
-		props.onReady?.(host);
+
+		// pager API — DocEditor.runLayout drives these
+		const splitTables = (candidates: TableSplit[]): boolean => {
+			let any = false;
+			for (const { el, avail } of candidates) {
+				const rows = Array.from(el.querySelectorAll("tr"));
+				if (rows.length < 2) continue;
+				// find how many leading rows fit in `avail` px (keep at least one)
+				let acc = 0;
+				let cut = 0;
+				for (const r of rows) {
+					const h = r.getBoundingClientRect().height;
+					if (acc + h > avail && cut > 0) break;
+					acc += h;
+					cut++;
+				}
+				if (cut === 0 || cut >= rows.length || acc > avail) continue;
+				ed.update(
+					() => {
+						const table = $getNearestNodeFromDOMNode(el);
+						if (!$isTableNode(table)) return;
+						const allRows = table.getChildren().filter($isTableRowNode);
+						const moved = allRows.slice(cut);
+						if (!moved.length) return;
+						const rest = $createTableNode();
+						for (const r of moved) rest.append(r);
+						table.insertAfter(rest);
+						any = true;
+					},
+					// discrete: commit + reconcile synchronously so the pager can
+					// re-measure in the same pass; history-merge: the split rides
+					// the paste's undo entry instead of its own
+					{ discrete: true, tag: "history-merge" },
+				);
+			}
+			return any;
+		};
+
+		props.onReady?.({ root: host, splitTables });
 		// the JSX host must not carry contenteditable=false — Lexical manages the
 		// attribute itself, and a stale "false" leaves the doc uneditable
 		ed.setEditable(!props.readOnly);
@@ -388,6 +437,7 @@ export default function LexicalDocEditor(props: {
 				ref={host}
 				class="doc-editor"
 				classList={{ readonly: !!props.readOnly }}
+				onBlur={() => props.onBlur?.()}
 				// Lexical toggles contenteditable itself only on setEditable() CHANGES —
 				// the app owns the initial attribute, and a missing/false one leaves the
 				// doc permanently uneditable

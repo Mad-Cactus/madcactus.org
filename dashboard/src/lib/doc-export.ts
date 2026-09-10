@@ -58,7 +58,8 @@ type Block =
 	| { t: "code"; text: string; lang?: string }
 	| { t: "table"; header: Span[][]; rows: Span[][][] }
 	| { t: "hr" }
-	| { t: "pagebreak" };
+	| { t: "pagebreak" }
+	| { t: "blank" }; // `<!-- blank -->` — one empty line (GDocs blank-line parity)
 
 function parseTokens(tokens: Token[]): Block[] {
 	const out: Block[] = [];
@@ -95,6 +96,7 @@ function parseTokens(tokens: Token[]): Block[] {
 				break;
 			case "html":
 				if (/pagebreak/i.test(tok.text)) out.push({ t: "pagebreak" });
+				else if (/<!--\s*blank\s*-->/.test(tok.text)) out.push({ t: "blank" });
 				break;
 			case "text":
 				out.push({ t: "para", spans: spans(tok.text) });
@@ -197,6 +199,10 @@ function docxBlocks(blocks: Block[]): (Paragraph | Table)[] {
 				break;
 			case "pagebreak":
 				out.push(new Paragraph({ children: [new PageBreak()] }));
+				break;
+			case "blank":
+				// one empty line at body size — same height a blank line occupies in GDocs
+				out.push(new Paragraph({ children: [new TextRun({ text: "" })], spacing: { after: 0 } }));
 				break;
 		}
 	}
@@ -379,6 +385,11 @@ export async function renderPdf(title: string, md: string): Promise<Uint8Array<A
 					case "pagebreak":
 						doc.addPage();
 						y = 0;
+						break;
+					case "blank":
+						// one empty body line (SPEC.lh) — matches the blank paragraph in the editor
+						fit(SPEC.body * SPEC.lh);
+						y += SPEC.body * SPEC.lh;
 						break;
 				}
 				}
