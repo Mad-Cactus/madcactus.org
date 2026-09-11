@@ -115,7 +115,7 @@ describe("isTrashed", () => {
 });
 
 // ── Rate-limit backoff (fetch stubbed; token endpoint answers too) ──
-import { gmail } from "./gmail";
+import { gmail, latestByThread } from "./gmail";
 
 const account = { id: "a1", refreshToken: "r" } as any;
 const json = (body: any, status = 200) =>
@@ -194,4 +194,45 @@ describe("gmail backoff", () => {
 		},
 		15_000, // backoff sleeps 1+2+4s + jitter
 	);
+});
+
+describe("latestByThread", () => {
+	const stub = (threadId: string, internalDate: string, snippet: string, labelIds?: string[]) => ({
+		threadId,
+		internalDate,
+		snippet,
+		labelIds,
+	});
+
+	test("newest message per thread wins", () => {
+		const out = latestByThread([
+			stub("t1", "1000", "first"),
+			stub("t1", "2000", "second"),
+			stub("t2", "3000", "other thread"),
+		]);
+		expect(out.get("t1")?.snippet).toBe("second");
+		expect(out.get("t1")?.date).toEqual(new Date(2000));
+		expect(out.get("t2")?.snippet).toBe("other thread");
+	});
+
+	test("unread comes from the newest message", () => {
+		const out = latestByThread([
+			stub("t1", "1000", "read one", []),
+			stub("t1", "2000", "unread one", ["INBOX", "UNREAD"]),
+		]);
+		expect(out.get("t1")?.unread).toBe(true);
+	});
+
+	test("older unread message does not mark thread unread", () => {
+		const out = latestByThread([
+			stub("t1", "2000", "read reply", ["INBOX"]),
+			stub("t1", "1000", "unread old", ["UNREAD"]),
+		]);
+		expect(out.get("t1")?.unread).toBe(false);
+	});
+
+	test("missing labelIds → not unread", () => {
+		const out = latestByThread([stub("t1", "1", "s")]);
+		expect(out.get("t1")?.unread).toBe(false);
+	});
 });
