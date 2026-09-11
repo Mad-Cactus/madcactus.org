@@ -32,15 +32,17 @@ export async function POST(event: APIEvent) {
 
 	const resend = new Resend(key);
 
-	// Segment membership + source provenance (Resend dashboard → Segments).
-	// Missing segment env = contact still created globally, just unsorted.
+	// Segment membership (Resend dashboard → Segments). Missing segment env =
+	// contact still created globally, just unsorted. NOTE: no `properties` here —
+	// Resend rejects unknown properties with 422 and contact creation fails whole.
 	const segmentId = process.env.RESEND_SEGMENT_ID;
-	await resend.contacts.create({
-		email,
-		unsubscribed: false,
-		...(segmentId ? { segments: [{ id: segmentId }] } : {}),
-		properties: { source: scoreData ? "scorecard" : "newsletter" },
-	}).catch(() => {});
+	await resend.contacts
+		.create({
+			email,
+			unsubscribed: false,
+			...(segmentId ? { segments: [{ id: segmentId }] } : {}),
+		})
+		.catch((e) => console.error("[newsletter] contact create failed:", e));
 
 	// Newsletter signup → plain-text welcome (no scorecard PDF involved).
 	// Plain text on purpose: lands in the primary inbox and builds deliverability
