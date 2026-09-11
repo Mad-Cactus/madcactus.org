@@ -293,63 +293,106 @@ async function fetchMissingThreads(account: EmailAccount, ids: string[], max: nu
 	return ok;
 }
 
-/** List every thread id carrying a label (paginated). ponytail: capped at
- *  2000 — one user's mailbox; raise the cap if it ever fills up. */
-async function listThreadIds(account: EmailAccount, label: "INBOX" | "SENT", cap = 2000): Promise<string[]> {
-	const ids: string[] = [];
-	let pageToken: string | undefined;
-	do {
-		const page = await gmail<{ threads?: { id: string }[]; nextPageToken?: string }>(
-			account,
-			`/threads?labelIds=${label}&maxResults=500${pageToken ? `&pageToken=${pageToken}` : ""}`,
-		);
-		for (const t of page.threads ?? []) ids.push(t.id);
-		pageToken = page.nextPageToken;
-	} while (pageToken && ids.length < cap);
-	return ids;
+/** Fold messages.list stubs into per-thread latest state: the newest
+ *  message of each thread decides snippet, date, and unread. Pure — exported
+ *  for tests. */
+export function latestByThread(
+	stubs: { threadId: string; snippet: string; internalDate: string; labelIds?: string[] }[],
+): Map<string, { snippet: string; date: Date; unread: boolean }> {
+	const map = new Map<string, { snippet: string; date: Date; unread: boolean }>();
+	for (const m of stubs) {
+		const d = Number(m.internalDate);
+		const cur = map.get(m.threadId);
+		if (cur && cur.date.getTime() >= d) continue;
+		map.set(m.threadId, { snippet: m.snippet, date: new Date(d), unread: m.labelIds?.includes("UNREAD") ?? false });
+	}
+	return map;
 }
 
-/** Sync: mirror Gmail's INBOX + SENT id lists into the local corpus. Unknown
- *  threads get fetched (capped per run), the 50 most recent inbox threads are
- *  re-fetched for freshness (unread/snippet/replies), and `archived` is
- *  mirrored from INBOX membership in bulk for everything else. ponytail: full
- *  id-list diff each sync instead of the history API — once the corpus is
- *  local a sync costs a few cheap list calls; history.list can come later. */
+/** Page messages.list stubs for a label. Stubs carry snippet/internalDate/
+ *  labelIds for every thread in one 5-unit page per 100 messages — the whole
+ *  freshness pass costs less than a single threads.get. ponytail: capped at
+ *  10 pages (newest first) — refresh the 1000 most recent messages; older
+ *  threads refresh on search/open instead. */
+async function listMessageStubs(
+	account: EmailAccount,
+	label: "INBOX" | "SENT",
+	maxPages = 10,
+): Promise<{ threadId: string; snippet: string; internalDate: string; labelIds?: string[] }[]> {
+	const stubs: { threadId: string; snippet: string; internalDate: string; labelIds?: string[] }[] = [];
+	let pageToken: string | undefined;
+	for (let page = 0; page < maxPages; page++) {
+		const res = await gmail<{
+			messages?: { threadId: string; snippet: string; internalDate: string; labelIds?: string[] }[];
+			nextPageToken?: string;
+		}>(account, `/messages?labelIds=${label}&maxResults=100${pageToken ? `&pageToken=${pageToken}` : ""}`);
+		for (const m of res.messages ?? []) stubs.push(m);
+		if (!res.nextPageToken) break;
+		pageToken = res.nextPageToken;
+	}
+	return stubs;
+}
+
+/** Sync, lazily: two stub lists (~10 Gmail units) refresh unread/lastMessageAt
+ *  for every thread already in the corpus; a full fetch (10 units) happens
+ *  only for threads that are NEW in the inbox (cap 30), new in sent (cap 10),
+ *  or whose snippet drifted (a reply landed — cap 50). Everything else stays
+ *  unfetched until search or open pulls it on demand. Quiet sync ≈ 60 units
+ *  against Gmail's 250/min budget — the old eager 50+50 refetch burned ~2000
+ *  and starved /messages/send (100 units) into 403s. ponytail: still a stub
+ *  diff, not the history API — historyId can come later. */
 export async function syncAccount(account: EmailAccount): Promise<{ synced: number; full: boolean }> {
-	const [inboxIds, sentIds] = await Promise.all([listThreadIds(account, "INBOX"), listThreadIds(account, "SENT")]);
+	const [inboxStubs, sentStubs] = await Promise.all([
+		listMessageStubs(account, "INBOX"),
+		listMessageStubs(account, "SENT"),
+	]);
+	const inbox = latestByThread(inboxStubs);
+	const sent = latestByThread(sentStubs);
+	const inboxIds = [...inbox.keys()];
 	const inboxSet = new Set(inboxIds);
-	const allIds = [...new Set([...inboxIds, ...sentIds])];
 
-	let synced = await fetchMissingThreads(account, allIds, 100);
+	// existing rows keyed by gmail id + local snippet, for the drift check
+	const rows = await db
+		.select({ gmailThreadId: emailThreads.gmailThreadId, snippet: emailThreads.snippet })
+		.from(emailThreads)
+		.where(eq(emailThreads.accountId, account.id));
+	const local = new Map(rows.map((r) => [r.gmailThreadId, r.snippet]));
 
-	let freshInbox = 0;
-	await pooled(inboxIds.slice(0, 50), 8, async (id) => {
-		// one poisoned thread (deleted mid-sync, transient 500) used to reject
-		// the whole sync — lastSyncAt then never landed and the header showed
-		// "never" forever. Per-item failures just skip that thread.
-		try {
-			const row = await upsertThread(account, await fetchFullThread(account, id), false);
-			if (row) freshInbox++;
-		} catch (e) {
-			console.error(`sync: inbox thread ${id} failed:`, e instanceof Error ? e.message : e);
-		}
-	});
-	synced += freshInbox;
+	// freshness without fetching: stub state overwrites unread/lastMessageAt;
+	// snippet drift means messages the stubs can't see (full body, new
+	// message fields) → one full refetch instead.
+	const drifted: string[] = [];
+	for (const [id, s] of inbox) {
+		if (!local.has(id)) continue;
+		if (local.get(id) === s.snippet) {
+			await db
+				.update(emailThreads)
+				.set({ unread: s.unread, lastMessageAt: s.date })
+				.where(and(eq(emailThreads.accountId, account.id), eq(emailThreads.gmailThreadId, id)));
+		} else drifted.push(id);
+	}
 
-	// Re-fetch the 50 most recent SENT threads too — fetchMissingThreads skips
-	// known ids, so replies sent from the Gmail UI on threads we already have
-	// locally never landed until this loop existed.
-	const sentFresh = sentIds.filter((id) => !inboxSet.has(id)).slice(0, 50);
-	let freshSent = 0;
-	await pooled(sentFresh, 8, async (id) => {
-		try {
-			const row = await upsertThread(account, await fetchFullThread(account, id));
-			if (row) freshSent++;
-		} catch (e) {
-			console.error(`sync: sent thread ${id} failed:`, e instanceof Error ? e.message : e);
-		}
-	});
-	synced += freshSent;
+	let synced = 0;
+	const fetchIds = async (ids: string[]) => {
+		await pooled(ids, 8, async (id) => {
+			// per-item guard — one poisoned thread must not reject the whole sync
+			// (lastSyncAt then never landed and the header showed "never")
+			try {
+				await upsertThread(account, await fetchFullThread(account, id));
+				synced++;
+			} catch (e) {
+				console.error(`sync: thread ${id} failed:`, e instanceof Error ? e.message : e);
+			}
+		});
+	};
+	await Promise.all([
+		// brand-new inbox threads render in the list → fetch eagerly, capped;
+		// deeper history backfills a trickle per sync (or instantly via search)
+		fetchIds(inboxIds.filter((id) => !local.has(id)).slice(0, 30)),
+		// new sent threads matter for outreach dedupe, but trickle in slowly
+		fetchIds([...sent.keys()].filter((id) => !local.has(id) && !inboxSet.has(id)).slice(0, 10)),
+		fetchIds(drifted.slice(0, 50)),
+	]);
 
 	const setArchived = async (ids: string[], archived: boolean) => {
 		for (let i = 0; i < ids.length; i += 500) {
@@ -360,7 +403,10 @@ export async function syncAccount(account: EmailAccount): Promise<{ synced: numb
 		}
 	};
 	await setArchived(inboxIds, false);
-	await setArchived(allIds.filter((id) => !inboxSet.has(id)), true);
+	// only flip archived for threads we have window evidence for — ids in
+	// neither stub window keep their stored state (no false archiving of old
+	// inbox threads beyond the 10-page window)
+	await setArchived([...sent.keys()].filter((id) => !inboxSet.has(id)), true);
 
 	// mark fresh — otherwise every read re-syncs
 	await db
