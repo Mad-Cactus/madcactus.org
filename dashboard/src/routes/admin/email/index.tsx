@@ -54,7 +54,9 @@ export default function AdminEmail() {
 		const ids = folder() === "drafts" ? (inbox()?.drafts ?? []).map((d) => d.id) : visibleThreads().map((t) => t.id);
 		return ids.slice(a, b + 1);
 	};
-	const [compose, setCompose] = createSignal<{ to: string; subject: string; body: string; threadId?: string } | null>(null);
+	// draftId tracks the outbox row created by a Send click, so a lint-blocked
+	// retry (or Send anyway) updates that same draft instead of duplicating one
+	const [compose, setCompose] = createSignal<{ to: string; subject: string; body: string; threadId?: string; draftId?: string } | null>(null);
 	// client-side windowing over the full local corpus — no server pagination
 	const [visibleCount, setVisibleCount] = createSignal(50);
 	const [editBody, setEditBody] = createSignal<Record<string, string>>({});
@@ -441,6 +443,36 @@ export default function AdminEmail() {
 		// send (voice-lint gate included), they don't fire straight out
 		void revalidate("email-inbox");
 		flash("Draft saved — find it in the Drafts tab");
+	};
+
+	// Send from the compose/reply overlay: create the outbox draft, then run the
+	// same lint-gated send as the Drafts tab. A voice-lint block keeps the
+	// overlay open and flips Send → Send anyway; retry targets the same draft.
+	const sendCompose = async (overrideLint = false) => {
+		const c = compose();
+		if (!c?.to || !c.body) return;
+		let draftId = c.draftId;
+		if (!draftId) {
+			setSendStatus("sending…");
+			const res = await fetch("/api/email/drafts", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(c),
+			});
+			const row = (await res.json()) as { id?: string; error?: string };
+			if (!row?.id) {
+				setSendStatus(`failed: ${row?.error ?? "could not save draft"}`);
+				return;
+			}
+			draftId = row.id;
+			setCompose({ ...c, draftId });
+		}
+		// sendDraft reads the (possibly edited) body from editBody
+		setEditBody({ ...editBody(), [draftId]: c.body });
+		await sendDraft(draftId, overrideLint);
+		if (lintBlockedDraft() === draftId) return; // gate hit: overlay stays up, Send became Send anyway
+		setCompose(null);
+		flash("Sent");
 	};
 
 	// ── hotkeys ──
@@ -1072,8 +1104,11 @@ export default function AdminEmail() {
 							style={{ width: "100%", "margin-bottom": "8px", padding: "8px", "font-family": "inherit", border: "1px solid rgba(0,0,0,0.12)" }}
 						/>
 						<div style={{ display: "flex", gap: "8px", "justify-content": "flex-end" }}>
+							<Show when={lintBlockedDraft() && lintBlockedDraft() === compose()!.draftId} fallback={<button type="button" class="btn btn-primary btn-sm" onClick={() => sendCompose()}>Send</button>}>
+								<button type="button" class="btn btn-sm" style={{ "border-color": "#a33", color: "#a33" }} onClick={() => sendCompose(true)}>Send anyway (ignores voice lint)</button>
+							</Show>
 							<button type="button" class="btn btn-sm" onClick={() => setCompose(null)}>Esc</button>
-							<button type="button" class="btn btn-primary btn-sm" onClick={manualCompose}>Save draft</button>
+							<button type="button" class="btn btn-sm" onClick={manualCompose}>Save draft</button>
 						</div>
 					</div>
 				</div>
