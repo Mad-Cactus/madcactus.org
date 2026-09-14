@@ -4,11 +4,12 @@ import { hashKey } from "~/lib/crypto";
 import { db } from "~/db";
 import { apiKeys, companies, outreachProspects, OUTREACH_STAGES } from "~/db/schema";
 import { brainQuery, entityFacts } from "~/lib/brain/search";
-import { brainJobs } from "~/db/schema";
+import { brainJobs, shortLinks } from "~/db/schema";
 import { agentWrite, createDoc, getDoc, getDocVersionDiff, listDocVersions, listDocs } from "~/lib/docs";
 import { getVoiceLessons, hasRecentLessonReview, lintGateError, lintVoiceText, listKnownGenres, recordLessonReview } from "~/lib/voice-lint-db";
 import type { VoiceScope } from "~/lib/voice-lint";
 import { searchWorkspace, recentActivity } from "~/lib/brain/workspace-search";
+import { randomKey, shortLinkBase, TARGET_RE } from "~/lib/short-links";
 import { maybeRunCycle } from "~/lib/brain/distill";
 
 
@@ -351,6 +352,25 @@ const TOOLS = [
 			},
 			required: ["doc_id", "version"],
 		},
+	},
+	// ── Short links ──
+	{
+		name: "create_short_link",
+		description:
+			"Create a tracked short link /l/<slug> that 302s to target and counts every click — click-through tracking for social posts, lead magnets, etc. Put UTM params in target; the shared link stays clean. The slug is a generated unguessable key (never chosen) — call list_short_links first to see existing links, or to report CTR per link/post. Returns the ready-to-share url.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				target: { type: "string", description: "Destination URL, must start with http(s):// — UTM params go here" },
+			},
+			required: ["target"],
+		},
+	},
+	{
+		name: "list_short_links",
+		description:
+			"All short links with click counts, most-clicked first. Read before create_short_link to check for an existing slug, or to report CTR per link/post.",
+		inputSchema: { type: "object", properties: {} },
 	},
 	// ── Email ──
 	{
@@ -716,6 +736,30 @@ export async function POST(event: APIEvent) {
 						});
 						break;
 					}
+					// ── Short links ──
+					case "create_short_link": {
+						const target = String(toolArgs.target ?? "").trim();
+						if (!TARGET_RE.test(target)) {
+							result = { error: "target must be an http(s) URL" };
+							break;
+						}
+						// slug is always a generated opaque key — retried on the astronomically rare PK collision
+						for (let attempt = 0; attempt < 3; attempt++) {
+							const slug = randomKey();
+							try {
+								await db.insert(shortLinks).values({ slug, target });
+								result = { slug, url: `${shortLinkBase()}/l/${slug}`, target, created: true };
+								break;
+							} catch (e) {
+								if (!(e instanceof Error) || !e.message.includes("duplicate key")) throw e;
+							}
+						}
+						result ??= { error: "could not generate a unique slug — call again" };
+						break;
+					}
+					case "list_short_links":
+						result = await db.select().from(shortLinks).orderBy(desc(shortLinks.clicks), desc(shortLinks.createdAt));
+						break;
 					default:
 						return rpcError(id, -32601, `Unknown tool: ${toolName}`);
 				}

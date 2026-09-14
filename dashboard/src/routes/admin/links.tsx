@@ -61,7 +61,7 @@ export default function AdminLinks() {
 		const r = await fetch("/api/links", {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ slug: fd.get("slug"), target }),
+			body: JSON.stringify({ target }),
 		});
 		const body = (await r.json()) as { error?: string; slug?: string };
 		if (!r.ok) return setError(body.error ?? "Save failed");
@@ -104,7 +104,6 @@ export default function AdminLinks() {
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({
 				slug: cur.slug,
-				newSlug: String(fd.get("slug") ?? "").trim(),
 				target: String(fd.get("target") ?? "").trim(),
 			}),
 		});
@@ -124,12 +123,8 @@ export default function AdminLinks() {
 			</p>
 
 			<details open style={{ "margin-bottom": "24px" }}>
-				<summary style={{ cursor: "pointer", "font-weight": "600" }}>Create or update a link</summary>
+				<summary style={{ cursor: "pointer", "font-weight": "600" }}>Create a link</summary>
 				<form id="link-form" onSubmit={save} style={{ display: "grid", gap: "8px", "max-width": "640px", "margin-top": "12px" }}>
-					<label style={{ display: "grid", gap: "4px" }}>
-						Slug — optional, leave blank for an unguessable one
-						<input name="slug" placeholder="e.g. td2 — or blank for random" style={{ padding: "8px" }} />
-					</label>
 					<label style={{ display: "grid", gap: "4px" }}>
 						Destination page
 						<input name="dest" value="https://madcactus.org/newsletter" style={{ padding: "8px" }} />
@@ -204,10 +199,6 @@ export default function AdminLinks() {
 				<Show when={editing()}>
 					<h2 style={{ margin: "0 0 12px", "font-size": "18px" }}>Edit link</h2>
 					<form onSubmit={saveEdit} style={{ display: "grid", gap: "8px" }}>
-						<label style={{ display: "grid", gap: "4px" }}>
-							Slug — changing it changes the share URL; the old link stops working
-							<input name="slug" value={editing()!.slug} required style={{ padding: "8px" }} />
-						</label>
 						<label style={{ display: "grid", gap: "4px" }}>
 							Target URL
 							<input name="target" value={editing()!.target} required style={{ padding: "8px" }} />
