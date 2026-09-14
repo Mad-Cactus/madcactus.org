@@ -78,6 +78,10 @@ export const OUTREACH_STAGES = [
 
 export type OutreachStage = (typeof OUTREACH_STAGES)[number];
 
+// display-only labels — DB stage values never change ("watching" reads wrong in the UI)
+export const OUTREACH_STAGE_LABELS: Partial<Record<OutreachStage, string>> = { watching: "watched" };
+export const stageLabel = (s: string) => OUTREACH_STAGE_LABELS[s as OutreachStage] ?? s;
+
 export const outreachProspects = pgTable(
 	"outreach_prospects",
 	{

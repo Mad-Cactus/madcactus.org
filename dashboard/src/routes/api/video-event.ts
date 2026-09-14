@@ -4,7 +4,7 @@ import { db } from "~/db";
 import { outreachProspects } from "~/db/schema";
 
 // Beacon receiver for watch pages (/v/:id + public/v-watch.js).
-// open  → view count +1, first/last timestamps, sent → watching
+// open  → view count +1, first/last timestamps, proposed/sent → watching
 // watch → real played seconds (native <video> events; client is untrusted)
 //         plus max position reached, duration, completion
 export async function POST(event: APIEvent) {
@@ -26,7 +26,8 @@ export async function POST(event: APIEvent) {
 				videoViewCount: sql`${outreachProspects.videoViewCount} + 1`,
 				videoFirstViewedAt: sql`coalesce(${outreachProspects.videoFirstViewedAt}, now())`,
 				videoLastViewedAt: sql`now()`,
-				stage: sql`case when ${outreachProspects.stage} = 'sent' then 'watching' else ${outreachProspects.stage} end`,
+				// stage literals from OUTREACH_STAGES — static, safe to inline
+				stage: sql`case when ${outreachProspects.stage} in ('proposed', 'sent') then 'watching' else ${outreachProspects.stage} end`,
 			})
 			.where(eq(outreachProspects.id, id));
 		return new Response(null, { status: 204 });

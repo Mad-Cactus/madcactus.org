@@ -18,7 +18,7 @@ import {
 	type BrainActivity,
 	type BrainDigestItem,
 } from "~/lib/admin-queries";
-import { OUTREACH_STAGES, type OutreachProspect, type OutreachStage } from "~/db/schema";
+import { OUTREACH_STAGES, stageLabel, type OutreachProspect, type OutreachStage } from "~/db/schema";
 import type { ProspectEmailStatus } from "~/lib/admin-queries";
 import { fmtDate, fmtDur, videoSummary } from "~/lib/video-summary";
 
@@ -355,7 +355,9 @@ function BoardCard(props: { prospect: OutreachProspect & { emailStatus?: Prospec
 	const setNextAction = useAction(setOutreachNextActionAction);
 	const setContact = useAction(setOutreachContactAction);
 	const [editing, setEditing] = createSignal(false);
-	const [showMetrics, setShowMetrics] = createSignal(false);
+	// metrics open by default — stats should be visible, not buried behind a click
+	// (per-card fetches are fail-soft with a 15s timeout; personal-scale board)
+	const [showMetrics, setShowMetrics] = createSignal(true);
 	const [error, setError] = createSignal("");
 	const [dragging, setDragging] = createSignal(false);
 	const [open, setOpen] = createSignal(false);
@@ -475,6 +477,14 @@ function BoardCard(props: { prospect: OutreachProspect & { emailStatus?: Prospec
 
 			<Show when={p().videoUrl || p().brainUrl}>
 				<div style={{ "font-size": "12px", margin: "5px 0" }}>
+					<Show when={p().videoUrl}>
+						<Show
+							when={videoSummary(p())}
+							fallback={<div class="muted" style={{ "margin-bottom": "4px" }}>video not opened yet</div>}
+						>
+							<div style={{ color: "var(--orange)", "margin-bottom": "4px" }}>{videoSummary(p())}</div>
+						</Show>
+					</Show>
 					<VideoSection videoUrl={p().videoUrl} videoId={p().id} description={p().videoDescription} />
 					<Show when={p().brainUrl}>
 						<a class="btn btn-sm" href={brainHref(p())} target="_blank" rel="noreferrer">brain ↗</a>
@@ -511,7 +521,7 @@ function BoardCard(props: { prospect: OutreachProspect & { emailStatus?: Prospec
 					<input type="text" name="contact_name" placeholder="Contact name" value={p().contactName ?? ""} />
 					<input type="email" name="email" placeholder="Email (sent-to address)" value={p().email ?? ""} />
 					<select name="stage" value={p().stage}>
-						<For each={OUTREACH_STAGES}>{(s) => <option value={s}>{s}</option>}</For>
+						<For each={OUTREACH_STAGES}>{(s) => <option value={s}>{stageLabel(s)}</option>}</For>
 					</select>
 					<input type="datetime-local" name="next_action_at" value={toInputValue(p().nextActionAt)} />
 					<input type="url" name="video_url" placeholder="Video URL (cap.so share link)" value={p().videoUrl ?? ""} />
@@ -522,6 +532,15 @@ function BoardCard(props: { prospect: OutreachProspect & { emailStatus?: Prospec
 						value={p().videoDescription ?? ""}
 					/>
 					<input type="text" name="next_action_note" placeholder="Next action note" value={p().nextActionNote ?? ""} />
+					{/* brain fields live here, not just the Add form — omitting them used to
+					    wipe brain_url on every card save (handleSave diffs form vs row) */}
+					<input type="url" name="brain_url" placeholder="Brain URL (https://….madcactus.org)" value={p().brainUrl ?? ""} />
+					<input
+						type="text"
+						name="brain_activity_key"
+						placeholder="Brain activity key"
+						value={p().brainActivityKey ?? ""}
+					/>
 					<button type="submit" class="btn btn-primary btn-sm">Save</button>
 				</form>
 			</Show>
@@ -665,7 +684,7 @@ function Board() {
 								>
 									<div class="board-col-head">
 										<span class="dot" style={{ background: STAGE_COLOR[col.stage] }} />
-										{col.stage}
+										{stageLabel(col.stage)}
 										<span class="board-col-count">{col.cards.length}</span>
 									</div>
 									<div class="board-cards">
@@ -727,7 +746,7 @@ export default function AdminOutreach() {
 					</div>
 					<div style={{ display: "flex", gap: "8px", "flex-wrap": "wrap" }}>
 						<select name="stage">
-							<For each={OUTREACH_STAGES}>{(s) => <option value={s}>{s}</option>}</For>
+							<For each={OUTREACH_STAGES}>{(s) => <option value={s}>{stageLabel(s)}</option>}</For>
 						</select>
 						<input type="datetime-local" name="next_action_at" placeholder="First next action" />
 						<button type="submit" class="btn btn-primary">Add</button>
