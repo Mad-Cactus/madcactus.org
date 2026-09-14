@@ -119,8 +119,16 @@ export async function sendOutboxInner(
 			body,
 			inReplyToGmailId,
 		});
-		// the sent body lands as its own tracked version (human author)
-		const tracked = await trackText("email_draft", row.id, row.loroSnapshot, "human", body);
+		// the sent body lands as its own tracked version (human author).
+		// Best-effort: Gmail already accepted the send, so a version-history
+		// failure must NOT fail the send — a "failed" mark invites a retry that
+		// would duplicate the email.
+		let tracked: Awaited<ReturnType<typeof trackText>> = null;
+		try {
+			tracked = await trackText("email_draft", row.id, row.loroSnapshot, "human", body);
+		} catch (err) {
+			console.error(`[email-outbox] sent but version-tracking failed for ${outboxId}:`, err);
+		}
 		await db
 			.update(emailOutbox)
 			.set({

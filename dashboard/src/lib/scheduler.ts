@@ -20,6 +20,9 @@ export async function tick(): Promise<{ docs: number; emails: number }> {
 		.set({ status: "failed", publishError: "dispatch stalled — requeued as failed, retry from the editor" })
 		.where(and(eq(docs.status, "publishing"), lte(docs.updatedAt, new Date(Date.now() - STALE_MS))));
 
+	// status guard MUST live in the outer WHERE, not just the id subquery: the
+	// subquery is hashed at plan start, so a concurrent claim re-checks only the
+	// outer quals (id unchanged → passes) and double-claims the same row.
 	const due = db
 		.select({ id: docs.id })
 		.from(docs)
@@ -29,7 +32,7 @@ export async function tick(): Promise<{ docs: number; emails: number }> {
 	const claimed = await db
 		.update(docs)
 		.set({ status: "publishing", publishError: null })
-		.where(inArray(docs.id, due))
+		.where(and(inArray(docs.id, due), eq(docs.status, "scheduled")))
 		.returning();
 
 	for (const doc of claimed) {
@@ -53,6 +56,8 @@ export async function tick(): Promise<{ docs: number; emails: number }> {
 		.set({ status: "failed", error: "scheduled send stalled — draft kept, hit Send to retry" })
 		.where(and(eq(emailOutbox.status, "sending"), lte(emailOutbox.updatedAt, new Date(Date.now() - STALE_MS))));
 
+	// same outer-WHERE status guard as the docs claim above (IN-subquery is
+	// hashed at plan start; without the outer guard two ticks double-claim)
 	const dueDrafts = db
 		.select({ id: emailOutbox.id })
 		.from(emailOutbox)
@@ -61,7 +66,7 @@ export async function tick(): Promise<{ docs: number; emails: number }> {
 	const claimedDrafts = await db
 		.update(emailOutbox)
 		.set({ status: "sending" })
-		.where(inArray(emailOutbox.id, dueDrafts))
+		.where(and(inArray(emailOutbox.id, dueDrafts), eq(emailOutbox.status, "draft")))
 		.returning({ id: emailOutbox.id, toEmail: emailOutbox.toEmail, subject: emailOutbox.subject });
 
 	for (const d of claimedDrafts) {
