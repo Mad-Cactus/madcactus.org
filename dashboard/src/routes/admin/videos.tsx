@@ -4,6 +4,7 @@ import { For, Show, Suspense, createSignal } from "solid-js";
 import Layout from "~/components/Layout";
 import { getUserQuery } from "~/lib/queries";
 import { getOutreachQuery, setOutreachVideoAction } from "~/lib/admin-queries";
+import { stageLabel } from "~/db/schema";
 import { videoSummary } from "~/lib/video-summary";
 
 export default function AdminVideos() {
@@ -71,7 +72,7 @@ export default function AdminVideos() {
 								<div class="board-card">
 									<div style={{ display: "flex", "align-items": "baseline", gap: "6px" }}>
 										<span style={{ "font-weight": "600", "font-size": "13px" }}>{p.company}</span>
-										<span class="badge" style={{ color: "var(--text-subtle)", "margin-left": "auto" }}>{p.stage}</span>
+										<span class="badge" style={{ color: "var(--text-subtle)", "margin-left": "auto" }}>{stageLabel(p.stage)}</span>
 									</div>
 									<Show when={p.videoDescription}>
 										<p class="muted" style={{ "font-size": "12px", margin: "4px 0" }}>{p.videoDescription}</p>
@@ -87,7 +88,10 @@ export default function AdminVideos() {
 										</button>{" "}
 										<a href={`/v/${p.id}?test=1`} target="_blank" rel="noreferrer">test ↗</a>
 									</div>
-									<Show when={videoSummary(p)}>
+									<Show
+										when={videoSummary(p)}
+										fallback={<div class="muted" style={{ "font-size": "12px" }}>not opened yet</div>}
+									>
 										<div style={{ color: "var(--orange)", "font-size": "12px" }}>{videoSummary(p)}</div>
 									</Show>
 								</div>
