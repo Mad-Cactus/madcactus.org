@@ -72,7 +72,7 @@ export default function DocList(props: {
 				>
 					<For each={docs()?.filter((d) => d.kind === props.kind)}>
 						{(d) => (
-							<A href={`/admin/${props.kind ?? "docs"}/${d.id}`} class="card" style={{ display: "block", padding: "16px 20px", "margin-bottom": "10px", "text-decoration": "none" }}>
+							<A href={`/admin/${props.kind ? `${props.kind}s` : "docs"}/${d.id}`} class="card" style={{ display: "block", padding: "16px 20px", "margin-bottom": "10px", "text-decoration": "none" }}>
 								<div style={{ "font-size": "15px", "font-weight": 500, color: "var(--text)" }}>{d.title}</div>
 								<div class="muted" style={{ "font-size": "13px", "margin-top": "4px" }}>
 									{new Date(d.updatedAt).toLocaleString()} · v{d.version}
