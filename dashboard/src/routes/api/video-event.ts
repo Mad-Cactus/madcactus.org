@@ -5,11 +5,13 @@ import { outreachProspects } from "~/db/schema";
 import { isBotUA } from "~/lib/bot-ua";
 
 // Beacon receiver for watch pages (/v/:id + public/v-watch.js).
-// open  → view count +1, first/last timestamps, proposed/sent → watching
+// open  → first/last timestamps, proposed/sent → watching. NOT counted as a
+//         view: headless scanners execute JS and fire open but never load the
+//         video (Flora Legal Group showed "viewed 1x" with zero watch data).
 // watch → real played seconds (native <video> events; client is untrusted)
-//         plus max position reached, duration, completion
-// Headless scanners execute JS and fire the open beacon — UA denylist
-// (same one /l/ uses) drops those; `viewed Nx` = humans only.
+//         plus max position reached, duration, completion.
+//         `viewed Nx` increments on the first beacon with actual playback —
+//         a click/scan that never plays shows "opened …" instead.
 export async function POST(event: APIEvent) {
 	if (isBotUA(event.request.headers.get("user-agent"))) return new Response(null, { status: 204 });
 	let body: { id?: string; type?: string; seconds?: number; position?: number; duration?: number; completed?: boolean };
@@ -22,12 +24,13 @@ export async function POST(event: APIEvent) {
 	const id = body.id ?? "";
 	const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 	if (!isUuid) return new Response("Bad id", { status: 400 });
+	// fly logs: identify scanners firing beacons with UAs that dodge the denylist
+	console.log(`[video-event] ${body.type} id=${id} ua=${event.request.headers.get("user-agent") ?? "(none)"}`);
 
 	if (body.type === "open") {
 		await db
 			.update(outreachProspects)
 			.set({
-				videoViewCount: sql`${outreachProspects.videoViewCount} + 1`,
 				videoFirstViewedAt: sql`coalesce(${outreachProspects.videoFirstViewedAt}, now())`,
 				videoLastViewedAt: sql`now()`,
 				// stage literals from OUTREACH_STAGES — static, safe to inline
@@ -49,6 +52,10 @@ export async function POST(event: APIEvent) {
 		await db
 			.update(outreachProspects)
 			.set({
+				// count the view once, on the first beacon with real playback
+				// (SET reads old row values, so watchSeconds=0 here means "first")
+				videoViewCount: sql`case when (${seconds} > 0 or ${completed}) and ${outreachProspects.videoWatchSeconds} = 0
+					then ${outreachProspects.videoViewCount} + 1 else ${outreachProspects.videoViewCount} end`,
 				videoWatchSeconds: sql`least(${outreachProspects.videoWatchSeconds} + ${seconds}, 86400)`,
 				videoMaxPosition: sql`greatest(${outreachProspects.videoMaxPosition}, ${position})`,
 				videoDurationSeconds: sql`coalesce(${outreachProspects.videoDurationSeconds}, nullif(${duration}, 0))`,
