@@ -19,14 +19,22 @@ export function fmtDur(secs: number | null): string {
 	return m ? `${m}m ${s}s` : `${s}s`;
 }
 
-/** "viewed 2x · 78% · 3m 41s played · last …" — null while unopened. */
+/** "viewed 2x · 78% · 3m 41s played · last …" — null while untouched,
+ *  "opened …" while a link was opened but the video never played. */
 export function videoSummary(
 	p: Pick<
 		OutreachProspect,
-		"videoViewCount" | "videoCompleted" | "videoDurationSeconds" | "videoMaxPosition" | "videoWatchSeconds" | "videoLastViewedAt"
+		"videoViewCount" | "videoFirstViewedAt" | "videoCompleted" | "videoDurationSeconds" | "videoMaxPosition" | "videoWatchSeconds" | "videoLastViewedAt"
 	>,
 ): string | null {
-	if (p.videoViewCount === 0) return null;
+	// playback evidence, not the open count, decides "viewed" — legacy rows
+	// (and scanners) can hold count > 0 with zero real playback
+	const played = p.videoWatchSeconds > 0 || p.videoCompleted || p.videoMaxPosition > 0;
+	if (!played) {
+		if (!p.videoFirstViewedAt) return null;
+		// open beacon fired but no playback: scanner / click-away / video never loaded
+		return `opened ${fmtDate(p.videoFirstViewedAt)} · not played`;
+	}
 	const parts = [`viewed ${p.videoViewCount}x`];
 	if (p.videoCompleted) parts.push("finished");
 	else if (p.videoDurationSeconds) {
