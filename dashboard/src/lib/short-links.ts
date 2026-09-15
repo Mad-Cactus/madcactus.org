@@ -3,7 +3,9 @@
 
 // slug doubles as a URL path segment — keep it boring. target is admin input
 // but still must be an http(s) URL (no javascript: etc. via redirect).
-export const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,48}$/;
+// uppercase allowed — randomKey() emits mixed-case keys (nPtcqaU), and a
+// lowercase-only regex rejected every generated link on delete/edit.
+export const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,48}$/i;
 export const TARGET_RE = /^https?:\/\//i;
 
 // Dub-style opaque keys: 7 chars, nanoid custom-alphabet style, lookalikes

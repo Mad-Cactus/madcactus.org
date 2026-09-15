@@ -6,6 +6,7 @@ describe("short-link primitives", () => {
 	test("slug rules: lowercase alnum/dash, starts alnum, max 49", () => {
 		expect(SLUG_RE.test("launch-2026")).toBe(true);
 		expect(SLUG_RE.test("a")).toBe(true);
+		expect(SLUG_RE.test("nPtcqaU")).toBe(true); // real randomKey output — mixed case
 		expect(SLUG_RE.test("-lead")).toBe(false);
 		expect(SLUG_RE.test("Has Spaces")).toBe(false);
 		expect(SLUG_RE.test("a".repeat(50))).toBe(false);
