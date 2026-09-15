@@ -5,19 +5,28 @@ import ConfirmButton from "~/components/ConfirmButton";
 import Layout from "~/components/Layout";
 import { getUserQuery } from "~/lib/queries";
 
-type Link = { slug: string; target: string; clicks: number; createdAt: string };
+type Link = { slug: string; target: string; clicks: number; docId: string | null; docTitle: string | null; docKind: string | null; createdAt: string };
+type Doc = { id: string; title: string; kind: string; publishedAt: string | null };
+
+const docHref = (id: string, kind: string | null) =>
+	kind === "newsletter" ? `/admin/newsletters/${id}` : `/admin/posts/${id}`;
 
 // Short links — clean /l/<slug> URLs for LinkedIn first comments etc.; the
 // UTMs (and click counts) live behind the redirect, not in the visible link.
 export default function AdminLinks() {
 	const user = createAsync(() => getUserQuery(), { deferStream: true });
 	const [links, setLinks] = createSignal<Link[]>([]);
+	const [docOptions, setDocOptions] = createSignal<Doc[]>([]);
 	const [error, setError] = createSignal("");
 	const [msg, setMsg] = createSignal("");
 
 	async function refresh() {
 		const r = await fetch("/api/links");
-		if (r.ok) setLinks((await r.json()) as Link[]);
+		if (r.ok) {
+			const body = (await r.json()) as { links: Link[]; docs: Doc[] };
+			setLinks(body.links);
+			setDocOptions(body.docs);
+		}
 	}
 	onMount(() => {
 		void refresh();
@@ -61,7 +70,7 @@ export default function AdminLinks() {
 		const r = await fetch("/api/links", {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ target }),
+			body: JSON.stringify({ target, docId: str("docId") || null }),
 		});
 		const body = (await r.json()) as { error?: string; slug?: string };
 		if (!r.ok) return setError(body.error ?? "Save failed");
@@ -84,12 +93,12 @@ export default function AdminLinks() {
 	}
 
 	// edit dialog — native <dialog>, no modal lib
-	const [editing, setEditing] = createSignal<{ slug: string; target: string } | null>(null);
+	const [editing, setEditing] = createSignal<{ slug: string; target: string; docId: string } | null>(null);
 	const [editError, setEditError] = createSignal("");
 	let dialogRef: HTMLDialogElement | undefined;
 
 	function openEdit(l: Link) {
-		setEditing({ slug: l.slug, target: l.target });
+		setEditing({ slug: l.slug, target: l.target, docId: l.docId ?? "" });
 		setEditError("");
 		dialogRef?.showModal();
 	}
@@ -99,12 +108,14 @@ export default function AdminLinks() {
 		const cur = editing();
 		if (!cur) return;
 		const fd = new FormData(e.target as HTMLFormElement);
+		const docId = String(fd.get("docId") ?? "").trim();
 		const r = await fetch("/api/links", {
 			method: "PATCH",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({
 				slug: cur.slug,
 				target: String(fd.get("target") ?? "").trim(),
+				docId: docId || null,
 			}),
 		});
 		const body = (await r.json()) as { error?: string };
@@ -147,6 +158,19 @@ export default function AdminLinks() {
 						<summary style={{ cursor: "pointer", "font-size": "13px" }}>Or paste a full target URL (UTMs included) instead</summary>
 						<input name="target" placeholder="https://…?utm_source=…" style={{ padding: "8px", width: "100%", "margin-top": "8px" }} />
 					</details>
+					<label style={{ display: "grid", gap: "4px" }}>
+						Attached post / newsletter
+						<select name="docId" style={{ padding: "8px" }}>
+							<option value="">— none (standalone link) —</option>
+							<For each={docOptions()}>
+								{(d) => (
+									<option value={d.id}>
+										{d.kind}: {d.title}
+									</option>
+								)}
+							</For>
+						</select>
+					</label>
 					<Show when={error()}>
 						<p style={{ color: "#b91c1c" }}>{error()}</p>
 					</Show>
@@ -163,6 +187,7 @@ export default function AdminLinks() {
 					<tr style={{ "text-align": "left", "border-bottom": "1px solid #ddd" }}>
 						<th style={{ padding: "8px" }}>Link</th>
 						<th style={{ padding: "8px" }}>Target</th>
+						<th style={{ padding: "8px" }}>Attached to</th>
 						<th style={{ padding: "8px" }}>Clicks</th>
 						<th style={{ padding: "8px" }} />
 					</tr>
@@ -175,6 +200,14 @@ export default function AdminLinks() {
 									<code>{l.slug}</code>
 								</td>
 								<td style={{ padding: "8px", "max-width": "420px", overflow: "hidden", "text-overflow": "ellipsis", "white-space": "nowrap" }}>{l.target}</td>
+								<td style={{ padding: "8px" }}>
+									<Show
+										when={l.docId && l.docTitle}
+										fallback={<span class="muted" style={{ "font-size": "13px" }}>—</span>}
+									>
+										<a href={docHref(l.docId!, l.docKind)}>{l.docTitle}</a>
+									</Show>
+								</td>
 								<td style={{ padding: "8px", "font-variant-numeric": "tabular-nums" }}>{l.clicks}</td>
 								<td style={{ padding: "8px" }}>
 									<span style={{ display: "inline-flex", gap: "6px", "align-items": "center" }}>
@@ -202,6 +235,19 @@ export default function AdminLinks() {
 						<label style={{ display: "grid", gap: "4px" }}>
 							Target URL
 							<input name="target" value={editing()!.target} required style={{ padding: "8px" }} />
+						</label>
+						<label style={{ display: "grid", gap: "4px" }}>
+							Attached post / newsletter
+							<select name="docId" style={{ padding: "8px" }}>
+								<option value="">— none (standalone link) —</option>
+								<For each={docOptions()}>
+									{(d) => (
+										<option value={d.id} selected={d.id === editing()!.docId}>
+											{d.kind}: {d.title}
+										</option>
+									)}
+								</For>
+							</select>
 						</label>
 						<Show when={editError()}>
 							<p style={{ color: "#b91c1c" }}>{editError()}</p>
