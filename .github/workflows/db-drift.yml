@@ -71,16 +71,20 @@ jobs:
 
       - name: No unversioned schema on prod
         run: |
-          # db diff prints its JSON to stdout. The old version used -f /tmp/drift.sql,
-          # but -f takes a migration NAME and writes into supabase/migrations/, so
-          # /tmp/drift.sql never existed and this check passed unconditionally.
+          # Structural drift only, measured against MAIN's migrations: a PR's
+          # own not-yet-applied migration is expected pre-merge, and platform
+          # churn (default privileges, grants, comments) is noise, not drift.
+          git fetch --quiet --depth=1 origin main
+          rm -rf supabase/migrations
+          git checkout origin/main -- supabase/migrations
           out=$(supabase db diff --linked --output-format json </dev/null)
-          diff_sql=$(echo "$out" | jq -r '.diff // ""')
-          if [ -n "$diff_sql" ]; then
-            echo "::error::Prod schema differs from what migrations produce — someone changed the DB outside migrations."
+          diff_sql=$(echo "$out" | jq -r '.diff // ""' \
+            | grep -vE '^(ALTER DEFAULT PRIVILEGES|GRANT|REVOKE|COMMENT ON|--|$)' || true)
+          if [ -n "$(echo "$diff_sql" | tr -d '[:space:]')" ]; then
+            echo "::error::Prod schema differs from what main's migrations produce — someone changed the DB outside migrations."
             echo "$diff_sql"
             exit 1
           fi
-          echo "No drift: prod matches migrations."
+          echo "No drift: prod matches main's migrations."
         env:
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
