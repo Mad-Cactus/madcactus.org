@@ -34,7 +34,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          # Pin: CLI output formats churn between minors (migration list flipped
+          # JSON→text table and broke the jq below). Re-pin deliberately after
+          # verifying output shapes against the new version.
+          version: 2.117.0
       - name: Link project
         run: supabase link --project-ref uzhjhzmgycjmvhkbelgx
         env:
@@ -45,7 +48,7 @@ jobs:
           # Failure = red: an unverifiable check must not pass. The old version
           # swallowed connection errors and grepped raw JSON, so a dead check
           # reported "Prod is up to date" while a migration sat unapplied.
-          out=$(supabase migration list </dev/null)
+          out=$(supabase migration list --output-format json </dev/null)
           pending=$(echo "$out" | jq '[.migrations[] | select(.local != "" and .remote == "")]')
           if [ "$pending" != "[]" ]; then
             echo "::error::Migrations on main not applied to prod (auto-apply broken?):"
@@ -61,7 +64,7 @@ jobs:
           # db diff prints its JSON to stdout. The old version used -f /tmp/drift.sql,
           # but -f takes a migration NAME and writes into supabase/migrations/, so
           # /tmp/drift.sql never existed and this check passed unconditionally.
-          out=$(supabase db diff --linked </dev/null)
+          out=$(supabase db diff --linked --output-format json </dev/null)
           diff_sql=$(echo "$out" | jq -r '.diff // ""')
           if [ -n "$diff_sql" ]; then
             echo "::error::Prod schema differs from what migrations produce — someone changed the DB outside migrations."
