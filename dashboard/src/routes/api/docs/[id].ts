@@ -11,6 +11,7 @@ import {
 	setDocKind,
 	setDocGenre,
 	scheduleDoc,
+	setDocFirstComment,
 	unscheduleDoc,
 	deleteDoc,
 	listDocVersions,
@@ -92,6 +93,10 @@ export const POST = async (event: APIEvent) => {
 			if (Number.isNaN(when.getTime())) return json({ error: "Invalid scheduledFor — use an ISO datetime" }, 400);
 			await scheduleDoc(event.params.id, when, body.firstComment);
 			return json({ ok: true, status: "scheduled", scheduledFor: when.toISOString() });
+		}
+		if (body.op === "set-first-comment") {
+			await setDocFirstComment(event.params.id, body.firstComment);
+			return json({ ok: true });
 		}
 		if (body.op === "unschedule") {
 			await unscheduleDoc(event.params.id);

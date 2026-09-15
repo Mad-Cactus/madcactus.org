@@ -131,6 +131,10 @@ export async function scheduleDoc(id: string, when: Date, firstComment?: string 
 		.where(eq(docs.id, id));
 }
 
+export async function setDocFirstComment(id: string, firstComment?: string | null) {
+	await db.update(docs).set({ firstComment: firstComment?.trim() || null }).where(eq(docs.id, id));
+}
+
 export async function unscheduleDoc(id: string) {
 	await db.update(docs).set({ status: "final", scheduledFor: null }).where(eq(docs.id, id));
 }
