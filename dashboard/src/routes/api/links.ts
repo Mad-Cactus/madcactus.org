@@ -41,7 +41,8 @@ export const POST = async (event: APIEvent) => {
 export const PATCH = async (event: APIEvent) => {
 	if ((await getAuthedClient()) === null) return json({ error: "Unauthorized" }, 401);
 	const body = (await event.request.json().catch(() => ({}))) as { slug?: string; target?: string };
-	const slug = (body.slug ?? "").trim().toLowerCase();
+	// no toLowerCase() — slugs are mixed-case opaque keys; lowercasing breaks the where-match
+	const slug = (body.slug ?? "").trim();
 	const target = (body.target ?? "").trim();
 	if (!SLUG_RE.test(slug)) return json({ error: "Missing or invalid slug" }, 400);
 	if (!TARGET_RE.test(target)) return json({ error: "Target must be an http(s) URL" }, 400);
