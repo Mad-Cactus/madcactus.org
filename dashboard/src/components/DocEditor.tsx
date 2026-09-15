@@ -51,6 +51,14 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 	const [liConnected, setLiConnected] = createSignal<boolean | null>(null);
 	const [preview, setPreview] = createSignal<PreviewMode | null>(null);
 	let saveTimer: ReturnType<typeof setTimeout> | undefined;
+	let fcTimer: ReturnType<typeof setTimeout> | undefined;
+	// first comment autosaves like markdown — Schedule persists it too, but a
+	// typed comment must survive navigating away without scheduling
+	const saveFirstComment = (fc: string) => {
+		setFirstComment(fc);
+		clearTimeout(fcTimer);
+		fcTimer = setTimeout(() => void post(props.id, { op: "set-first-comment", firstComment: fc }), 1200);
+	};
 
 	// ── pagination: title + editor blocks measured into letter pages ──
 	let pagerEl: HTMLDivElement | undefined;
@@ -450,7 +458,7 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 						class="doc-sched-input"
 						placeholder="Posted right after publish (optional)"
 						value={firstComment()}
-						onChange={(e) => setFirstComment(e.currentTarget.value)}
+						onChange={(e) => saveFirstComment(e.currentTarget.value)}
 					/>
 				</div>
 			</Show>
