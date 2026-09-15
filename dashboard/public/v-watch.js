@@ -18,9 +18,16 @@
 	var lastTime = null; // anchor for timeupdate deltas
 	var maxPosition = 0;
 	var duration = 0;
+	var sentDuration = false; // metadata-only beacon fires once
 
 	video.addEventListener("loadedmetadata", function () {
 		duration = Math.round(video.duration || 0);
+		// duration without play: the videos tab can then show 0% (opened, never
+		// played) instead of a bare "viewed 1x"
+		if (!sentDuration && duration > 0) {
+			sentDuration = true;
+			post({ id: id, type: "watch", seconds: 0, position: 0, duration: duration, completed: false });
+		}
 	});
 
 	video.addEventListener("seeking", function () {

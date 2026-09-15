@@ -1,10 +1,10 @@
 import type { APIEvent } from "@solidjs/start/server";
-import { eq, and, desc, sql, ilike } from "drizzle-orm";
+import { eq, and, desc, inArray, sql, ilike } from "drizzle-orm";
 import { hashKey } from "~/lib/crypto";
 import { db } from "~/db";
 import { apiKeys, companies, outreachProspects, OUTREACH_STAGES } from "~/db/schema";
 import { brainQuery, entityFacts } from "~/lib/brain/search";
-import { brainJobs, shortLinks } from "~/db/schema";
+import { brainJobs, docs, shortLinks } from "~/db/schema";
 import { agentWrite, createDoc, getDoc, getDocVersionDiff, listDocVersions, listDocs } from "~/lib/docs";
 import { getVoiceLessons, hasRecentLessonReview, lintGateError, lintVoiceText, listKnownGenres, recordLessonReview } from "~/lib/voice-lint-db";
 import type { VoiceScope } from "~/lib/voice-lint";
@@ -357,11 +357,12 @@ const TOOLS = [
 	{
 		name: "create_short_link",
 		description:
-			"Create a tracked short link /l/<slug> that 302s to target and counts every click — click-through tracking for social posts, lead magnets, etc. Put UTM params in target; the shared link stays clean. The slug is a generated unguessable key (never chosen) — call list_short_links first to see existing links, or to report CTR per link/post. Returns the ready-to-share url.",
+			"Create a tracked short link /l/<slug> that 302s to target and counts every human click (bots/prefetchers are filtered) — click-through tracking for social posts, lead magnets, etc. Put UTM params in target; the shared link stays clean. The slug is a generated unguessable key (never chosen) — call list_short_links first to see existing links, or to report CTR per link/post. Pass doc_id when the link ships inside a specific post/newsletter — that ties clicks to the doc for conversion attribution. Returns the ready-to-share url.",
 		inputSchema: {
 			type: "object",
 			properties: {
 				target: { type: "string", description: "Destination URL, must start with http(s):// — UTM params go here" },
+				doc_id: { type: "string", description: "Optional: docs.id of the post/newsletter this link ships in — attaches the link for per-doc click attribution" },
 			},
 			required: ["target"],
 		},
@@ -369,7 +370,7 @@ const TOOLS = [
 	{
 		name: "list_short_links",
 		description:
-			"All short links with click counts, most-clicked first. Read before create_short_link to check for an existing slug, or to report CTR per link/post.",
+			"All short links with click counts (human clicks only) and the attached post/newsletter when set, most-clicked first. Read before create_short_link to check for an existing slug, or to report CTR per link/post.",
 		inputSchema: { type: "object", properties: {} },
 	},
 	// ── Email ──
@@ -743,12 +744,31 @@ export async function POST(event: APIEvent) {
 							result = { error: "target must be an http(s) URL" };
 							break;
 						}
+						// optional attach: must be an existing post/newsletter doc
+						const docIdRaw = String(toolArgs.doc_id ?? "").trim();
+						let docId: string | null = null;
+						if (docIdRaw) {
+							if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(docIdRaw)) {
+								result = { error: "doc_id must be a docs.id uuid — get one from list_docs" };
+								break;
+							}
+							const [doc] = await db
+								.select({ id: docs.id })
+								.from(docs)
+								.where(and(eq(docs.id, docIdRaw), inArray(docs.kind, ["post", "newsletter"])))
+								.limit(1);
+							if (!doc) {
+								result = { error: "doc_id must be an existing post or newsletter (plain docs can't be attached)" };
+								break;
+							}
+							docId = doc.id;
+						}
 						// slug is always a generated opaque key — retried on the astronomically rare PK collision
 						for (let attempt = 0; attempt < 3; attempt++) {
 							const slug = randomKey();
 							try {
-								await db.insert(shortLinks).values({ slug, target });
-								result = { slug, url: `${shortLinkBase()}/l/${slug}`, target, created: true };
+								await db.insert(shortLinks).values({ slug, target, docId });
+								result = { slug, url: `${shortLinkBase()}/l/${slug}`, target, doc_id: docId, created: true };
 								break;
 							} catch (e) {
 								if (!(e instanceof Error) || !e.message.includes("duplicate key")) throw e;
@@ -758,7 +778,19 @@ export async function POST(event: APIEvent) {
 						break;
 					}
 					case "list_short_links":
-						result = await db.select().from(shortLinks).orderBy(desc(shortLinks.clicks), desc(shortLinks.createdAt));
+						result = await db
+							.select({
+								slug: shortLinks.slug,
+								target: shortLinks.target,
+								clicks: shortLinks.clicks,
+								doc_id: shortLinks.docId,
+								doc_title: docs.title,
+								doc_kind: docs.kind,
+								created_at: shortLinks.createdAt,
+							})
+							.from(shortLinks)
+							.leftJoin(docs, eq(shortLinks.docId, docs.id))
+							.orderBy(desc(shortLinks.clicks), desc(shortLinks.createdAt));
 						break;
 					default:
 						return rpcError(id, -32601, `Unknown tool: ${toolName}`);

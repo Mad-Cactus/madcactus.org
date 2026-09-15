@@ -421,10 +421,14 @@ export const docs = pgTable(
 
 // Short links: /l/<slug> 302s to target and counts the click. UTMs live in
 // target so the link shared on LinkedIn stays clean; clicks = per-post reach.
+// doc_id ties a link to the post/newsletter it shipped in — conversion
+// attribution per doc. Nullable: many links are standalone (GitHub etc.).
 export const shortLinks = pgTable("short_links", {
 	slug: text("slug").primaryKey(),
 	target: text("target").notNull(),
+	// bot/prefetcher hits are never counted, so `clicks` = human clicks only
 	clicks: integer("clicks").notNull().default(0),
+	docId: uuid("doc_id").references(() => docs.id, { onDelete: "set null" }),
 	createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

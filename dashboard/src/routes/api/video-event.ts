@@ -2,12 +2,16 @@ import type { APIEvent } from "@solidjs/start/server";
 import { eq, sql } from "drizzle-orm";
 import { db } from "~/db";
 import { outreachProspects } from "~/db/schema";
+import { isBotUA } from "~/lib/bot-ua";
 
 // Beacon receiver for watch pages (/v/:id + public/v-watch.js).
 // open  → view count +1, first/last timestamps, proposed/sent → watching
 // watch → real played seconds (native <video> events; client is untrusted)
 //         plus max position reached, duration, completion
+// Headless scanners execute JS and fire the open beacon — UA denylist
+// (same one /l/ uses) drops those; `viewed Nx` = humans only.
 export async function POST(event: APIEvent) {
+	if (isBotUA(event.request.headers.get("user-agent"))) return new Response(null, { status: 204 });
 	let body: { id?: string; type?: string; seconds?: number; position?: number; duration?: number; completed?: boolean };
 	try {
 		body = await event.request.json();
@@ -39,7 +43,9 @@ export async function POST(event: APIEvent) {
 		const position = Math.max(0, Math.min(Math.round(Number(body.position) || 0), 86400));
 		const duration = Math.max(0, Math.min(Math.round(Number(body.duration) || 0), 86400));
 		const completed = body.completed === true;
-		if (seconds === 0 && position === 0 && !completed) return new Response(null, { status: 204 });
+		// duration-only beacons pass (loadedmetadata fires before any playback —
+		// gives the videos tab a denominator for the 0% case)
+		if (seconds === 0 && position === 0 && !completed && duration === 0) return new Response(null, { status: 204 });
 		await db
 			.update(outreachProspects)
 			.set({

@@ -1,0 +1,2 @@
+ALTER TABLE "short_links" ADD COLUMN "doc_id" uuid;--> statement-breakpoint
+ALTER TABLE "short_links" ADD CONSTRAINT "short_links_doc_id_docs_id_fk" FOREIGN KEY ("doc_id") REFERENCES "public"."docs"("id") ON DELETE set null ON UPDATE no action;

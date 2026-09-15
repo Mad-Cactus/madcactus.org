@@ -30,8 +30,9 @@ export function videoSummary(
 	const parts = [`viewed ${p.videoViewCount}x`];
 	if (p.videoCompleted) parts.push("finished");
 	else if (p.videoDurationSeconds) {
+		// 0% is shown on purpose: opened, never played — an honest signal, not a bug
 		const pct = Math.min(100, Math.round((p.videoMaxPosition / p.videoDurationSeconds) * 100));
-		if (pct > 0) parts.push(`${pct}%`);
+		parts.push(`${pct}%`);
 	}
 	if (p.videoWatchSeconds > 0) parts.push(`${fmtDur(p.videoWatchSeconds)} played`);
 	parts.push(`last ${fmtDate(p.videoLastViewedAt)}`);
