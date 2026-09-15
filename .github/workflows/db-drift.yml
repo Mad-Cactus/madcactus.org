@@ -49,10 +49,20 @@ jobs:
           # swallowed connection errors and grepped raw JSON, so a dead check
           # reported "Prod is up to date" while a migration sat unapplied.
           out=$(supabase migration list --output-format json </dev/null)
-          pending=$(echo "$out" | jq '[.migrations[] | select(.local != "" and .remote == "")]')
-          if [ "$pending" != "[]" ]; then
-            echo "::error::Migrations on main not applied to prod (auto-apply broken?):"
-            echo "$pending"
+          # Only migrations already on main count: a PR's own new migration is
+          # EXPECTED to be pending (auto-apply runs after merge). main-ahead-of-
+          # prod = auto-apply broken = red.
+          git fetch --quiet --depth=1 origin main
+          main_tree=$(git ls-tree -r --name-only origin/main -- supabase/migrations/ | grep '\.sql$')
+          pending_versions=$(echo "$out" | jq -r '.migrations[] | select(.local != "" and .remote == "") | .local')
+          pending=""
+          for v in $pending_versions; do
+            if echo "$main_tree" | grep -q "/${v}_"; then
+              pending="$pending $v"
+            fi
+          done
+          if [ -n "$pending" ]; then
+            echo "::error::Migrations on main not applied to prod (auto-apply broken?):$pending"
             exit 1
           fi
           echo "Prod is up to date with main."
