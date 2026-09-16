@@ -14,9 +14,13 @@ import "~/styles/marketing-issue.css";
 export default function DispatchIssuePage() {
 	const params = useParams();
 	const [issue] = createResource(() =>
-		getDispatchIssueQuery(params.id ?? "").then((i) =>
-			i ? { ...i, subject: newsletterSubject({ markdown: i.markdown, title: i.title }), html: markdownToHtml(i.markdown) } : null,
-		),
+		getDispatchIssueQuery(params.id ?? "").then((i) => {
+			if (!i) return null;
+			// the snapshot published/republished to the web — edits after publish
+			// keep rendering the old version here until republished
+			const md = i.webMarkdown ?? i.markdown;
+			return { ...i, subject: newsletterSubject({ markdown: md, title: i.title }), html: markdownToHtml(md) };
+		}),
 	);
 	return (
 		<Suspense fallback={<div style={{ "min-height": "60vh", display: "grid", "place-items": "center" }}>Loading…</div>}>

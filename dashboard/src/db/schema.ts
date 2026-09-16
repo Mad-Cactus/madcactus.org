@@ -381,6 +381,8 @@ export const monthlyHoursByProject = pgView("monthly_hours_by_project").as(
 // publishing = scheduler claimed it and is dispatching; failed = dispatch
 // errored (publish_error holds why) and stays visible for retry
 export const docStatus = pgEnum("doc_status", ["draft", "final", "scheduled", "publishing", "published", "failed"]);
+// where a newsletter goes: both channels (default) or web archive only
+export const publishChannel = pgEnum("publish_channel", ["email+web", "web"]);
 // null kind = plain doc; "post" = LinkedIn post, "newsletter" = Cactus Dispatch issue
 export const docKind = pgEnum("doc_kind", ["post", "newsletter"]);
 
@@ -405,6 +407,11 @@ export const docs = pgTable(
 		// post → optional first comment published by the author right after the
 		// post goes live (the “comment below” growth move),
 		firstComment: text("first_comment"),
+		// newsletter → "web" skips the Resend broadcast; the site page still goes live
+		publishChannel: publishChannel("publish_channel").notNull().default("email+web"),
+		// snapshot of the live web version at publish/republish time — later edits
+		// change `markdown` but keep rendering the old version until republished
+		webMarkdown: text("web_markdown"),
 		scheduledFor: timestamp("scheduled_for", { withTimezone: true }),
 		publishedAt: timestamp("published_at", { withTimezone: true }),
 		publishError: text("publish_error"),

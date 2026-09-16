@@ -38,7 +38,16 @@ export async function tick(): Promise<{ docs: number; emails: number }> {
 	for (const doc of claimed) {
 		try {
 			await publishDoc(doc);
-			await db.update(docs).set({ status: "published", publishedAt: new Date() }).where(eq(docs.id, doc.id));
+			// snapshot the live web version for newsletters — later edits change
+			// `markdown` only; the page updates when it's republished
+			await db
+				.update(docs)
+				.set({
+					status: "published",
+					publishedAt: new Date(),
+					...(doc.kind === "newsletter" ? { webMarkdown: doc.markdown } : {}),
+				})
+				.where(eq(docs.id, doc.id));
 			docsPublished++;
 		} catch (err) {
 			await db

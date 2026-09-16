@@ -22,10 +22,10 @@ export async function listPublishedDispatch(): Promise<DispatchIssue[]> {
 	return rows.map((r, i) => ({ ...r, issueNumber: rows.length - i }));
 }
 
-export async function getPublishedDispatch(id: string): Promise<(DispatchIssue & { markdown: string }) | null> {
+export async function getPublishedDispatch(id: string): Promise<(DispatchIssue & { markdown: string; webMarkdown: string | null }) | null> {
 	if (!UUID_RE.test(id)) return null;
 	const [row] = await db
-		.select({ id: docs.id, title: docs.title, publishedAt: docs.publishedAt, markdown: docs.markdown })
+		.select({ id: docs.id, title: docs.title, publishedAt: docs.publishedAt, markdown: docs.markdown, webMarkdown: docs.webMarkdown })
 		.from(docs)
 		.where(and(eq(docs.id, id), eq(docs.kind, "newsletter"), eq(docs.status, "published")));
 	if (!row) return null;

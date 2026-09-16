@@ -239,6 +239,20 @@
       "when": 1789485047067,
       "tag": "20260915151047_abandoned_deathstrike",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1789524541896,
+      "tag": "20260916020901_large_spot",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1789554525844,
+      "tag": "20260916102845_majestic_blue_marvel",
+      "breakpoints": true
     }
   ]
 }

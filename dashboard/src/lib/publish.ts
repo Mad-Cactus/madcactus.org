@@ -33,6 +33,13 @@ export async function publishDoc(doc: Doc): Promise<string> {
 }
 
 async function sendNewsletter(doc: Doc): Promise<string> {
+	// web-only issue: no broadcast — marking it published puts the page on the
+	// site (dispatch pages SSR from status=published)
+	if (doc.publishChannel === "web") return "web";
+	// email goes out exactly once per doc — rescheduling an already-published
+	// newsletter republishes the web page only (a failed send has publishedAt
+	// null, so its retry still emails)
+	if (doc.publishedAt) return "sent";
 	const key = process.env.RESEND_API_KEY;
 	const segmentId = process.env.RESEND_SEGMENT_ID;
 	if (!key) throw new Error("RESEND_API_KEY not configured");

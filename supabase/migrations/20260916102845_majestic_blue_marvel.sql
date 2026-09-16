@@ -1,0 +1,1 @@
+ALTER TABLE "docs" ADD COLUMN "web_markdown" text;
