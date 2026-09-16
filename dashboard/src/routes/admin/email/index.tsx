@@ -56,12 +56,14 @@ export default function AdminEmail() {
 	};
 	// draftId tracks the outbox row created by a Send click, so a lint-blocked
 	// retry (or Send anyway) updates that same draft instead of duplicating one
-	const [compose, setCompose] = createSignal<{ to: string; subject: string; body: string; threadId?: string; draftId?: string } | null>(null);
+	const [compose, setCompose] = createSignal<{ to: string; cc?: string; bcc?: string; subject: string; body: string; threadId?: string; draftId?: string } | null>(null);
+	// Cc/Bcc inputs stay hidden until toggled (or already filled) — Gmail pattern
+	const [showCcBcc, setShowCcBcc] = createSignal(false);
 	// client-side windowing over the full local corpus — no server pagination
 	const [visibleCount, setVisibleCount] = createSignal(50);
 	const [editBody, setEditBody] = createSignal<Record<string, string>>({});
 	// locally edited to/subject — shown until the next list revalidate
-	const [editMeta, setEditMeta] = createSignal<Record<string, { to?: string; subject?: string }>>({});
+	const [editMeta, setEditMeta] = createSignal<Record<string, { to?: string; subject?: string; cc?: string; bcc?: string }>>({});
 	const [sendStatus, setSendStatus] = createSignal("");
 	const [connecting, setConnecting] = createSignal(false);
 	// per-draft CRDT history (Drafts tab); clicking a draft row opens the
@@ -296,9 +298,9 @@ export default function AdminEmail() {
 
 	// draft autosave — debounced PUT for body/to/subject; body is CRDT-tracked
 	// server-side (hunks into the Loro snapshot, coalesced version rows)
-	const editDraft = (outboxId: string, patch: { body?: string; to?: string; subject?: string }) => {
+	const editDraft = (outboxId: string, patch: { body?: string; to?: string; subject?: string; cc?: string; bcc?: string }) => {
 		if (patch.body !== undefined) setEditBody({ ...editBody(), [outboxId]: patch.body });
-		if (patch.to !== undefined || patch.subject !== undefined) {
+		if (patch.to !== undefined || patch.subject !== undefined || patch.cc !== undefined || patch.bcc !== undefined) {
 			setEditMeta({ ...editMeta(), [outboxId]: { ...editMeta()[outboxId], ...patch } });
 		}
 		clearTimeout(draftSaveTimers[outboxId]);
@@ -308,6 +310,8 @@ export default function AdminEmail() {
 			const m = editMeta()[outboxId];
 			if (m?.to !== undefined) payload.to = m.to;
 			if (m?.subject !== undefined) payload.subject = m.subject;
+			if (m?.cc !== undefined) payload.cc = m.cc;
+			if (m?.bcc !== undefined) payload.bcc = m.bcc;
 			const res = await fetch(`/api/email/drafts/${outboxId}`, {
 				method: "PUT",
 				headers: { "Content-Type": "application/json" },
@@ -992,12 +996,29 @@ export default function AdminEmail() {
 						style={{ position: "fixed", bottom: "24px", right: "24px", width: "560px", "max-width": "90vw", "max-height": "80vh", "overflow-y": "auto", "z-index": 50 }}
 					>
 						<div style={{ padding: "16px 20px" }}>
-							<input
-								placeholder="To"
-								value={editMeta()[d.id]?.to ?? d.toEmail}
-								onInput={(e) => editDraft(d.id, { to: e.currentTarget.value })}
-								style={{ width: "100%", "margin-bottom": "8px", padding: "8px", border: "1px solid rgba(0,0,0,0.12)" }}
-							/>
+							<div style={{ display: "flex", gap: "8px", "align-items": "center", "margin-bottom": "8px" }}>
+								<input
+									placeholder="To"
+									value={editMeta()[d.id]?.to ?? d.toEmail}
+									onInput={(e) => editDraft(d.id, { to: e.currentTarget.value })}
+									style={{ flex: 1, padding: "8px", border: "1px solid rgba(0,0,0,0.12)" }}
+								/>
+								<button type="button" class="btn btn-sm" classList={{ active: showCcBcc() }} onClick={() => setShowCcBcc(!showCcBcc())}>Cc Bcc</button>
+							</div>
+							<Show when={showCcBcc() || editMeta()[d.id]?.cc || editMeta()[d.id]?.bcc || d.ccEmail || d.bccEmail}>
+								<input
+									placeholder="Cc"
+									value={editMeta()[d.id]?.cc ?? d.ccEmail ?? ""}
+									onInput={(e) => editDraft(d.id, { cc: e.currentTarget.value })}
+									style={{ width: "100%", "margin-bottom": "8px", padding: "8px", border: "1px solid rgba(0,0,0,0.12)" }}
+								/>
+								<input
+									placeholder="Bcc"
+									value={editMeta()[d.id]?.bcc ?? d.bccEmail ?? ""}
+									onInput={(e) => editDraft(d.id, { bcc: e.currentTarget.value })}
+									style={{ width: "100%", "margin-bottom": "8px", padding: "8px", border: "1px solid rgba(0,0,0,0.12)" }}
+								/>
+							</Show>
 							<input
 								placeholder="Subject"
 								value={editMeta()[d.id]?.subject ?? d.subject}
@@ -1084,12 +1105,29 @@ export default function AdminEmail() {
 			<Show when={compose()}>
 				<div style={{ position: "fixed", bottom: "24px", right: "24px", width: "480px", "z-index": 50 }} class="card">
 					<div style={{ padding: "16px 20px" }}>
-						<input
-							placeholder="To"
-							value={compose()!.to}
-							onInput={(e) => setCompose({ ...compose()!, to: e.currentTarget.value })}
-							style={{ width: "100%", "margin-bottom": "8px", padding: "8px", border: "1px solid rgba(0,0,0,0.12)" }}
-						/>
+						<div style={{ display: "flex", gap: "8px", "align-items": "center", "margin-bottom": "8px" }}>
+							<input
+								placeholder="To"
+								value={compose()!.to}
+								onInput={(e) => setCompose({ ...compose()!, to: e.currentTarget.value })}
+								style={{ flex: 1, padding: "8px", border: "1px solid rgba(0,0,0,0.12)" }}
+							/>
+							<button type="button" class="btn btn-sm" classList={{ active: showCcBcc() }} onClick={() => setShowCcBcc(!showCcBcc())}>Cc Bcc</button>
+						</div>
+						<Show when={showCcBcc() || compose()!.cc || compose()!.bcc}>
+							<input
+								placeholder="Cc"
+								value={compose()!.cc ?? ""}
+								onInput={(e) => setCompose({ ...compose()!, cc: e.currentTarget.value })}
+								style={{ width: "100%", "margin-bottom": "8px", padding: "8px", border: "1px solid rgba(0,0,0,0.12)" }}
+							/>
+							<input
+								placeholder="Bcc"
+								value={compose()!.bcc ?? ""}
+								onInput={(e) => setCompose({ ...compose()!, bcc: e.currentTarget.value })}
+								style={{ width: "100%", "margin-bottom": "8px", padding: "8px", border: "1px solid rgba(0,0,0,0.12)" }}
+							/>
+						</Show>
 						<input
 							placeholder="Subject"
 							value={compose()!.subject}

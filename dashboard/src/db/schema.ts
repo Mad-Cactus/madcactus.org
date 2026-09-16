@@ -812,6 +812,8 @@ export const emailOutbox = pgTable(
 		id: uuid("id").primaryKey().defaultRandom(),
 		threadId: uuid("thread_id"), // set = reply, null = new thread
 		toEmail: text("to_email").notNull(),
+		ccEmail: text("cc_email"),
+		bccEmail: text("bcc_email"),
 		subject: text("subject").notNull(),
 		body: text("body").notNull(),
 		// CRDT merge layer for the draft body — same pattern as docs.loroSnapshot

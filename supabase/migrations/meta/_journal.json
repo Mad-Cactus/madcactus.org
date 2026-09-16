@@ -253,6 +253,13 @@
       "when": 1789554525844,
       "tag": "20260916102845_majestic_blue_marvel",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1789563013129,
+      "tag": "20260916125013_open_oracle",
+      "breakpoints": true
     }
   ]
 }

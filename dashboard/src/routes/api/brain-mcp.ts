@@ -400,6 +400,8 @@ const TOOLS = [
 			type: "object",
 			properties: {
 				to: { type: "string" },
+				cc: { type: "string", description: "comma-separated Cc addresses" },
+				bcc: { type: "string", description: "comma-separated Bcc addresses" },
 				subject: { type: "string" },
 				body: { type: "string" },
 				chat_uuid: { type: "string" },
@@ -730,6 +732,8 @@ export async function POST(event: APIEvent) {
 						const { createEmailDraft } = await import("~/lib/email-outbox");
 						result = await createEmailDraft({
 							to: String(toolArgs.to ?? ""),
+							cc: toolArgs.cc ? String(toolArgs.cc) : undefined,
+							bcc: toolArgs.bcc ? String(toolArgs.bcc) : undefined,
 							subject: String(toolArgs.subject ?? ""),
 							body: String(toolArgs.body ?? ""),
 							chatUuid: String(toolArgs.chat_uuid ?? ""),

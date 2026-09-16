@@ -31,6 +31,8 @@ export const POST = async (event: APIEvent) => {
 		.insert(emailOutbox)
 		.values({
 			toEmail: body.to,
+			ccEmail: body.cc || null,
+			bccEmail: body.bcc || null,
 			subject: body.subject || "(no subject)",
 			body: body.body,
 			threadId: body.threadId ?? null,

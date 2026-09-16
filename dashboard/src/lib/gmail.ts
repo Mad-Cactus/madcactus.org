@@ -472,9 +472,13 @@ export async function performUnsubscribe(account: EmailAccount, info: UnsubInfo)
 
 // ── Send ───────────────────────────────────────────────────────────
 
-export function buildMime(input: { to: string; subject: string; body: string }): string {
+export function buildMime(input: { to: string; cc?: string | null; bcc?: string | null; subject: string; body: string }): string {
 	const headers = [
 		`To: ${input.to}`,
+		...(input.cc ? [`Cc: ${input.cc}`] : []),
+		// Bcc goes in the raw MIME so Gmail delivers to them, then strips the
+		// header — bcc'd addresses never appear to To/Cc recipients.
+		...(input.bcc ? [`Bcc: ${input.bcc}`] : []),
 		`Subject: ${input.subject}`,
 		"MIME-Version: 1.0",
 		'Content-Type: text/plain; charset="UTF-8"',
@@ -486,11 +490,11 @@ export function buildMime(input: { to: string; subject: string; body: string }):
 /** Send via Gmail. Returns the new message id + its Gmail thread id. */
 export async function sendGmail(
 	account: EmailAccount,
-	input: { to: string; subject: string; body: string; inReplyToGmailId?: string },
+	input: { to: string; cc?: string | null; bcc?: string | null; subject: string; body: string; inReplyToGmailId?: string },
 ): Promise<{ id: string; threadId: string }> {
 	// Gmail threads replies via the threadId param — no In-Reply-To guessing
 	const threadId = input.inReplyToGmailId ? await threadIdOf(account, input.inReplyToGmailId) : undefined;
-	const raw = toBase64Url(buildMime({ to: input.to, subject: input.subject, body: input.body }));
+	const raw = toBase64Url(buildMime({ to: input.to, cc: input.cc, bcc: input.bcc, subject: input.subject, body: input.body }));
 	const res = await gmail<{ id: string; threadId: string }>(account, "/messages/send", {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },

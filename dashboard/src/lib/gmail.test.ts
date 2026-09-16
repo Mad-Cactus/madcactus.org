@@ -63,6 +63,12 @@ describe("buildMime", () => {
 		expect(mime).toContain("text/plain");
 		expect(mime).toContain("\r\n\r\nline one\nline two");
 	});
+	test("cc/bcc headers, omitted when empty", () => {
+		const mime = buildMime({ to: "a@b.c", cc: "c@d.e, f@g.h", bcc: "x@y.z", subject: "Hi", body: "b" });
+		expect(mime).toContain("Cc: c@d.e, f@g.h");
+		expect(mime).toContain("Bcc: x@y.z");
+		expect(buildMime({ to: "a@b.c", subject: "Hi", body: "b" })).not.toContain("Cc:");
+	});
 });
 
 describe("latestMessage", () => {
