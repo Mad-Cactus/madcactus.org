@@ -1366,3 +1366,29 @@ textarea.doc-title { resize: none; overflow: hidden; display: block; height: aut
 }
 .doc-toolbar button:hover { background: rgba(255, 255, 255, 0.12); }
 .doc-toolbar button.active { background: rgba(188, 156, 92, 0.4); }
+
+/* voice-lint inline underline (LintedTextarea mirror marks) */
+.lint-underline {
+	background: transparent;
+	color: inherit;
+	text-decoration: underline wavy rgba(170, 51, 51, 0.9);
+	text-decoration-skip-ink: none;
+	text-underline-offset: 3px;
+	padding: 0;
+}
+
+/* voice-lint underline overlay (LexicalDocEditor) — marks are positioned
+   over measured DOM ranges; no text inside, so a wavy border-bottom stands in
+   for text-decoration */
+.lint-overlay {
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+	overflow: hidden;
+}
+.lint-underline-overlay {
+	position: absolute;
+	border-bottom: 2px wavy rgba(170, 51, 51, 0.9);
+	background: transparent;
+	pointer-events: auto;
+}

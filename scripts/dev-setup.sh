@@ -40,21 +40,69 @@ echo "→ starting Postgres on :$PORT"
 WORKTREE_DB_PORT=$PORT "${COMPOSE[@]}" up -d
 until "${COMPOSE[@]}" exec -T db pg_isready -U postgres -d madcactus >/dev/null 2>&1; do sleep 1; done
 
+# Fresh database? Prefer a real prod snapshot over the synthetic seed — real
+# emails/docs/brain facts make local testing meaningful. Snapshot cache is shared
+# across worktrees and refreshed at most daily (REFRESH_PROD=1 forces it).
+# Source URL: dashboard/.env PROD_RO_DB_URL (pull-env writes it from the Keychain
+# cache). pg_cron/pg_net/vault extensions don't exist locally — pg_restore reports
+# those errors and continues; everything else lands.
+RESTORED=0
+ROWCOUNT=$("${COMPOSE[@]}" exec -T db psql -U postgres -tA -d madcactus -c 'select count(*) from companies;' 2>/dev/null || echo 0)
+if [[ "${ROWCOUNT// /}" -eq 0 ]]; then
+	PROD_URL=$(grep -h '^PROD_RO_DB_URL=' dashboard/.env 2>/dev/null | tail -1 | cut -d= -f2- || true)
+	if [[ -z "$PROD_URL" ]]; then
+		PROD_URL=$(security find-generic-password -s madcactus-dashboard-env -w 2>/dev/null | base64 -d 2>/dev/null | grep '^PROD_RO_DB_URL=' | tail -1 | cut -d= -f2- || true)
+	fi
+	if [[ -n "${PROD_URL:-}" ]]; then
+		CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/madcactus"
+		mkdir -p "$CACHE_DIR"
+		(
+			flock 9
+			STALE=1
+			if [[ -s "$CACHE_DIR/prod.dump" ]]; then
+				AGE=$(( $(date +%s) - $(stat -f %m "$CACHE_DIR/prod.dump") ))
+				[[ $AGE -lt $((24 * 3600)) ]] && STALE=0
+			fi
+			if [[ $STALE -eq 1 || "${REFRESH_PROD:-0}" == "1" ]]; then
+				echo "→ dumping prod snapshot → $CACHE_DIR/prod.dump (shared cache, ≤1/day)"
+				docker run --rm -v "$CACHE_DIR":/out -e PURL="$PROD_URL" pgvector/pgvector:pg17 \
+					sh -c 'pg_dump "$PURL" -Fc --no-owner --no-privileges --no-tablespaces -f /out/prod.dump.tmp' \
+				|| { echo "→ prod dump failed — falling back to seed"; exit 0; }
+				mv "$CACHE_DIR/prod.dump.tmp" "$CACHE_DIR/prod.dump"
+			fi
+		) 9>"$CACHE_DIR/.dump.lock"
+		if [[ -s "$CACHE_DIR/prod.dump" ]]; then
+			echo "→ restoring prod snapshot into :$PORT"
+			"${COMPOSE[@]}" exec -T db psql -U postgres -d madcactus -c 'create extension if not exists vector;' >/dev/null 2>&1 || true
+			RESTORE_ERR=$(mktemp)
+			"${COMPOSE[@]}" exec -T db pg_restore -U postgres -d madcactus --no-owner --no-privileges <"$CACHE_DIR/prod.dump" 2>"$RESTORE_ERR" || true
+			grep -c error "$RESTORE_ERR" >/dev/null 2>&1 && echo "   ($(grep -c 'error:' "$RESTORE_ERR" || true) restore errors — extension-only, expected)"
+			ROWCOUNT2=$("${COMPOSE[@]}" exec -T db psql -U postgres -tA -d madcactus -c 'select count(*) from companies;' 2>/dev/null || echo 0)
+			[[ "${ROWCOUNT2// /}" -gt 0 ]] && RESTORED=1
+			rm -f "$RESTORE_ERR"
+		fi
+	fi
+fi
+
 cd dashboard
 [ -d node_modules ] || { echo "→ bun install"; bun install; }
 
-# Guard lives in scripts/db-guard.sh — refuses non-local DATABASE_URL (prod safety).
-echo "→ schema push"
-DATABASE_URL="$DB_URL" bun run db:push --force
-
-# Seed only when empty — seed.sql is not idempotent.
-ROWCOUNT=$("${COMPOSE[@]}" exec -T db psql -U postgres -tA -d madcactus -c 'select count(*) from companies;' 2>/dev/null || echo 0)
-if [[ "${ROWCOUNT// /}" -gt 0 ]]; then
-	echo "→ seed: database already has data, skipping"
+if [[ $RESTORED -eq 1 ]]; then
+	echo "→ schema = prod snapshot; skipped db:push + seed (if this branch adds migrations, run: DATABASE_URL=$DB_URL bun run db:push)"
 else
-	echo "→ seeding (corpus + portal users)"
-	"${COMPOSE[@]}" exec -T db psql -U postgres -d madcactus -v ON_ERROR_STOP=1 < ../supabase/seed.sql
-	"${COMPOSE[@]}" exec -T db psql -U postgres -d madcactus -v ON_ERROR_STOP=1 < ../supabase/seed-portal.sql
+	# Guard lives in scripts/db-guard.sh — refuses non-local DATABASE_URL (prod safety).
+	echo "→ schema push"
+	DATABASE_URL="$DB_URL" bun run db:push --force
+
+	# Seed only when empty — seed.sql is not idempotent.
+	ROWCOUNT=$("${COMPOSE[@]}" exec -T db psql -U postgres -tA -d madcactus -c 'select count(*) from companies;' 2>/dev/null || echo 0)
+	if [[ "${ROWCOUNT// /}" -gt 0 ]]; then
+		echo "→ seed: database already has data, skipping"
+	else
+		echo "→ seeding (corpus + portal users)"
+		"${COMPOSE[@]}" exec -T db psql -U postgres -d madcactus -v ON_ERROR_STOP=1 < ../supabase/seed.sql
+		"${COMPOSE[@]}" exec -T db psql -U postgres -d madcactus -v ON_ERROR_STOP=1 < ../supabase/seed-portal.sql
+	fi
 fi
 cd ..
 

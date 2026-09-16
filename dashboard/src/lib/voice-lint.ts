@@ -11,8 +11,14 @@ export type LintViolation = {
 	direction: "avoid" | "prefer";
 	patternType: string;
 	matched: string;
+	// where the match sits in the linted text — powers inline underlines
+	index: number;
+	length: number;
 	before: string | null;
 	after: string | null;
+	// the prose lesson this pattern was derived from, when known — the gate
+	// returns it with the violation so the agent gets the why, not just the what
+	lesson: string | null;
 };
 
 export type LintResult = {
@@ -29,6 +35,8 @@ export type PatternRow = {
 	direction: string;
 	beforeText: string | null;
 	afterText: string | null;
+	// the lesson this pattern was derived from (voice_patterns.lesson_text)
+	lessonText?: string | null;
 	// scope the pattern lints (null = global for that dimension)
 	surface?: string | null;
 	genre?: string | null;
@@ -62,9 +70,12 @@ export function lintAgainstPatterns(text: string, patterns: PatternRow[]): LintV
 				rule: p.rule,
 				direction: "avoid",
 				patternType: p.patternType,
-				matched,
+				matched: matched.text,
+				index: matched.index,
+				length: matched.length,
 				before: p.beforeText,
 				after: p.afterText,
+				lesson: p.lessonText ?? null,
 			});
 		}
 	}
@@ -73,15 +84,15 @@ export function lintAgainstPatterns(text: string, patterns: PatternRow[]): LintV
 
 /** One violation check per pattern: literal = case-insensitive substring,
  *  regex = JS regex (case-insensitive; broken patterns are skipped, not fatal). */
-function matchPattern(p: PatternRow, text: string): string | null {
+function matchPattern(p: PatternRow, text: string): { text: string; index: number; length: number } | null {
 	try {
 		if (p.patternType === "regex") {
 			const re = new RegExp(p.pattern, "i");
 			const m = re.exec(text);
-			return m ? m[0] : null;
+			return m ? { text: m[0], index: m.index, length: m[0].length } : null;
 		}
 		const idx = text.toLowerCase().indexOf(p.pattern.toLowerCase());
-		return idx === -1 ? null : text.slice(idx, idx + p.pattern.length);
+		return idx === -1 ? null : { text: text.slice(idx, idx + p.pattern.length), index: idx, length: p.pattern.length };
 	} catch {
 		return null; // broken stored regex — skip, never break writes on it
 	}

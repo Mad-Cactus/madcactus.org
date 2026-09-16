@@ -20,11 +20,12 @@ import {
 	slackChannels,
 	slackMessages,
 	textVersions,
+	voicePatterns,
 } from "~/db/schema";
 import { chunkText, factHash, slugify } from "./core";
 import { syncEntities, syncPersons, syncProspects, detectLoops, backfillTimeline, recomputeWeight } from "./ingest";
 import { embedPending } from "./embed";
-import { addVoicePatterns } from "~/lib/voice-lint-db";
+import { addVoicePatterns, clearVoiceLintCache } from "~/lib/voice-lint-db";
 import type { PatternCandidate } from "~/lib/voice-lint";
 import { docSurface } from "~/lib/voice-lint";
 import { syncSlack } from "~/lib/slack";
@@ -35,14 +36,20 @@ function brainModel(): string {
 	return process.env.BRAIN_MODEL || "anthropic/claude-sonnet-4.5";
 }
 
-async function llm(system: string, user: string): Promise<string> {
+async function llm(
+	system: string,
+	user: string,
+	opts: { timeoutMs?: number; model?: string; reasoningMaxTokens?: number } = {},
+): Promise<string> {
 	const key = process.env.OPENROUTER_API_KEY;
 	if (!key) throw new Error("OPENROUTER_API_KEY not set");
 	const res = await fetch(OPENROUTER_URL, {
 		method: "POST",
 		headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+		signal: opts.timeoutMs ? AbortSignal.timeout(opts.timeoutMs) : undefined,
 		body: JSON.stringify({
-			model: brainModel(),
+			model: opts.model ?? brainModel(),
+			...(opts.reasoningMaxTokens ? { reasoning: { max_tokens: opts.reasoningMaxTokens } } : {}),
 			messages: [
 				{ role: "system", content: system },
 				{ role: "user", content: user },
@@ -603,6 +610,146 @@ export async function rechunkPage(pageId: string, body: string) {
 	);
 }
 
+// ── consolidate_voice (nightly hygiene: every lesson + pattern earns its keep) ──
+
+const VOICE_CONSOLIDATE_SYSTEM = `You curate a writing-voice rulebase derived from an editor's real edits.
+Input: active voice lessons (id, text, surface, genre, confidence) and lint patterns (id, rule, pattern, direction, override_count).
+Output JSON array:
+[{"kind":"merge","keep":"<lesson-id>","absorb":["<lesson-id>",...],"text":"<optional sharpened merged lesson>"},
+ {"kind":"retire","id":"<lesson-id>","reason":"..."},
+ {"kind":"pattern","id":"<pattern-id>","action":"disable"|"merge_into"|"keep","merge_into":"<pattern-id when action=merge_into>","confidence_delta":-0.2..0.2,"reason":"..."}]
+Rules: merge only lessons saying the SAME thing in different words — keep the clearest, rewrite only when a merge sharpens it. Retire lessons that are obsolete, tied to one old draft, or contradicted by a newer one. Patterns: "disable" when too broad or it flags text the editor actually writes (especially override_count >= 2); "merge_into" when it duplicates another pattern (the kept one stays); ±0.1 confidence nudges for merely noisy ones. Be conservative: a wrong deletion costs voice quality, mild redundancy costs little. Output ONLY the JSON array.`;
+
+/** Deterministic half of nightly voice hygiene — pure, unit-tested:
+ *  patterns overridden >=3 times are auto-disabled (the human overrode them
+ *  enough that they're wrong), and active lessons beyond the cap are the
+ *  lowest-confidence ones. */
+export function planVoiceConsolidation(
+	lessons: { id: string; confidence: number }[],
+	patterns: { id: string; overrideCount: number }[],
+	opts: { maxLessons?: number; overrideLimit?: number } = {},
+) {
+	const maxLessons = opts.maxLessons ?? 60;
+	const overrideLimit = opts.overrideLimit ?? 3;
+	const autoDisable = patterns.filter((p) => p.overrideCount >= overrideLimit).map((p) => p.id);
+	const keep = [...lessons].sort((a, b) => b.confidence - a.confidence).slice(0, maxLessons);
+	const capRetire = lessons.filter((l) => !keep.some((k) => k.id === l.id)).map((l) => l.id);
+	return { autoDisable, capRetire };
+}
+
+/** Nightly LLM pass over lessons + patterns: merge near-duplicates (supersession
+ *  pointers keep the audit trail), retire stale ones, disable wrong patterns,
+ *  nudge confidences. Deterministic rules handle the clear cases first. */
+export async function consolidateVoice(): Promise<{
+	lessonsMerged: number;
+	lessonsRetired: number;
+	lessonsCapped: number;
+	patternsDisabled: number;
+	patternsMerged: number;
+	patternsAdjusted: number;
+}> {
+	const lessons = await db
+		.select({ id: brainFacts.id, fact: brainFacts.fact, surface: brainFacts.surface, genre: brainFacts.genre, confidence: brainFacts.confidence })
+		.from(brainFacts)
+		.where(and(eq(brainFacts.entitySlug, "voice"), eq(brainFacts.kind, "lesson"), isNull(brainFacts.expiredAt)))
+		.orderBy(desc(brainFacts.confidence))
+		.limit(200);
+	const patterns = await db
+		.select({ id: voicePatterns.id, rule: voicePatterns.rule, pattern: voicePatterns.pattern, direction: voicePatterns.direction, overrideCount: voicePatterns.overrideCount, surface: voicePatterns.surface, genre: voicePatterns.genre })
+		.from(voicePatterns)
+		.where(eq(voicePatterns.enabled, true))
+		.limit(300);
+
+	const out = { lessonsMerged: 0, lessonsRetired: 0, lessonsCapped: 0, patternsDisabled: 0, patternsMerged: 0, patternsAdjusted: 0 };
+	const lessonIds = new Set(lessons.map((l) => l.id));
+	const patternIds = new Set(patterns.map((p) => p.id));
+	const now = new Date();
+	const retire = async (id: string, into: string | null) => {
+		await db
+			.update(brainFacts)
+			.set({ expiredAt: now, consolidatedAt: now, ...(into ? { supersededBy: into, consolidatedInto: into } : {}) })
+			.where(eq(brainFacts.id, id));
+	};
+
+	// deterministic: humans overrode this pattern enough — it's wrong; cap the active set
+	const plan = planVoiceConsolidation(lessons, patterns);
+	for (const id of plan.autoDisable) {
+		await db.update(voicePatterns).set({ enabled: false }).where(eq(voicePatterns.id, id));
+		out.patternsDisabled++;
+	}
+	for (const id of plan.capRetire) {
+		if (!lessonIds.has(id)) continue;
+		await retire(id, null);
+		out.lessonsCapped++;
+	}
+
+	// LLM curation — one call, conservative actions only. It sees the post-cap
+	// ACTIVE set (the retired excess is already gone from consideration) and
+	// runs under a hard timeout so one slow completion can't wedge the cycle.
+	const activeLessons = lessons.filter((l) => !plan.capRetire.includes(l.id));
+	if (activeLessons.length + patterns.length > 0) {
+		try {
+			const prompt = `Lessons:
+${activeLessons.map((l) => `- [${l.id}] (${l.surface ?? "any"}/${l.genre ?? "any"}, conf ${l.confidence.toFixed(2)}) ${l.fact}`).join("\n")}
+Patterns:
+${patterns.map((p) => `- [${p.id}] ${p.direction}: "${p.rule}" matches /${p.pattern}/ (${p.surface ?? "any"}/${p.genre ?? "any"}, overridden ${p.overrideCount}x)`).join("\n")}`;
+			const actions = parseJsonArray(
+				await llm(VOICE_CONSOLIDATE_SYSTEM, prompt, {
+				timeoutMs: 180_000,
+				model: process.env.VOICE_MODEL || "z-ai/glm-5.3-flash",
+				// unbounded reasoning hangs this call for minutes — a budget lands it in ~15s
+				reasoningMaxTokens: 4000,
+			}),
+			) as {
+				kind?: string;
+				keep?: string;
+				absorb?: string[];
+				text?: string;
+				id?: string;
+				action?: string;
+				merge_into?: string;
+				confidence_delta?: number;
+			}[];
+			for (const a of actions) {
+				if (a.kind === "merge" && a.keep && lessonIds.has(a.keep)) {
+					const absorbed = (a.absorb ?? []).filter((id) => lessonIds.has(id) && id !== a.keep);
+					if (!absorbed.length && !a.text) continue;
+					for (const id of absorbed) {
+						await retire(id, a.keep);
+						out.lessonsMerged++;
+					}
+					if (a.text && a.text.length <= 300) {
+						await db
+							.update(brainFacts)
+							.set({ fact: a.text, confidence: sql`least(${brainFacts.confidence} + 0.05, 1)` })
+							.where(eq(brainFacts.id, a.keep));
+					}
+				} else if (a.kind === "retire" && a.id && lessonIds.has(a.id)) {
+					await retire(a.id, null);
+					out.lessonsRetired++;
+				} else if (a.kind === "pattern" && a.id && patternIds.has(a.id)) {
+					const delta = typeof a.confidence_delta === "number" ? Math.max(-0.2, Math.min(0.2, a.confidence_delta)) : 0;
+					if (a.action === "disable" || (a.action === "merge_into" && a.merge_into && patternIds.has(a.merge_into) && a.merge_into !== a.id)) {
+						await db.update(voicePatterns).set({ enabled: false }).where(eq(voicePatterns.id, a.id));
+						if (a.action === "merge_into") out.patternsMerged++;
+						else out.patternsDisabled++;
+					} else if (delta !== 0) {
+						await db
+							.update(voicePatterns)
+							.set({ confidence: sql`greatest(least(${voicePatterns.confidence} + ${delta}, 1), 0)` })
+							.where(eq(voicePatterns.id, a.id));
+						out.patternsAdjusted++;
+					}
+				}
+			}
+		} catch (e) {
+			console.error("[brain] consolidateVoice LLM pass failed:", e);
+		}
+	}
+	if (out.patternsDisabled || out.patternsMerged || out.patternsAdjusted) clearVoiceLintCache();
+	return out;
+}
+
 // ── cycle orchestrator ─────────────────────────────────────────────
 
 const CYCLE_STALE_MS = 24 * 3600_000;
@@ -634,6 +781,11 @@ export async function runCycle(
 			out.lessons = await extractLessons();
 		} catch (e) {
 			out.lessons = { error: e instanceof Error ? e.message : String(e) };
+		}
+		try {
+			out.voiceConsolidate = await consolidateVoice();
+		} catch (e) {
+			out.voiceConsolidate = { error: e instanceof Error ? e.message : String(e) };
 		}
 		try {
 			out.transcripts = await extractTranscripts({ reprocess: opts.reprocessTranscripts });

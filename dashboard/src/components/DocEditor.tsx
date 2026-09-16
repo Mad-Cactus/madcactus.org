@@ -6,6 +6,8 @@ import { LinkedInPreview, NewsletterEmailPreview, NewsletterWebPreview, type Pre
 import type { DocEditorApi } from "~/components/LexicalDocEditor";
 import { getDocQuery } from "~/lib/docs-queries";
 import { computeBreaks } from "~/lib/doc-pages";
+import { VoiceLintPanel } from "~/components/VoiceLintPanel";
+import { docSurface, type LintResult } from "~/lib/voice-lint";
 
 type VersionRow = {
 	id: string;
@@ -53,6 +55,33 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 	const [webMd, setWebMd] = createSignal(doc().webMarkdown ?? doc().markdown);
 	const hasUnpublishedEdits = () => kind() === "newsletter" && docStatus() === "published" && markdown() !== webMd();
 	const [genre, setGenre] = createSignal(doc().genre ?? "");
+	// inline voice lint — debounced re-check on every markdown/genre change
+	const [lint, setLint] = createSignal<LintResult | null>(null);
+	const [lintStale, setLintStale] = createSignal(false);
+	let lintTimer: ReturnType<typeof setTimeout> | undefined;
+	const lintDoc = (md: string, g?: string) => {
+		// the overlay needs offsets into the editor's PLAIN text (markdown syntax
+		// chars are consumed into formatting), so lint that when available
+		const text = docApi?.text() ?? md;
+		if (!md.trim()) {
+			setLint(null);
+			setLintStale(false);
+			return;
+		}
+		setLintStale(true);
+		clearTimeout(lintTimer);
+		lintTimer = setTimeout(async () => {
+			const res = await fetch("/api/lint", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ text, surface: docSurface(kind()), genre: (g ?? genre()) || undefined }),
+			});
+			if (res.ok) {
+				setLint(await res.json());
+				setLintStale(false);
+			}
+		}, 700);
+	};
 	const [liConnected, setLiConnected] = createSignal<boolean | null>(null);
 	const [preview, setPreview] = createSignal<PreviewMode | null>(null);
 	let saveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -138,6 +167,7 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 					titleEl.style.height = "auto";
 					titleEl.style.height = `${titleEl.scrollHeight}px`;
 				}
+				lintDoc(d.markdown, d.genre ?? "");
 				clearInterval(stop);
 			}
 		}, 50);
@@ -284,6 +314,7 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 					onChange={(e) => {
 						setGenre(e.currentTarget.value);
 						void post(props.id, { op: "set-genre", genre: e.currentTarget.value });
+						lintDoc(markdown(), e.currentTarget.value);
 					}}
 				/>
 				<datalist id="doc-genres">
@@ -467,6 +498,7 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 						// version on every open
 						if (md === markdown()) return;
 						setMarkdown(md);
+						lintDoc(md);
 						// autosave to the DB, not just local state — a refresh must not
 						// lose the doc
 						clearTimeout(saveTimer);
@@ -478,8 +510,11 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 						setEditorRoot(api.root);
 					}}
 					onLayoutDirty={scheduleLayout}
+					violations={lint()?.violations ?? []}
 				/>
 			</div>
+			{/* voice lint sits outside the pager so its height never affects page breaks */}
+			<VoiceLintPanel result={lint()} stale={lintStale()} />
 			{/* first comment is a plain doc field — shown whether or not LinkedIn is
 			    connected yet (gating on liConnected unmounted it once the check resolved) */}
 			<Show when={kind() === "post"}>

@@ -10,7 +10,8 @@
 # docker-compose.yml (:5434) instance is untouched.
 services:
   db:
-    image: postgres:17-alpine
+    # pgvector build — prod uses the vector ext (brain embeddings)
+    image: pgvector/pgvector:pg17
     ports:
       - "${WORKTREE_DB_PORT:-5435}:5432"
     environment:

@@ -135,7 +135,7 @@ describe("computeEmotionalWeight", () => {
 	});
 });
 
-import { findPairs, type VersionRow } from "./distill";
+import { findPairs, planVoiceConsolidation, type VersionRow } from "./distill";
 
 const vr = (entityId: string, author: string, minsAgo: number, content = ""): VersionRow => ({
 	id: `${entityId}-${author}-${minsAgo}`,
@@ -165,5 +165,21 @@ describe("findPairs", () => {
 		const pairs = findPairs([vr("d1", "agent", 30), vr("d2", "agent", 25), vr("d2", "human", 20), vr("d1", "human", 10)]);
 		expect(pairs.length).toBe(2);
 		expect(pairs.map((p) => p.entityId).sort()).toEqual(["d1", "d2"]);
+	});
+});
+
+describe("planVoiceConsolidation", () => {
+	test("auto-disables patterns the human overrode 3+ times", () => {
+		const plan = planVoiceConsolidation([], [
+			{ id: "a", overrideCount: 3 },
+			{ id: "b", overrideCount: 2 },
+			{ id: "c", overrideCount: 9 },
+		]);
+		expect(plan.autoDisable.sort()).toEqual(["a", "c"]);
+	});
+	test("caps active lessons at the top-confidence 60", () => {
+		const lessons = Array.from({ length: 62 }, (_, i) => ({ id: `l${i}`, confidence: i / 100 }));
+		const plan = planVoiceConsolidation(lessons, []);
+		expect(plan.capRetire).toEqual(["l0", "l1"]);
 	});
 });

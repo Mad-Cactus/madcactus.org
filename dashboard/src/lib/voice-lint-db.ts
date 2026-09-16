@@ -2,9 +2,10 @@
 // from voice-lint.ts (pure core) so a stray client import of the lint core
 // can't drag the db chain into the browser bundle.
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { db } from "~/db";
+import { db, raw } from "~/db";
 import { brainFacts, docs, voiceLessonReviews, voicePatterns, voiceLintOverrides } from "~/db/schema";
 export type { LintResult, VoiceScope } from "~/lib/voice-lint";
+import { embedQuery } from "~/lib/brain/embed";
 import {
 	lintAgainstPatterns,
 	normalizePattern,
@@ -33,6 +34,7 @@ async function activePatterns(): Promise<PatternRow[]> {
 			direction: voicePatterns.direction,
 			beforeText: voicePatterns.beforeText,
 			afterText: voicePatterns.afterText,
+			lessonText: voicePatterns.lessonText,
 			surface: voicePatterns.surface,
 			genre: voicePatterns.genre,
 		})
@@ -64,8 +66,9 @@ export function lintGateError(lint: LintResult) {
 }
 
 /** The prose half: Collin's voice lessons (brain_facts kind='lesson',
- *  entity 'voice'), highest-signal first — the "read before writing" list. */
-export async function getVoiceLessons(limit = 25, scope?: VoiceScope) {
+ *  entity 'voice'), highest-signal first — the "read before writing" list.
+ *  Default 10: a short list agents actually read beats a long one they skim. */
+export async function getVoiceLessons(limit = 10, scope?: VoiceScope) {
 	const rows = await db
 		.select({
 			id: brainFacts.id,
@@ -79,6 +82,38 @@ export async function getVoiceLessons(limit = 25, scope?: VoiceScope) {
 		.orderBy(sql`${brainFacts.confidence} desc`)
 		.limit(500);
 	return rows.filter((r) => patternApplies(r, scope)).slice(0, limit);
+}
+
+/** Lessons ranked for ONE draft: semantic similarity between the draft text and
+ *  the lesson (both are embedded nightly by the brain cycle) blended with
+ *  confidence, scoped to the surface/genre being written. Falls back to plain
+ *  confidence order when embeddings are unavailable (local dev, API hiccup). */
+export async function topLessonsForText(text: string, scope: VoiceScope, limit = 10) {
+	const where = sql`entity_slug = 'voice' and kind = 'lesson' and expired_at is null
+		and (surface is null or surface = ${scope.surface})
+		and (genre is null or genre = ${scope.genre ?? null})`;
+	const vec = await embedQuery(text.slice(0, 4000));
+	if (vec) {
+		try {
+			const rows = await raw<{ id: string; fact: string; surface: string | null; genre: string | null; confidence: number }>(sql`
+				select id, fact, surface, genre, confidence,
+						0.7 * (1 - (embedding <=> ${`[${vec.join(",")}]`}::vector)) + 0.3 * confidence as score
+				from brain_facts
+				where embedding is not null and ${where}
+				order by score desc
+				limit ${limit}
+			`);
+			if (rows.length) return rows;
+		} catch {
+			// no pgvector locally or embed shape mismatch — fall through
+		}
+	}
+	return db
+		.select({ id: brainFacts.id, fact: brainFacts.fact, surface: brainFacts.surface, genre: brainFacts.genre, confidence: brainFacts.confidence })
+		.from(brainFacts)
+		.where(where)
+		.orderBy(sql`confidence desc`)
+		.limit(limit);
 }
 
 /** Genre vocabulary already in use — agents must reuse these before minting
