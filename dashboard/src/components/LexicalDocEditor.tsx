@@ -14,6 +14,7 @@ import type { LexicalNode } from "lexical";
 import { $convertFromMarkdownString, $convertToMarkdownString, registerMarkdownShortcuts } from "@lexical/markdown";
 import {
 	$getNearestNodeFromDOMNode,
+	$getRoot,
 	createEditor,
 	FORMAT_TEXT_COMMAND,
 	INSERT_PARAGRAPH_COMMAND,
@@ -39,6 +40,7 @@ import { CodeNode, CodeHighlightNode, $isCodeNode } from "@lexical/code";
 import { LinkNode, AutoLinkNode, TOGGLE_LINK_COMMAND, toggleLink } from "@lexical/link";
 import { $setBlocksType } from "@lexical/selection";
 import type { TableSplit } from "~/lib/doc-pages";
+import type { LintViolation } from "~/lib/voice-lint";
 
 // CHECK_LIST converts on Enter (triggerOnEnter), so "- [ ] item" + Enter
 // becomes a checkbox while "- " alone becomes a plain bullet on space —
@@ -54,6 +56,8 @@ type ToolbarApi = {
 /** What the pager (DocEditor.runLayout) can ask the editor to do. */
 export type DocEditorApi = {
 	root: HTMLElement;
+	/** current plain-text content (offsets match LintViolation.index) */
+	text: () => string;
 	/** split crossing tables at row boundaries (page pagination); returns true when any split */
 	splitTables: (splits: TableSplit[]) => boolean;
 };
@@ -69,8 +73,13 @@ export default function LexicalDocEditor(props: {
 	onBlur?: () => void;
 	/** live pager API: root + break/sanitize operations (see DocEditorApi) */
 	onReady?: (api: DocEditorApi) => void;
+	/** voice-lint hits against the editor's PLAIN TEXT (api.text() offsets) —
+	 *  painted as wavy-underline overlays; editor state is never touched, so
+	 *  undo history and markdown round-trips stay clean */
+	violations?: LintViolation[];
 }) {
 	let host!: HTMLDivElement;
+	let lintOverlay!: HTMLDivElement;
 	let api: ToolbarApi | undefined;
 	const [tbShown, setTbShown] = createSignal(false);
 	const [tbPos, setTbPos] = createSignal({ x: 0, y: 0 });
@@ -122,7 +131,17 @@ export default function LexicalDocEditor(props: {
 			return any;
 		};
 
-		props.onReady?.({ root: host, splitTables });
+		props.onReady?.({
+			root: host,
+			splitTables,
+			text: () => {
+				let t = "";
+				ed.read(() => {
+					t = $getRoot().getTextContent();
+				});
+				return t;
+			},
+		});
 		// the JSX host must not carry contenteditable=false — Lexical manages the
 		// attribute itself, and a stale "false" leaves the doc uneditable
 		ed.setEditable(!props.readOnly);
@@ -147,6 +166,65 @@ export default function LexicalDocEditor(props: {
 			COMMAND_PRIORITY_EDITOR,
 		);
 
+		// ── voice-lint underline overlay ──────────────────────────────────
+		// Zero editor-state mutation: DOM ranges over the host's text nodes are
+		// measured, and absolutely-positioned <mark>s are painted in a sibling
+		// overlay (host-relative rects survive window scroll). Re-painted on
+		// lint results, editor updates (debounced), and layout shifts.
+		const paintLint = () => {
+			if (!lintOverlay) return;
+			lintOverlay.replaceChildren();
+			const vs = props.violations ?? [];
+			if (!vs.length) return;
+			const hostRect = host.getBoundingClientRect();
+			const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+			const spans: { node: Text; start: number; len: number }[] = [];
+			let off = 0;
+			for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+				const t = n as Text;
+				spans.push({ node: t, start: off, len: t.data.length });
+				off += t.data.length;
+			}
+			for (const v of vs) {
+				if (v.index < 0 || v.index + v.length > off || v.length <= 0) continue;
+				const s = v.index;
+				const e = v.index + v.length;
+				for (const sp of spans) {
+					const a = Math.max(s, sp.start);
+					const b = Math.min(e, sp.start + sp.len);
+					if (a >= b) continue;
+					const r = document.createRange();
+					r.setStart(sp.node, a - sp.start);
+					r.setEnd(sp.node, b - sp.start);
+					for (const rect of Array.from(r.getClientRects())) {
+						if (rect.width < 1 || rect.height < 1) continue;
+						const m = document.createElement("mark");
+						m.className = "lint-underline-overlay";
+						m.title = v.rule;
+						m.style.left = `${rect.left - hostRect.left}px`;
+						m.style.top = `${rect.top - hostRect.top}px`;
+						m.style.width = `${rect.width}px`;
+						m.style.height = `${rect.height}px`;
+						lintOverlay.appendChild(m);
+					}
+				}
+			}
+		};
+		let lintTimer: ReturnType<typeof setTimeout> | undefined;
+		const scheduleLintPaint = () => {
+			clearTimeout(lintTimer);
+			lintTimer = setTimeout(paintLint, 400);
+		};
+		const ro = new ResizeObserver(scheduleLintPaint);
+		ro.observe(host);
+		const onWinResize = () => scheduleLintPaint();
+		window.addEventListener("resize", onWinResize);
+		// violations prop changes repaint (rAF: let the render settle first)
+		createEffect(() => {
+			void props.violations?.length;
+			requestAnimationFrame(paintLint);
+		});
+
 		const currentMd = () => {
 			let md = "";
 			ed.read(() => {
@@ -170,6 +248,7 @@ export default function LexicalDocEditor(props: {
 		let timer: ReturnType<typeof setTimeout> | undefined;
 		const offUpdate = ed.registerUpdateListener(() => {
 			syncToolbar();
+			scheduleLintPaint();
 			props.onLayoutDirty?.();
 			clearTimeout(timer);
 			timer = setTimeout(() => props.onMarkdownChange(currentMd()), 1200);
@@ -421,6 +500,9 @@ export default function LexicalDocEditor(props: {
 
 		onCleanup(() => {
 			clearTimeout(timer);
+			clearTimeout(lintTimer);
+			ro.disconnect();
+			window.removeEventListener("resize", onWinResize);
 			offUpdate();
 			offKeys();
 			offSel();
@@ -433,6 +515,8 @@ export default function LexicalDocEditor(props: {
 
  return (
 		<>
+			<div style={{ position: "relative" }}>
+			<div ref={lintOverlay} class="lint-overlay" aria-hidden="true" />
 			<div
 				ref={host}
 				class="doc-editor"
@@ -447,6 +531,7 @@ export default function LexicalDocEditor(props: {
 				data-gramm="false"
 				data-gramm_editor="false"
 			/>
+			</div>
 			<Show when={!props.readOnly}>
 				<div
 					class="doc-toolbar"
