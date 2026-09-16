@@ -118,8 +118,14 @@ export function docVoiceScope(doc: Pick<Doc, "kind" | "genre">): VoiceScope {
 }
 
 /** Queue a doc for the scheduler. Any status is allowed — rescheduling a
- *  failed or already-published doc is a normal correction. */
-export async function scheduleDoc(id: string, when: Date, firstComment?: string | null) {
+ *  failed or already-published doc is a normal correction. channel replaces
+ *  the stored publishChannel only when provided (undefined = keep). */
+export async function scheduleDoc(
+	id: string,
+	when: Date,
+	firstComment?: string | null,
+	channel?: "email+web" | "web",
+) {
 	await db
 		.update(docs)
 		.set({
@@ -127,12 +133,19 @@ export async function scheduleDoc(id: string, when: Date, firstComment?: string 
 			scheduledFor: when,
 			publishError: null,
 			...(firstComment !== undefined ? { firstComment: firstComment?.trim() || null } : {}),
+			...(channel !== undefined ? { publishChannel: channel } : {}),
 		})
 		.where(eq(docs.id, id));
 }
 
 export async function setDocFirstComment(id: string, firstComment?: string | null) {
 	await db.update(docs).set({ firstComment: firstComment?.trim() || null }).where(eq(docs.id, id));
+}
+
+/** Snapshot the current markdown as the live web version. Older version
+ *  keeps rendering until this runs; email is never re-sent. */
+export async function republishWebDoc(id: string, markdown: string) {
+	await db.update(docs).set({ webMarkdown: markdown }).where(and(eq(docs.id, id), eq(docs.status, "published")));
 }
 
 export async function unscheduleDoc(id: string) {

@@ -47,6 +47,11 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 	const [publishError, setPublishError] = createSignal(doc().publishError ?? null);
 	const [schedInput, setSchedInput] = createSignal("");
 	const [firstComment, setFirstComment] = createSignal("");
+	const [channel, setChannel] = createSignal<"email+web" | "web">(doc().publishChannel ?? "email+web");
+	// live web snapshot — differs from markdown() when a published newsletter
+	// was edited but not republished yet
+	const [webMd, setWebMd] = createSignal(doc().webMarkdown ?? doc().markdown);
+	const hasUnpublishedEdits = () => kind() === "newsletter" && docStatus() === "published" && markdown() !== webMd();
 	const [genre, setGenre] = createSignal(doc().genre ?? "");
 	const [liConnected, setLiConnected] = createSignal<boolean | null>(null);
 	const [preview, setPreview] = createSignal<PreviewMode | null>(null);
@@ -127,6 +132,7 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 				if (d.shareToken) setShareUrl(`${location.origin}/share/${d.shareToken}`);
 				if (d.status === "scheduled" && d.scheduledFor) setSchedInput(toLocalInput(new Date(d.scheduledFor)));
 				setFirstComment(d.firstComment ?? "");
+				setChannel(d.publishChannel ?? "email+web");
 				setGenre(d.genre ?? "");
 				if (titleEl) {
 					titleEl.style.height = "auto";
@@ -193,7 +199,7 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 			return;
 		}
 		await save(props.id, markdown());
-		const r = await post(props.id, { op: "schedule", scheduledFor: when.toISOString(), firstComment: firstComment() });
+		const r = await post(props.id, { op: "schedule", scheduledFor: when.toISOString(), firstComment: firstComment(), channel: channel() });
 		if (r.ok) {
 			setDocStatus("scheduled");
 			setSchedFor(r.scheduledFor ?? when.toISOString());
@@ -215,13 +221,24 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 	// scheduled send, so nothing new can break
 	const publishNow = async () => {
 		await save(props.id, markdown());
-		const r = await post(props.id, { op: "schedule", scheduledFor: new Date().toISOString() });
+		const r = await post(props.id, { op: "schedule", scheduledFor: new Date().toISOString(), channel: channel() });
 		if (r.ok) {
 			setDocStatus("scheduled");
 			setSchedFor(r.scheduledFor ?? new Date().toISOString());
 			setPublishError(null);
 			setStatus("publishing — goes out within 60 seconds");
 		} else setStatus(r.error ?? "publish failed");
+	};
+
+	// republish-to-web: snapshot the current markdown as the live version —
+	// email never re-sends (publish.ts skips broadcast when publishedAt is set)
+	const republishWeb = async () => {
+		await save(props.id, markdown());
+		const r = await post(props.id, { op: "republish-web", markdown: markdown() });
+		if (r.ok) {
+			setWebMd(markdown());
+			setStatus("web page updated — email not re-sent");
+		} else setStatus(r.error ?? "republish failed");
 	};
 
 	// manual state fix — posts deleted on LinkedIn, hiding a sent newsletter
@@ -345,6 +362,17 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 				>
 					<Show when={kind() === "post" && liConnected() !== true} fallback={
 						<>
+							<Show when={kind() === "newsletter"}>
+								<select
+									class="doc-sched-input"
+									aria-label="Publish to"
+									value={channel()}
+									onChange={(e) => setChannel(e.currentTarget.value as "email+web" | "web")}
+								>
+									<option value="email+web">Email + web</option>
+									<option value="web">Web only</option>
+								</select>
+							</Show>
 							<button type="button" class="btn btn-primary btn-sm" onClick={() => void publishNow()}>
 								Publish now
 							</button>
@@ -369,11 +397,16 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 					</Show>
 					<Show when={docStatus() === "published"}>
 						<Show when={kind() === "newsletter"}>
-							{/* human saves keep status=published and the site SSRs from
-							    the DB — editing + save IS the web update */}
+							{/* live page renders the published snapshot — editing changes
+							    nothing until Republish snapshots the new version */}
 							<a class="btn btn-sm" target="_blank" href={`/newsletter/${props.id}`}>
 								View live page ↗
 							</a>
+							<Show when={hasUnpublishedEdits()}>
+								<button type="button" class="btn btn-primary btn-sm" onClick={() => void republishWeb()}>
+									Republish to web
+								</button>
+							</Show>
 						</Show>
 						<button type="button" class="btn btn-sm" onClick={() => void setPublishStateState("final")}>
 							{kind() === "newsletter" ? "Hide from site" : "Mark as unposted"}

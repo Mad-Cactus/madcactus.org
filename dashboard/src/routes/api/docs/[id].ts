@@ -11,6 +11,7 @@ import {
 	setDocKind,
 	setDocGenre,
 	scheduleDoc,
+	republishWebDoc,
 	setDocFirstComment,
 	unscheduleDoc,
 	deleteDoc,
@@ -70,6 +71,8 @@ export const POST = async (event: APIEvent) => {
 		scheduledFor?: string;
 		firstComment?: string;
 		state?: string;
+		channel?: string;
+		markdown?: string;
 	};
 	try {
 		if (body.op === "rename") return json({ ok: await renameDoc(event.params.id, String(body.title ?? "").trim() || "Untitled") });
@@ -91,8 +94,13 @@ export const POST = async (event: APIEvent) => {
 		if (body.op === "schedule") {
 			const when = new Date(String(body.scheduledFor));
 			if (Number.isNaN(when.getTime())) return json({ error: "Invalid scheduledFor — use an ISO datetime" }, 400);
-			await scheduleDoc(event.params.id, when, body.firstComment);
+			const channel = body.channel === "web" || body.channel === "email+web" ? body.channel : undefined;
+			await scheduleDoc(event.params.id, when, body.firstComment, channel);
 			return json({ ok: true, status: "scheduled", scheduledFor: when.toISOString() });
+		}
+		if (body.op === "republish-web") {
+			await republishWebDoc(event.params.id, String(body.markdown ?? ""));
+			return json({ ok: true });
 		}
 		if (body.op === "set-first-comment") {
 			await setDocFirstComment(event.params.id, body.firstComment);

@@ -1,5 +1,27 @@
 import { describe, expect, test } from "bun:test";
-import { markdownToHtml, markdownToPostText, newsletterSubject } from "./publish";
+import { markdownToHtml, markdownToPostText, newsletterSubject, publishDoc } from "./publish";
+
+describe("publishDoc newsletter channel", () => {
+	const base = {
+		id: "x",
+		kind: "newsletter",
+		title: "Issue 9",
+		markdown: "hello",
+	} as Parameters<typeof publishDoc>[0];
+
+	test("web-only skips the Resend broadcast (no env, no network)", async () => {
+		// RESEND_API_KEY is unset here — an email attempt would throw before network
+		delete process.env.RESEND_API_KEY;
+		await expect(publishDoc({ ...base, publishChannel: "web" })).resolves.toBe("web");
+	});
+
+	test("already-published newsletter never re-emails — web updates only", async () => {
+		delete process.env.RESEND_API_KEY;
+		await expect(publishDoc({ ...base, publishedAt: new Date() })).resolves.toBe("sent");
+		// a failed send (publishedAt null) still tries — and throws without creds
+		await expect(publishDoc(base)).rejects.toThrow("RESEND_API_KEY not configured");
+	});
+});
 
 // markdownToPostText must produce plain text that reads like a human wrote it
 describe("markdownToPostText", () => {
