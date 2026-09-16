@@ -10,7 +10,7 @@ import { listTextVersions, getTextVersionDiff, deleteTextVersions } from "~/lib/
  * /api/email/drafts/:id
  * GET  ?versions=1           → tracked-version list (no content)
  * GET  ?diff=N               → word-diff of version N vs N-1
- * PUT  { body?, subject?, to? } → update draft (body is CRDT-tracked)
+ * PUT  { body?, subject?, to?, cc?, bcc? } → update draft (body is CRDT-tracked)
  * POST { op: "send", body? }             → lint-gated send (agent drafts → pair)
  * POST { op: "schedule", sendAt, body?, overrideLint? } → lint-gated schedule
  * POST { op: "unschedule" }              → back to plain draft
@@ -48,6 +48,10 @@ export const PUT = async (event: APIEvent) => {
 		.set({
 			...(body.subject ? { subject: body.subject } : {}),
 			...(body.to ? { toEmail: body.to } : {}),
+			// empty string clears the field — unlike to/subject there is no
+			// "required" state to protect
+			...(body.cc !== undefined ? { ccEmail: body.cc || null } : {}),
+			...(body.bcc !== undefined ? { bccEmail: body.bcc || null } : {}),
 		})
 		.where(eq(emailOutbox.id, event.params.id))
 		.returning();

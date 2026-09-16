@@ -115,6 +115,8 @@ export async function sendOutboxInner(
 	try {
 		const { id: gmailMessageId, threadId: gmailThreadId } = await sendGmail(account, {
 			to: row.toEmail,
+			cc: row.ccEmail,
+			bcc: row.bccEmail,
 			subject: row.subject,
 			body,
 			inReplyToGmailId,
@@ -198,6 +200,8 @@ export async function createEmailDraft(input: {
 	body: string;
 	chatUuid: string;
 	threadId?: string;
+	cc?: string;
+	bcc?: string;
 	context?: string;
 }): Promise<{ outboxId: string; lint: Awaited<ReturnType<typeof lintVoiceText>> }> {
 	"use server";
@@ -206,6 +210,8 @@ export async function createEmailDraft(input: {
 		.values({
 			threadId: input.threadId ?? null,
 			toEmail: input.to,
+			ccEmail: input.cc,
+			bccEmail: input.bcc,
 			subject: input.subject,
 			body: input.body,
 			chatUuid: input.chatUuid,
