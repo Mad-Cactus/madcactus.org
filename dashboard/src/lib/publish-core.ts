@@ -76,7 +76,7 @@ function quoteToPromptBox(html: string): string {
 export const EMAIL_FOOTER_HTML =
 	`<hr style="border:none;border-top:1px solid #d8d2c4;margin:32px 0 20px;">` +
 	`<p style="font-size:13px;color:#6b6455;line-height:1.6;">The Cactus Dispatch turns real AI deployments into ` +
-	`patterns you can use this week. Questions, ideas, comments? Just reply to this email — I read and answer every one.</p>`;
+	`patterns you can use this week. Questions, ideas, comments? Just reply to this email, I read and answer every one.</p>`;
 
 export function markdownToHtml(md: string, channel: "email" | "web" = "web"): string {
 	let html = marked.parse(stripSubjectLine(md), { async: false }) as string;
