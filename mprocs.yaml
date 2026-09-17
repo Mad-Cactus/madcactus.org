@@ -1,0 +1,5 @@
+procs:
+  db:
+    shell: WORKTREE_DB_PORT=5505 docker compose -f docker-compose.worktree.yml up
+  dashboard:
+    shell: cd dashboard && bun run dev
