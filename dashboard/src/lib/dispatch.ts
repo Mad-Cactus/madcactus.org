@@ -14,21 +14,29 @@ export type DispatchIssue = {
 
 export async function listPublishedDispatch(): Promise<DispatchIssue[]> {
 	const rows = await db
-		.select({ id: docs.id, title: docs.title, publishedAt: docs.publishedAt })
+		.select({ id: docs.id, title: docs.title, publishedAt: docs.publishedAt, issueNumber: docs.issueNumber })
 		.from(docs)
 		.where(and(eq(docs.kind, "newsletter"), eq(docs.status, "published")))
 		.orderBy(desc(docs.publishedAt))
 		.limit(100);
-	return rows.map((r, i) => ({ ...r, issueNumber: rows.length - i }));
+	// number is minted at first publish and stored — unlisting an issue never
+	// renumbers the rest
+	return rows.map((r) => ({ ...r, issueNumber: r.issueNumber ?? 0 }));
 }
 
 export async function getPublishedDispatch(id: string): Promise<(DispatchIssue & { markdown: string; webMarkdown: string | null }) | null> {
 	if (!UUID_RE.test(id)) return null;
 	const [row] = await db
-		.select({ id: docs.id, title: docs.title, publishedAt: docs.publishedAt, markdown: docs.markdown, webMarkdown: docs.webMarkdown })
+		.select({
+			id: docs.id,
+			title: docs.title,
+			publishedAt: docs.publishedAt,
+			issueNumber: docs.issueNumber,
+			markdown: docs.markdown,
+			webMarkdown: docs.webMarkdown,
+		})
 		.from(docs)
 		.where(and(eq(docs.id, id), eq(docs.kind, "newsletter"), eq(docs.status, "published")));
 	if (!row) return null;
-	const all = await listPublishedDispatch();
-	return { ...row, issueNumber: all.find((i) => i.id === id)?.issueNumber ?? 0 };
+	return { ...row, issueNumber: row.issueNumber ?? 0 };
 }

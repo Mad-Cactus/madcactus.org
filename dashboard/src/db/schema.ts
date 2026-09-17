@@ -412,6 +412,10 @@ export const docs = pgTable(
 		// snapshot of the live web version at publish/republish time — later edits
 		// change `markdown` but keep rendering the old version until republished
 		webMarkdown: text("web_markdown"),
+		// Cactus Dispatch issue number — minted once at first publish (max+1
+		// across newsletters) and never reused, so unlisting an issue doesn't
+		// renumber the rest. Null until first publish; newsletters only.
+		issueNumber: integer("issue_number"),
 		scheduledFor: timestamp("scheduled_for", { withTimezone: true }),
 		publishedAt: timestamp("published_at", { withTimezone: true }),
 		publishError: text("publish_error"),
@@ -424,6 +428,10 @@ export const docs = pgTable(
 			.defaultNow()
 			.$onUpdate(() => new Date()),
 	},
+	(table) => [
+		// two newsletters can never claim the same issue number
+		uniqueIndex("docs_issue_number_key").on(table.issueNumber).where(sql`issue_number is not null`),
+	],
 );
 
 // Short links: /l/<slug> 302s to target and counts the click. UTMs live in

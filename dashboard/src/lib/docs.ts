@@ -5,7 +5,7 @@
 // markdown; we convert old→new into Loro deltas so a concurrent agent append
 // merges instead of clobbering. The markdown column is the projection: search,
 // export, lint, pairs.
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { randomHex } from "~/lib/crypto";
 import { db } from "~/db";
 import { docs, textVersions, type Doc } from "~/db/schema";
@@ -159,7 +159,7 @@ export async function unscheduleDoc(id: string) {
  *  belong to the scheduler. */
 export async function setPublishState(id: string, state: "final" | "published"): Promise<Doc | null> {
 	const [doc] = await db
-		.select({ status: docs.status, publishedAt: docs.publishedAt })
+		.select({ status: docs.status, publishedAt: docs.publishedAt, issueNumber: docs.issueNumber })
 		.from(docs)
 		.where(eq(docs.id, id));
 	if (!doc) return null;
@@ -171,6 +171,8 @@ export async function setPublishState(id: string, state: "final" | "published"):
 				status: "published",
 				publishError: null,
 				...(doc.publishedAt ? {} : { publishedAt: new Date() }),
+				// mint the dispatch issue number once — unlist/relist keeps it
+				...(doc.issueNumber ? {} : { issueNumber: sql`(select coalesce(max(issue_number), 0) + 1 from docs where kind = 'newsletter')` }),
 			})
 			.where(eq(docs.id, id));
 	} else {

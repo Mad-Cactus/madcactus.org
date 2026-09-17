@@ -2,7 +2,7 @@
 // docs (LinkedIn/newsletter) AND scheduled Gmail drafts atomically, dispatches
 // each, then marks published/sent or failed (+ email alert). Stale in-flight
 // rows (process died mid-dispatch) are failed after 5 min.
-import { and, eq, inArray, lte } from "drizzle-orm";
+import { and, eq, inArray, lte, sql } from "drizzle-orm";
 import { db } from "~/db";
 import { docs, emailOutbox } from "~/db/schema";
 import { alertEmail, alertPublishFailure, publishDoc } from "~/lib/publish";
@@ -45,6 +45,10 @@ export async function tick(): Promise<{ docs: number; emails: number }> {
 				.set({
 					status: "published",
 					publishedAt: new Date(),
+					// mint the dispatch issue number once — survives unlist/relist
+					...(doc.kind === "newsletter"
+						? { issueNumber: sql`(select coalesce(max(issue_number), 0) + 1 from docs where kind = 'newsletter')` }
+						: {}),
 					...(doc.kind === "newsletter" ? { webMarkdown: doc.markdown } : {}),
 				})
 				.where(eq(docs.id, doc.id));
