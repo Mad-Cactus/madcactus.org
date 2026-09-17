@@ -1,15 +1,15 @@
 # Mad Cactus ICP
 
-**Who:** Owner-operated Indiana companies, $30-70M revenue, knowledge-heavy work, with no CTO and no full-time developers. The AI opportunity is real but nobody technical is in the building.
+**Who:** Owner-operated Indiana companies, $10-70M revenue, knowledge-heavy work, with no CTO and no full-time developers. The AI opportunity is real but nobody technical is in the building.
 
-**Why this band:** Below $30M there's no budget and no pain. Above $70M most have at least a small dev team or an IT director who becomes the gatekeeper (and says no). $30-70M with owner-led decisions = the CEO *is* the buyer and feels the scatter personally.
+**Why this band:** Above $70M most have at least a small dev team or an IT director who becomes the gatekeeper (and says no). Below $10M there's often no ops pain worth a brain. $10-70M with owner-led decisions = the CEO *is* the buyer and feels the scatter personally. (Revised Sept 2026: $30M floor dropped after the freight pull showed the in-band no-tech intersection is nearly empty — and 2 of 3 shipped targets, Flora $12.2M and MO Strategies $6.1M, sit below $30M. Revealed filter: visible success + owner access, not revenue.)
 
 ## Hard filters (must pass all)
 
 | Filter | Test | Fail → |
 | --- | --- | --- |
 | Indiana HQ | Address/city, not name tokens (Franklin, Anderson etc. exist nationwide) | drop |
-| $30-70M revenue | IBJ/Inc/Buzzfile/ZoomInfo estimate; sanity-check rev/employee $150-500k | drop |
+| $10-70M revenue | IBJ/Inc/Buzzfile/ZoomInfo estimate; sanity-check rev/employee $150-500k | drop |
 | Owner-operated | Founder/CEO still running it, not PE roll-up with shared corporate IT | drop |
 | No real tech team | LinkedIn people search: ≤2 hits for CTO/VP Engineering/IT Director/"software engineer"/"developer" | drop |
 | Knowledge-heavy | Their product is judgment, relationships, data-wrangling, compliance — not physical goods or software | deprioritize |
@@ -56,7 +56,7 @@ Ranked by signal-per-hour. Everything below is free or cheap unless noted.
 ## 5-minute tech-gap verification (per company)
 
 1. LinkedIn company page → People tab → search titles: `CTO`, `VP Engineering`, `IT Director`, `software engineer`, `developer`, `data engineer`. **0-2 hits = qualify.** A real tech org has 5+ per 100 employees.
-2. Check total headcount. 50-250 employees + $30-70M = right size.
+2. Check total headcount. 15-250 employees + $10-70M = right size.
 3. Careers page / Indeed: no engineering postings = confirmed. **Postings saying "hiring first developer" = strongest possible timing signal.**
 4. Website: no product/engineering pages, template vendor sites, no GitHub org.
 5. Any dev-adjacent person found → check seniority. One sysadmin doing IT support ≠ a tech team.
