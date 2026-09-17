@@ -1,5 +1,5 @@
 import { query, action, redirect, revalidate } from "@solidjs/router";
-import { eq, and, desc, inArray, isNull, ilike, gt } from "drizzle-orm";
+import { eq, and, desc, asc, inArray, isNull, ilike, gt } from "drizzle-orm";
 import { getTableColumns } from "drizzle-orm";
 import { getAuthedClient } from "./session";
 import { supabaseService } from "./supabase";
@@ -15,6 +15,8 @@ import {
 	deliverableUpdates,
 	apiKeys,
 	outreachProspects,
+	campaigns,
+	campaignCompanies,
 	emailMessages,
 	OUTREACH_STAGES,
 } from "~/db/schema";
@@ -23,6 +25,7 @@ import type {
 	InvoiceStatus,
 	DeliverableStatus,
 	OutreachStage,
+	OutreachProspect,
 } from "~/db/schema";
 import { generateApiKey, hashKey, keyPrefix } from "~/lib/crypto";
 import { normalizeBrainTools } from "~/lib/brain-activity";
@@ -757,7 +760,11 @@ export const getOutreachQuery = query(async () => {
 		.sort(
 			(a, b) => a.nextActionAt!.getTime() - b.nextActionAt!.getTime(),
 		);
-	return { all, due };
+	const campaignList = await db
+		.select({ id: campaigns.id, name: campaigns.name })
+		.from(campaigns)
+		.orderBy(asc(campaigns.name));
+	return { all, due, campaigns: campaignList };
 }, "admin-outreach");
 
 export const createOutreachAction = action(async (formData: FormData) => {
@@ -864,6 +871,116 @@ export const setOutreachNextActionAction = action(async (formData: FormData) => 
 	await revalidate(getOutreachQuery.key);
 	return { success: "Next action saved." };
 }, "setOutreachNextAction");
+
+// ── Outreach campaigns (sequences; the board tracks people, these track sends) ──
+
+export const getCampaignsQuery = query(async () => {
+	"use server";
+	await requireAdmin();
+	const rows = await db.select().from(campaigns).orderBy(desc(campaigns.createdAt));
+	const cos = await db
+		.select()
+		.from(campaignCompanies)
+		.orderBy(asc(campaignCompanies.sequenceStep), asc(campaignCompanies.companyName));
+	// board linkage: which prospects came from each campaign (matched by FK)
+	const linked = await db
+		.select({
+			id: outreachProspects.id,
+			company: outreachProspects.company,
+			stage: outreachProspects.stage,
+			campaignId: outreachProspects.campaignId,
+		})
+		.from(outreachProspects);
+	return rows.map((c) => ({
+		...c,
+		companies: cos.filter((x) => x.campaignId === c.id),
+		prospects: linked.filter((p) => p.campaignId === c.id),
+	}));
+}, "admin-campaigns");
+
+export const createCampaignAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const name = String(formData.get("name") || "").trim();
+	if (!name) return { error: "Campaign name is required." };
+	const description = String(formData.get("description") || "").trim() || null;
+	await db.insert(campaigns).values({ name, description });
+	await revalidate(getCampaignsQuery.key);
+	return { success: `Campaign "${name}" created.` };
+}, "createCampaign");
+
+export const deleteCampaignAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const id = String(formData.get("id"));
+	await db.delete(campaigns).where(eq(campaigns.id, id));
+	await revalidate(getCampaignsQuery.key);
+	await revalidate(getOutreachQuery.key);
+	return { success: "Campaign deleted. Prospects keep their board stages." };
+}, "deleteCampaign");
+
+export const addCampaignCompanyAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const campaignId = String(formData.get("campaign_id"));
+	const companyName = String(formData.get("company_name") || "").trim();
+	if (!companyName) return { error: "Company name is required." };
+	const rawSend = String(formData.get("next_send_at") || "");
+	try {
+		await db.insert(campaignCompanies).values({
+			campaignId,
+			companyName,
+			contactEmail: String(formData.get("contact_email") || "").trim() || null,
+			nextSendAt: rawSend ? new Date(rawSend) : null,
+			nextEmailNote: String(formData.get("next_email_note") || "").trim() || null,
+		});
+	} catch {
+		return { error: `${companyName} is already in this campaign.` };
+	}
+	await revalidate(getCampaignsQuery.key);
+	return { success: `${companyName} added.` };
+}, "addCampaignCompany");
+
+export const updateCampaignCompanyAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const id = String(formData.get("id"));
+	const step = Number(formData.get("sequence_step") || 1);
+	const rawSend = String(formData.get("next_send_at") || "");
+	await db
+		.update(campaignCompanies)
+		.set({
+			sequenceStep: Number.isFinite(step) && step > 0 ? Math.floor(step) : 1,
+			nextSendAt: rawSend ? new Date(rawSend) : null,
+			nextEmailNote: String(formData.get("next_email_note") || "").trim() || null,
+			contactEmail: String(formData.get("contact_email") || "").trim() || null,
+		})
+		.where(eq(campaignCompanies.id, id));
+	await revalidate(getCampaignsQuery.key);
+	return { success: "Saved." };
+}, "updateCampaignCompany");
+
+export const deleteCampaignCompanyAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	await db.delete(campaignCompanies).where(eq(campaignCompanies.id, String(formData.get("id"))));
+	await revalidate(getCampaignsQuery.key);
+	return { success: "Removed." };
+}, "deleteCampaignCompany");
+
+export const setProspectCampaignAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const id = String(formData.get("id"));
+	const campaignId = String(formData.get("campaign_id") || "").trim();
+	await db
+		.update(outreachProspects)
+		.set({ campaignId: campaignId || null })
+		.where(eq(outreachProspects.id, id));
+	await revalidate(getOutreachQuery.key);
+	await revalidate(getCampaignsQuery.key);
+	return { success: campaignId ? "Campaign linked." : "Campaign unlinked." };
+}, "setProspectCampaign");
 
 export interface BrainDigestItem {
 	kind: string;

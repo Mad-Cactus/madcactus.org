@@ -107,6 +107,8 @@ export const outreachProspects = pgTable(
 		videoMaxPosition: integer("video_max_position").notNull().default(0),
 		videoDurationSeconds: integer("video_duration_seconds"),
 		videoCompleted: boolean("video_completed").notNull().default(false),
+		// campaign this prospect came from (set null when the campaign is deleted)
+		campaignId: uuid("campaign_id").references(() => campaigns.id, { onDelete: "set null" }),
 		notes: text("notes"),
 		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp("updated_at", { withTimezone: true })
@@ -142,6 +144,46 @@ export const companies = pgTable("companies", {
 		.defaultNow()
 		.$onUpdate(() => new Date()),
 });
+
+// ── Outreach campaigns (email sequences) ──────────────────────────
+// The CRM board tracks people progressing through stages; campaigns track
+// the sequence itself — which companies are in it, when the next email goes
+// out, and what it should say. Prospects link here via campaignId.
+export const campaigns = pgTable("campaigns", {
+	id: uuid("id").primaryKey().defaultRandom(),
+	name: text("name").notNull(),
+	description: text("description"),
+	createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp("updated_at", { withTimezone: true })
+		.notNull()
+		.defaultNow()
+		.$onUpdate(() => new Date()),
+});
+
+export const campaignCompanies = pgTable(
+	"campaign_companies",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		campaignId: uuid("campaign_id")
+			.notNull()
+			.references(() => campaigns.id, { onDelete: "cascade" }),
+		// denormalized name on purpose: campaign targets often aren't in the
+		// CRM yet — a prospect row gets created (and linked) only once outreach
+		// actually starts
+		companyName: text("company_name").notNull(),
+		contactEmail: text("contact_email"),
+		sequenceStep: integer("sequence_step").notNull().default(1),
+		nextSendAt: timestamp("next_send_at", { withTimezone: true }),
+		// what the next email should say / which template
+		nextEmailNote: text("next_email_note"),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date()),
+	},
+	(t) => [uniqueIndex("campaign_company_uq").on(t.campaignId, t.companyName)],
+);
 
 // ── Client members (the person / portal login) ─────────────────────
 
@@ -910,6 +952,8 @@ export type DocumentType = Document["type"];
 export type DocumentVisibility = Document["visibility"];
 export type InvoiceStatus = Invoice["status"];
 export type OutreachProspect = typeof outreachProspects.$inferSelect;
+export type Campaign = typeof campaigns.$inferSelect;
+export type CampaignCompany = typeof campaignCompanies.$inferSelect;
 export type Doc = typeof docs.$inferSelect;
 export type TextVersion = typeof textVersions.$inferSelect;
 export type EmailAccount = typeof emailAccounts.$inferSelect;

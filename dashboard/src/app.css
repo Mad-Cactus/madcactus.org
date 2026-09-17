@@ -68,6 +68,8 @@
 /* ── Sidebar — gallery-ink dark band (editorial split) ── */
 .sidebar {
   width: 240px;
+  /* wide pages must never squeeze the nav off-screen */
+  flex-shrink: 0;
   background: var(--bg-elevated);
   display: flex;
   flex-direction: column;
@@ -287,6 +289,10 @@
   flex: 1;
   padding: 40px 48px;
   max-width: 1100px;
+  /* allow children to shrink below their content width — without this a wide
+     page (board, tables) pushes .layout wider than the viewport and the
+     sidebar gets clipped */
+  min-width: 0;
 }
 
 /* ── Typography ── */
@@ -572,6 +578,18 @@
   align-items: flex-start;
   overflow-x: auto;
   padding-bottom: 12px;
+  /* full-bleed: escape .content's 1100px cap + padding so all seven stages
+     are reachable; the negative margins are undone by padding-inline */
+  margin-inline: -48px;
+  padding-inline: 48px;
+  scrollbar-width: thin;
+}
+.board::-webkit-scrollbar {
+  height: 8px;
+}
+.board::-webkit-scrollbar-thumb {
+  background: rgba(127, 127, 127, 0.35);
+  border-radius: 4px;
 }
 
 .board-col {
@@ -625,6 +643,8 @@
   /* text selection steals the mousedown → drag never starts */
   user-select: none;
   -webkit-user-select: none;
+  /* pointer-drag: let touch moves become drags, not page scroll */
+  touch-action: none;
 }
 
 .board-card.dragging {

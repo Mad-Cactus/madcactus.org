@@ -15,6 +15,7 @@ import {
 	setOutreachContactAction,
 	resetBrainActivityAction,
 	getProspectEmailCardQuery,
+	setProspectCampaignAction,
 	type BrainActivity,
 	type BrainDigestItem,
 } from "~/lib/admin-queries";
@@ -347,29 +348,96 @@ function VideoSection(props: { videoUrl?: string | null; videoId: string; descri
 	);
 }
 
-function BoardCard(props: { prospect: OutreachProspect & { emailStatus?: ProspectEmailStatus | null }; due: boolean; onDragStart?: (id: string) => void }) {
+function BoardCard(props: {
+		prospect: OutreachProspect & { emailStatus?: ProspectEmailStatus | null };
+		due: boolean;
+		onDragStart?: (id: string | undefined) => void;
+		onHoverStage?: (stage: string | undefined) => void;
+		onDrop?: (stage: OutreachStage, id: string) => void;
+		campaigns?: { id: string; name: string }[];
+	}) {
 	const p = () => props.prospect;
 	const setStage = useAction(setOutreachStageAction);
 	const setBrain = useAction(setOutreachBrainAction);
 	const setVideo = useAction(setOutreachVideoAction);
 	const setNextAction = useAction(setOutreachNextActionAction);
 	const setContact = useAction(setOutreachContactAction);
+	const setCampaign = useAction(setProspectCampaignAction);
 	const [editing, setEditing] = createSignal(false);
-	// metrics open by default — stats should be visible, not buried behind a click
-	// (per-card fetches are fail-soft with a 15s timeout; personal-scale board)
-	const [showMetrics, setShowMetrics] = createSignal(true);
 	const [error, setError] = createSignal("");
 	const [dragging, setDragging] = createSignal(false);
 	const [open, setOpen] = createSignal(false);
 	let dialogRef!: HTMLDialogElement;
 
-	function startDrag(e: DragEvent) {
-		e.dataTransfer?.setData("text/plain", p().id);
-		if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
-		props.onDragStart?.(p().id);
-		// defer the class flip — a synchronous DOM write inside dragstart can
-		// abort the drag in Chrome
-		setTimeout(() => setDragging(true), 0);
+	// pointer-based drag (not HTML5 DnD): native drag is a black box across
+	// browsers/touch — link-steal, no auto-scroll, dead zones. With pointer
+	// events: <5px move = click (opens dialog), more = drag; drop target is
+	// resolved from elementFromPoint, so columns just need a data-stage attr.
+	let drag: { startX: number; startY: number; active: boolean } | null = null;
+	let cardRef!: HTMLDivElement;
+
+	function stageAt(x: number, y: number): string | undefined {
+		const el = document.elementFromPoint(x, y)?.closest?.("[data-stage]") as HTMLElement | null;
+		return el?.dataset.stage;
+	}
+
+	function onPointerDown(e: PointerEvent) {
+		if (e.button !== 0) return;
+		// buttons/inputs keep press semantics; links are allowed — preventDefault
+		// stops the browser from dragging the link URL instead of the card
+		if ((e.target as HTMLElement).closest("button,input,select,textarea,form,dialog")) return;
+		e.preventDefault();
+		drag = { startX: e.clientX, startY: e.clientY, active: false };
+		window.addEventListener("pointermove", onPointerMove);
+		window.addEventListener("pointerup", onPointerUp, { once: true });
+		window.addEventListener("pointercancel", onPointerCancel, { once: true });
+	}
+
+	function onPointerMove(e: PointerEvent) {
+		if (!drag) return;
+		if (!drag.active) {
+			if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < 5) return;
+			drag.active = true;
+			setDragging(true);
+			props.onDragStart?.(p().id);
+		}
+		e.preventDefault();
+		props.onHoverStage?.(stageAt(e.clientX, e.clientY));
+		// horizontal auto-scroll when the pointer nears the board's edges
+		const board = cardRef.closest(".board") as HTMLElement | null;
+		if (board) {
+			const r = board.getBoundingClientRect();
+			if (e.clientX > r.right - 56) board.scrollLeft += 14;
+			else if (e.clientX < r.left + 56) board.scrollLeft -= 14;
+		}
+	}
+
+	function finish() {
+		window.removeEventListener("pointermove", onPointerMove);
+		setDragging(false);
+		drag = null;
+		props.onHoverStage?.(undefined);
+	}
+
+	function onPointerCancel() {
+		if (drag?.active) props.onDragStart?.(undefined);
+		finish();
+	}
+
+	function onPointerUp(e: PointerEvent) {
+		const wasDrag = drag?.active;
+		finish();
+		if (!wasDrag) {
+			// it was a click: links/buttons keep their own behavior
+			if (!(e.target as HTMLElement).closest("a,button,input,select,textarea,form")) {
+				setOpen(true);
+				if (!dialogRef.open) dialogRef.showModal();
+			}
+			return;
+		}
+		props.onDragStart?.(undefined);
+		const stage = stageAt(e.clientX, e.clientY);
+		if (stage && stage !== p().stage) props.onDrop?.(stage as OutreachStage, p().id);
 	}
 
 	async function handleSave(e: Event) {
@@ -419,22 +487,23 @@ function BoardCard(props: { prospect: OutreachProspect & { emailStatus?: Prospec
 				return;
 			}
 		}
+		const campaignId = String(fd.get("campaign_id") || "").trim();
+		if (campaignId !== (p().campaignId ?? "")) {
+			const r4 = (await setCampaign(fd)) as { error?: string };
+			if (r4.error) {
+				setError(r4.error);
+				return;
+			}
+		}
 		setEditing(false);
 	}
 
 	return (
 		<div
 			class="board-card"
+			ref={cardRef}
 			classList={{ dragging: dragging() }}
-			draggable
-			onDragStart={startDrag}
-			onDragEnd={() => setDragging(false)}
-			onClick={(e) => {
-				// links/buttons keep their own behavior; everything else opens the detail dialog
-				if ((e.target as HTMLElement).closest("a,button,input,select,textarea,form")) return;
-				setOpen(true);
-				dialogRef.showModal();
-			}}
+			onPointerDown={onPointerDown}
 		>
 			<div style={{ display: "flex", "align-items": "baseline", gap: "6px" }}>
 				<span style={{ "font-weight": "600", "font-size": "13px" }}>{p().company}</span>
@@ -459,91 +528,15 @@ function BoardCard(props: { prospect: OutreachProspect & { emailStatus?: Prospec
 
 			{/* email status — matched by the prospect's address against the synced
 		    corpus; "view" opens the Email tab pre-filtered to that address */}
-			<Show when={p().emailStatus?.repliedAt || p().emailStatus?.lastSentAt}>
-				<div style={{ "font-size": "12px", margin: "5px 0" }}>
-					<Show
-						when={p().emailStatus!.repliedAt}
-						fallback={
-							<span class="muted">sent {fmtDate(p().emailStatus!.lastSentAt!)} ·{" "}</span>
-						}
-					>
-						<span class="badge" style={{ color: "#2980b9" }}>↩ replied {fmtDate(p().emailStatus!.repliedAt!)}</span>{" "}
-					</Show>
-					<Show when={p().emailStatus?.replySnippet}>
-						<div class="muted" style={{ "margin-top": "2px", "overflow-wrap": "anywhere" }}>{p().emailStatus!.replySnippet}</div>
-					</Show>
+			<Show when={p().emailStatus?.lastSentAt}>
+				<div class="muted" style={{ "font-size": "12px", margin: "5px 0" }}>
+					sent {fmtDate(p().emailStatus!.lastSentAt!)}
 				</div>
 			</Show>
 
-			<Show when={p().videoUrl || p().brainUrl}>
-				<div style={{ "font-size": "12px", margin: "5px 0" }}>
-					<Show when={p().videoUrl}>
-						<Show
-							when={videoSummary(p())}
-							fallback={<div class="muted" style={{ "margin-bottom": "4px" }}>video not opened yet</div>}
-						>
-							<div style={{ color: "var(--orange)", "margin-bottom": "4px" }}>{videoSummary(p())}</div>
-						</Show>
-					</Show>
-					<VideoSection videoUrl={p().videoUrl} videoId={p().id} description={p().videoDescription} />
-					<Show when={p().brainUrl}>
-						<a class="btn btn-sm" href={brainHref(p())} target="_blank" rel="noreferrer">brain ↗</a>
-					</Show>
-				</div>
-			</Show>
 
-			<Show when={p().notes}>
-				<p class="muted" style={{ "font-size": "12px", margin: "5px 0" }}>{p().notes}</p>
-			</Show>
-
-			<div style={{ "margin-top": "8px", display: "flex", gap: "6px", "flex-wrap": "wrap" }}>
-				<button type="button" class="btn btn-sm" onClick={() => setEditing(!editing())}>
-					{editing() ? "Cancel" : "Edit"}
-				</button>
-				<Show when={p().brainUrl}>
-					<button type="button" class="btn btn-sm" onClick={() => setShowMetrics(!showMetrics())}>
-						{showMetrics() ? "hide metrics" : "metrics"}
-					</button>
-				</Show>
-			</div>
-			<Show when={showMetrics()}>
-				<ActivityDetails prospect={p()} />
-			</Show>
-
-			<Show when={error()}>
-				<p class="login-error">{error()}</p>
-			</Show>
-
-			{/* stage select covers touch + keyboard — HTML5 drag doesn't fire there */}
-			<Show when={editing()}>
-				<form onSubmit={handleSave} style={{ display: "grid", gap: "8px", "margin-top": "8px" }}>
-					<input type="hidden" name="id" value={p().id} />
-					<input type="text" name="contact_name" placeholder="Contact name" value={p().contactName ?? ""} />
-					<input type="email" name="email" placeholder="Email (sent-to address)" value={p().email ?? ""} />
-					<select name="stage" value={p().stage}>
-						<For each={OUTREACH_STAGES}>{(s) => <option value={s}>{stageLabel(s)}</option>}</For>
-					</select>
-					<input type="datetime-local" name="next_action_at" value={toInputValue(p().nextActionAt)} />
-					<input type="url" name="video_url" placeholder="Video URL (cap.so share link)" value={p().videoUrl ?? ""} />
-					<input
-						type="text"
-						name="video_description"
-						placeholder="Video description (what it shows / why)"
-						value={p().videoDescription ?? ""}
-					/>
-					<input type="text" name="next_action_note" placeholder="Next action note" value={p().nextActionNote ?? ""} />
-					{/* brain fields live here, not just the Add form — omitting them used to
-					    wipe brain_url on every card save (handleSave diffs form vs row) */}
-					<input type="url" name="brain_url" placeholder="Brain URL (https://….madcactus.org)" value={p().brainUrl ?? ""} />
-					<input
-						type="text"
-						name="brain_activity_key"
-						placeholder="Brain activity key"
-						value={p().brainActivityKey ?? ""}
-					/>
-					<button type="submit" class="btn btn-primary btn-sm">Save</button>
-				</form>
-			</Show>
+			{/* edit form lives in the detail dialog only — the card stays minimal.
+			    stage select covers touch + keyboard — HTML5 drag doesn't fire there */}
 
 			{/* detail dialog: email, brain digest + activity live here, not on the card */}
 			<dialog
@@ -553,19 +546,19 @@ function BoardCard(props: { prospect: OutreachProspect & { emailStatus?: Prospec
 				onClose={() => setOpen(false)}
 			>
 				<Show when={open()}>
+				<Show when={error()}>
+					<p class="login-error">{error()}</p>
+				</Show>
 					<div style={{ display: "flex", "align-items": "center", gap: "8px" }}>
 						<h2 style={{ margin: "0", "font-size": "15px" }}>{p().company}</h2>
 						<div style={{ "margin-left": "auto", display: "flex", gap: "6px" }}>
-							<button
-								type="button"
-								class="btn btn-sm"
-								onClick={() => {
-									dialogRef.close();
-										setEditing(true);
-									}}
-								>
-									Edit
-								</button>
+						<button
+							type="button"
+							class="btn btn-sm"
+							onClick={() => setEditing(!editing())}
+						>
+							{editing() ? "Close editor" : "Edit"}
+						</button>
 								<button type="button" class="btn btn-sm" onClick={() => dialogRef.close()}>
 									Close
 								</button>
@@ -606,6 +599,27 @@ function BoardCard(props: { prospect: OutreachProspect & { emailStatus?: Prospec
 						<p class="muted" style={{ "font-size": "12px", margin: "8px 0" }}>{p().notes}</p>
 					</Show>
 				</Show>
+				<Show when={editing()}>
+					<form onSubmit={handleSave} style={{ display: "grid", gap: "8px", "margin-top": "12px" }}>
+						<input type="hidden" name="id" value={p().id} />
+						<input type="text" name="contact_name" placeholder="Contact name" value={p().contactName ?? ""} />
+						<input type="email" name="email" placeholder="Email (sent-to address)" value={p().email ?? ""} />
+						<select name="stage" value={p().stage}>
+							<For each={OUTREACH_STAGES}>{(s) => <option value={s}>{stageLabel(s)}</option>}</For>
+						</select>
+						<input type="datetime-local" name="next_action_at" value={toInputValue(p().nextActionAt)} />
+						<input type="url" name="video_url" placeholder="Video URL (cap.so share link)" value={p().videoUrl ?? ""} />
+						<input type="text" name="video_description" placeholder="Video description (what it shows / why)" value={p().videoDescription ?? ""} />
+						<input type="text" name="next_action_note" placeholder="Next action note" value={p().nextActionNote ?? ""} />
+						<input type="url" name="brain_url" placeholder="Brain URL (https://….madcactus.org)" value={p().brainUrl ?? ""} />
+						<input type="text" name="brain_activity_key" placeholder="Brain activity key" value={p().brainActivityKey ?? ""} />
+						<select name="campaign_id" value={p().campaignId ?? ""}>
+							<option value="">— no campaign —</option>
+							<For each={props.campaigns ?? []}>{(c) => <option value={c.id}>{c.name}</option>}</For>
+						</select>
+						<button type="submit" class="btn btn-primary btn-sm">Save</button>
+					</form>
+				</Show>
 			</dialog>
 		</div>
 	);
@@ -614,7 +628,6 @@ function BoardCard(props: { prospect: OutreachProspect & { emailStatus?: Prospec
 function Board() {
 	const outreach = createAsync(() => getOutreachQuery(), { deferStream: true });
 	const setStage = useAction(setOutreachStageAction);
-	const [draggedId, setDraggedId] = createSignal<string | undefined>();
 	const [hoverStage, setHoverStage] = createSignal<string | undefined>();
 	const [error, setError] = createSignal("");
 	// ponytail: optimistic stage override stays in place after a successful
@@ -633,17 +646,11 @@ function Board() {
 		});
 	});
 
-	async function handleDrop(e: DragEvent, stage: OutreachStage) {
-		e.preventDefault();
+	async function handleDrop(stage: OutreachStage, id: string) {
+		setError("");
 		setHoverStage(undefined);
-		// id travels via the Board signal (set synchronously in dragstart);
-		// dataTransfer is only a fallback
-		const id = draggedId() ?? e.dataTransfer?.getData("text/plain");
-		setDraggedId(undefined);
-		if (!id) return;
 		const p = outreach()?.all.find((x) => x.id === id);
 		if (!p || p.stage === stage) return;
-		setError("");
 		setOverrides((o) => ({ ...o, [id]: stage }));
 		const fd = new FormData();
 		fd.set("id", id);
@@ -671,16 +678,8 @@ function Board() {
 							{(col) => (
 								<div
 									class="board-col"
+										data-stage={col.stage}
 									classList={{ "drag-over": hoverStage() === col.stage }}
-									onDragOver={(e) => {
-										e.preventDefault();
-										if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
-										setHoverStage(col.stage);
-									}}
-									onDragLeave={(e) => {
-										if (!e.currentTarget.contains(e.relatedTarget as Node)) setHoverStage(undefined);
-									}}
-									onDrop={(e) => handleDrop(e, col.stage)}
 								>
 									<div class="board-col-head">
 										<span class="dot" style={{ background: STAGE_COLOR[col.stage] }} />
@@ -689,7 +688,15 @@ function Board() {
 									</div>
 									<div class="board-cards">
 										<For each={col.cards}>
-											{(p) => <BoardCard prospect={p} due={dueIds().has(p.id)} onDragStart={setDraggedId} />}
+											{(p) => (
+												<BoardCard
+													prospect={p}
+													due={dueIds().has(p.id)}
+													onHoverStage={setHoverStage}
+													onDrop={handleDrop}
+												campaigns={outreach()?.campaigns}
+												/>
+											)}
 										</For>
 										<Show when={!col.cards.length}>
 											<p class="muted" style={{ "font-size": "12px", margin: "0" }}>drop here</p>
