@@ -108,7 +108,9 @@ export async function sendOutboxInner(
 		const [thread] = await db.select().from(emailThreads).where(eq(emailThreads.id, row.threadId));
 		if (thread) {
 			const full = await threadWithMessages(account, thread.id);
-			inReplyToGmailId = full?.messages.filter((m) => !m.isSent).at(-1)?.gmailId;
+			// last inbound so the reply threads onto their message; a sent-only
+			// thread (follow-up to unanswered cold email) threads onto my own send
+			inReplyToGmailId = full?.messages.filter((m) => !m.isSent).at(-1)?.gmailId ?? full?.messages.at(-1)?.gmailId;
 		}
 	}
 

@@ -645,11 +645,14 @@ export default function AdminEmail() {
 			} else if (e.key === "x" && !visMode() && selected()) {
 				void askUnsub();
 			} else if (e.key === "r" && !visMode() && selected()) {
-				const last = selected()!.messages.filter((m) => !m.isSent).at(-1);
+				// reply targets the last inbound message; on a sent-only thread
+				// (cold outreach, no answer yet) fall back to the last message —
+				// the recipient is its To: header
+				const last = selected()!.messages.filter((m) => !m.isSent).at(-1) ?? selected()!.messages.at(-1);
 				setCompose({
-					to: last?.fromEmail ?? "",
+					to: last ? (last.isSent ? (last.toEmails ?? "") : (last.fromEmail ?? "")) : "",
 					subject: selected()!.thread.subject.startsWith("Re:") ? selected()!.thread.subject : `Re: ${selected()!.thread.subject}`,
-					body: `\n\n---\nOn ${last ? new Date(last.date).toLocaleString() : ""}, ${last?.fromEmail ?? ""} wrote:\n${(last?.bodyText ?? "").slice(0, 2000)}`,
+					body: `\n\n${(last?.bodyText ?? "").slice(0, 2000)}`,
 					threadId: selected()!.thread.id,
 				});
 			} else if (e.key === "f" && !visMode() && selected()) {
