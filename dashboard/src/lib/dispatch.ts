@@ -24,7 +24,9 @@ export async function listPublishedDispatch(): Promise<DispatchIssue[]> {
 	return rows.map((r) => ({ ...r, issueNumber: r.issueNumber ?? 0 }));
 }
 
-export async function getPublishedDispatch(id: string): Promise<(DispatchIssue & { markdown: string; webMarkdown: string | null }) | null> {
+export async function getPublishedDispatch(
+	id: string,
+): Promise<(DispatchIssue & { markdown: string; webMarkdown: string | null; webAppendix: string }) | null> {
 	if (!UUID_RE.test(id)) return null;
 	const [row] = await db
 		.select({
@@ -34,6 +36,7 @@ export async function getPublishedDispatch(id: string): Promise<(DispatchIssue &
 			issueNumber: docs.issueNumber,
 			markdown: docs.markdown,
 			webMarkdown: docs.webMarkdown,
+			webAppendix: docs.webAppendix,
 		})
 		.from(docs)
 		.where(and(eq(docs.id, id), eq(docs.kind, "newsletter"), eq(docs.status, "published")));

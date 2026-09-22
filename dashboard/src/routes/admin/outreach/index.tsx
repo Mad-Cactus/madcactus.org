@@ -7,6 +7,7 @@ import {
 	getOutreachQuery,
 	createOutreachAction,
 	setOutreachStageAction,
+	setOutreachIcpAction,
 	setOutreachNextActionAction,
 	setOutreachBrainAction,
 	setOutreachVideoAction,
@@ -24,6 +25,7 @@ import type { ProspectEmailStatus } from "~/lib/admin-queries";
 import { fmtDate, fmtDur, videoSummary } from "~/lib/video-summary";
 
 const STAGE_COLOR: Record<string, string> = {
+	candidate: "var(--text-subtle)",
 	proposed: "#8e7cc3",
 	sent: "var(--text-subtle)",
 	watching: "var(--orange)",
@@ -33,6 +35,16 @@ const STAGE_COLOR: Record<string, string> = {
 	shutdown: "var(--red)",
 };
 
+
+/** The one next stage an advance button moves a card to (with its preset
+ *  next-action interval — see STAGE_NEXT_DAYS in admin-queries). */
+const ADVANCE: Partial<Record<OutreachStage, { next: OutreachStage; label: string }>> = {
+	candidate: { next: "proposed", label: "Invite → +3d" },
+	proposed: { next: "sent", label: "Invite sent → +3d" },
+	sent: { next: "watching", label: "Followed up → +4d" },
+	watching: { next: "replied", label: "Replied → +1d" },
+	replied: { next: "meeting", label: "Meeting set → +1d" },
+};
 
 /** datetime-local value for an existing date (local wall clock). */
 function toInputValue(d: Date | null): string {
@@ -351,6 +363,7 @@ function VideoSection(props: { videoUrl?: string | null; videoId: string; descri
 function BoardCard(props: {
 		prospect: OutreachProspect & { emailStatus?: ProspectEmailStatus | null };
 		due: boolean;
+		overdue?: boolean;
 		onDragStart?: (id: string | undefined) => void;
 		onHoverStage?: (stage: string | undefined) => void;
 		onDrop?: (stage: OutreachStage, id: string) => void;
@@ -358,6 +371,7 @@ function BoardCard(props: {
 	}) {
 	const p = () => props.prospect;
 	const setStage = useAction(setOutreachStageAction);
+	const setIcp = useAction(setOutreachIcpAction);
 	const setBrain = useAction(setOutreachBrainAction);
 	const setVideo = useAction(setOutreachVideoAction);
 	const setNextAction = useAction(setOutreachNextActionAction);
@@ -440,6 +454,29 @@ function BoardCard(props: {
 		if (stage && stage !== p().stage) props.onDrop?.(stage as OutreachStage, p().id);
 	}
 
+	// advance button: one click to the next stage WITH its next-action preset
+	async function advance() {
+		const a = ADVANCE[p().stage as OutreachStage];
+		if (!a) return;
+		setError("");
+		const fd = new FormData();
+		fd.set("id", p().id);
+		fd.set("stage", a.next);
+		fd.set("preset_next", "1");
+		const r = (await setStage(fd)) as { error?: string };
+		if (r.error) setError(r.error);
+	}
+
+	// candidate review: the fit gate the connect automation checks
+	async function approveIcp() {
+		setError("");
+		const fd = new FormData();
+		fd.set("id", p().id);
+		fd.set("icp_approved", p().icpApproved ? "0" : "1");
+		const r = (await setIcp(fd)) as { error?: string };
+		if (r.error) setError(r.error);
+	}
+
 	async function handleSave(e: Event) {
 		e.preventDefault();
 		setError("");
@@ -495,6 +532,19 @@ function BoardCard(props: {
 				return;
 			}
 		}
+		const icpChanged =
+			String(fd.get("region")) !== p().region ||
+			String(fd.get("revenue_band")) !== p().revenueBand ||
+			String(fd.get("tech_team")) !== p().techTeam ||
+			String(fd.get("ai_interest")) !== p().aiInterest ||
+			String(fd.get("icp_approved")) !== (p().icpApproved ? "1" : "0");
+		if (icpChanged) {
+			const r5 = (await setIcp(fd)) as { error?: string };
+			if (r5.error) {
+				setError(r5.error);
+				return;
+			}
+		}
 		setEditing(false);
 	}
 
@@ -503,14 +553,23 @@ function BoardCard(props: {
 			class="board-card"
 			ref={cardRef}
 			classList={{ dragging: dragging() }}
+			style={{ "border-color": props.overdue ? "var(--red)" : undefined }}
 			onPointerDown={onPointerDown}
 		>
 			<div style={{ display: "flex", "align-items": "baseline", gap: "6px" }}>
 				<span style={{ "font-weight": "600", "font-size": "13px" }}>{p().company}</span>
+				<Show when={p().icpApproved}>
+					<span class="badge" style={{ color: "var(--green)", "white-space": "nowrap" }}>ICP ✓</span>
+				</Show>
 				<Show when={props.due}>
 					<span class="badge" style={{ color: "var(--orange)", "margin-left": "auto", "white-space": "nowrap" }}>due</span>
 				</Show>
 			</div>
+			<Show when={p().stage === "candidate"}>
+				<button type="button" class="btn btn-sm" style={{ margin: "4px 0" }} onClick={() => void approveIcp()}>
+					{p().icpApproved ? "Un-approve" : "Approve fit"}
+				</button>
+			</Show>
 			<Show when={p().contactName || p().email}>
 				<div class="muted" style={{ "font-size": "12px" }}>
 					<Show when={p().contactName}>{p().contactName}</Show>
@@ -552,6 +611,11 @@ function BoardCard(props: {
 					<div style={{ display: "flex", "align-items": "center", gap: "8px" }}>
 						<h2 style={{ margin: "0", "font-size": "15px" }}>{p().company}</h2>
 						<div style={{ "margin-left": "auto", display: "flex", gap: "6px" }}>
+						<Show when={ADVANCE[p().stage as OutreachStage]}>
+							<button type="button" class="btn btn-primary btn-sm" onClick={() => void advance()}>
+								{ADVANCE[p().stage as OutreachStage]!.label}
+							</button>
+						</Show>
 						<button
 							type="button"
 							class="btn btn-sm"
@@ -617,6 +681,25 @@ function BoardCard(props: {
 							<option value="">— no campaign —</option>
 							<For each={props.campaigns ?? []}>{(c) => <option value={c.id}>{c.name}</option>}</For>
 						</select>
+						{/* ICP fields — researched, never asked of the lead */}
+						<div style={{ display: "flex", gap: "8px", "flex-wrap": "wrap" }}>
+							<select name="region" value={p().region}>
+								<For each={["unknown", "Midwest", "other"]}>{(v) => <option value={v}>region: {v}</option>}</For>
+							</select>
+							<select name="revenue_band" value={p().revenueBand}>
+								<For each={["unknown", "low", "mid", "high"]}>{(v) => <option value={v}>revenue: {v}</option>}</For>
+							</select>
+							<select name="tech_team" value={p().techTeam}>
+								<For each={["unknown", "none", "small", "large"]}>{(v) => <option value={v}>tech team: {v}</option>}</For>
+							</select>
+							<select name="ai_interest" value={p().aiInterest}>
+								<For each={["unknown", "none", "some", "high"]}>{(v) => <option value={v}>AI interest: {v}</option>}</For>
+							</select>
+							<select name="icp_approved" value={p().icpApproved ? "1" : "0"}>
+								<option value="0">ICP: not approved</option>
+								<option value="1">ICP: approved</option>
+							</select>
+						</div>
 						<button type="submit" class="btn btn-primary btn-sm">Save</button>
 					</form>
 				</Show>
@@ -666,6 +749,13 @@ function Board() {
 		}
 	}
 
+	// overdue = due before today started (red tint in the Today queue)
+	const overdueIds = createMemo(() => {
+		const start = new Date();
+		start.setHours(0, 0, 0, 0);
+		return new Set((outreach()?.due ?? []).filter((p) => p.nextActionAt && p.nextActionAt < start).map((p) => p.id));
+	});
+
 	return (
 		<div>
 			<Show when={error()}>
@@ -673,6 +763,28 @@ function Board() {
 			</Show>
 			<Suspense fallback={<p class="muted">Loading…</p>}>
 				<Show when={outreach()?.all.length} fallback={<p class="muted">No prospects yet — add one above.</p>}>
+					{/* pinned Today queue — everything due now, overdue first */}
+					<Show when={outreach()?.due.length}>
+						<h2 style={{ "font-size": "15px", margin: "20px 0 10px" }}>
+							Today <span class="board-col-count">{outreach()?.due.length}</span>
+						</h2>
+						<div style={{ display: "flex", gap: "10px", "flex-wrap": "wrap", "margin-bottom": "20px" }}>
+							<For each={outreach()?.due}>
+								{(p) => (
+									<div style={{ width: "230px" }}>
+										<BoardCard
+											prospect={p}
+											due={true}
+											overdue={overdueIds().has(p.id)}
+											onHoverStage={setHoverStage}
+											onDrop={handleDrop}
+											campaigns={outreach()?.campaigns}
+										/>
+									</div>
+								)}
+							</For>
+						</div>
+					</Show>
 					<div class="board">
 						<For each={columns()}>
 							{(col) => (

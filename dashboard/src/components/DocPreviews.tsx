@@ -1,5 +1,5 @@
 import { Show, createSignal, createMemo } from "solid-js";
-import { markdownToPostText, newsletterSubject, markdownToHtml, EMAIL_FOOTER_HTML } from "~/lib/publish-core";
+import { markdownToPostText, newsletterSubject, renderIssueBody, emailFooterHtml } from "~/lib/publish-core";
 
 export type PreviewMode = "linkedin" | "email" | "web";
 
@@ -105,15 +105,15 @@ export function LinkedInPreview(props: { markdown: string; title: string; firstC
  *  "wall of text" preview. Includes the code-owned footer so it is byte-for-
  *  byte what sendNewsletter puts in the broadcast.
  */
-export function NewsletterEmailPreview(props: { markdown: string; title: string }) {
+export function NewsletterEmailPreview(props: { markdown: string; title: string; appendix?: string }) {
 	const emailHtml = () =>
 		`<!doctype html><html><head><meta charset="utf-8">` +
 		`<meta name="viewport" content="width=device-width,initial-scale=1"></head>` +
 		`<body style="margin:0;background:#ffffff;">` +
 		`<div style="max-width:640px;margin:0 auto;padding:20px 24px;font-family:Georgia,'Times New Roman',serif;` +
 		`font-size:16px;line-height:1.6;color:#1a1a1a;">` +
-		markdownToHtml(props.markdown, "email") +
-		EMAIL_FOOTER_HTML +
+		renderIssueBody(props.markdown, props.appendix, "email") +
+		emailFooterHtml() +
 		`</div></body></html>`;
 	return (
 		<div style={{ width: "100%", "max-width": "640px" }}>

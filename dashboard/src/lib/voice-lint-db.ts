@@ -67,8 +67,10 @@ export function lintGateError(lint: LintResult) {
 
 /** The prose half: Collin's voice lessons (brain_facts kind='lesson',
  *  entity 'voice'), highest-signal first — the "read before writing" list.
- *  Default 10: a short list agents actually read beats a long one they skim. */
-export async function getVoiceLessons(limit = 10, scope?: VoiceScope) {
+ *  Default 10: a short list agents actually read beats a long one they skim.
+ *  topic narrows to tagged learnings: 'subject' | 'cta' (exact match —
+ *  agents fetch subject lessons and CTA lessons separately before drafting). */
+export async function getVoiceLessons(limit = 10, scope?: VoiceScope, topic?: "subject" | "cta") {
 	const rows = await db
 		.select({
 			id: brainFacts.id,
@@ -78,7 +80,14 @@ export async function getVoiceLessons(limit = 10, scope?: VoiceScope) {
 			confidence: brainFacts.confidence,
 		})
 		.from(brainFacts)
-		.where(and(eq(brainFacts.entitySlug, "voice"), eq(brainFacts.kind, "lesson"), sql`${brainFacts.expiredAt} IS NULL`))
+		.where(
+			and(
+				eq(brainFacts.entitySlug, "voice"),
+				eq(brainFacts.kind, "lesson"),
+				sql`${brainFacts.expiredAt} IS NULL`,
+				...(topic ? [eq(brainFacts.topic, topic)] : []),
+			),
+		)
 		.orderBy(sql`${brainFacts.confidence} desc`)
 		.limit(500);
 	return rows.filter((r) => patternApplies(r, scope)).slice(0, limit);

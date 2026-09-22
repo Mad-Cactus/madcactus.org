@@ -1,8 +1,9 @@
-import { A } from "@solidjs/router";
+import { A, createAsync } from "@solidjs/router";
 import { clientOnly } from "@solidjs/start";
 import { For, ParentComponent, Show, createEffect, createSignal, onMount } from "solid-js";
 import Timer from "~/components/Timer";
 import CommandPalette from "~/components/CommandPalette";
+import { getDueOutreachCountQuery } from "~/lib/admin-queries";
 
 // clientOnly: the widget mounts via <Portal> and throws during hydration in
 // dev ("create new DOM elements during hydration") — render it post-hydration.
@@ -24,6 +25,7 @@ const links = [
 	{ href: "/admin/docs", label: "Docs", icon: "M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5zM14 2v6h6M9 13h6M9 17h6" },
 	{ href: "/admin/posts", label: "Posts", icon: "M3 11l18-5v12L3 13v-2z M11.6 16.8a3 3 0 1 1-5.8-1.6" },
 	{ href: "/admin/newsletters", label: "Newsletters", icon: "M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-4 0V9h2 M18 6h-6v4h6V6z" },
+	{ href: "/admin/brain-requests", label: "Brain requests", icon: "M12 2a7 7 0 0 0-7 7c0 2.4 1.2 4.5 3 5.7V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.3c1.8-1.2 3-3.3 3-5.7a7 7 0 0 0-7-7zM9 22h6" },
 	{ href: "/admin/links", label: "Links", icon: "M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71 M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" },
 	{ href: "/admin/brain", label: "Brain", icon: "M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5M9 18h6M10 22h4" },
 	{ href: "/admin/api-keys", label: "API Keys", icon: "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3" },
@@ -36,6 +38,7 @@ const NavIcon: ParentComponent<{ d: string }> = (p) => (
 );
 
 const Layout: ParentComponent<{ user?: { id?: string; email?: string } | null }> = (props) => {
+	const dueOutreach = createAsync(() => getDueOutreachCountQuery(), { deferStream: true });
 	// ponytail: collapsed state loads after mount — SSR always renders expanded,
 	// so a saved collapse flashes for one frame. Move to a cookie if that bugs you.
 	const [collapsed, setCollapsed] = createSignal(false);
@@ -83,6 +86,11 @@ const Layout: ParentComponent<{ user?: { id?: string; email?: string } | null }>
 							>
 								<NavIcon d={link.icon} />
 								<span class="nav-label">{link.label}</span>
+								<Show when={link.href === "/admin/outreach"}>
+									<span class="nav-badge" style={{ "margin-left": "auto", color: "var(--orange)", "font-size": "11px" }}>
+										{dueOutreach() ?? ""}
+									</span>
+								</Show>
 							</A>
 						)}
 					</For>

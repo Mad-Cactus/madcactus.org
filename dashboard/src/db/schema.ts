@@ -66,7 +66,10 @@ export const invoiceStatus = pgEnum("invoice_status", [
 
 // Single source of truth for stage values — the column default, the check
 // constraint, and the UI advance buttons all derive from this array.
+// "candidate" = scraped from LinkedIn search, awaiting Collin's ICP review;
+// only icpApproved rows may get an automated connection invite.
 export const OUTREACH_STAGES = [
+	"candidate",
 	"proposed",
 	"sent",
 	"watching",
@@ -109,6 +112,17 @@ export const outreachProspects = pgTable(
 		videoCompleted: boolean("video_completed").notNull().default(false),
 		// campaign this prospect came from (set null when the campaign is deleted)
 		campaignId: uuid("campaign_id").references(() => campaigns.id, { onDelete: "set null" }),
+		// ── ICP qualification (researched by Collin or the sourcing loop — never asked of the lead) ──
+		region: text("region").notNull().default("unknown"),
+		revenueBand: text("revenue_band").notNull().default("unknown"),
+		techTeam: text("tech_team").notNull().default("unknown"), // none|small|large|unknown
+		aiInterest: text("ai_interest").notNull().default("unknown"), // none|some|high|unknown
+		// yes = the sourcing automation MAY send a connection invite (human fit review gate)
+		icpApproved: boolean("icp_approved").notNull().default(false),
+		// where the row came from ("li-search 2026-09-19", campaign name, …)
+		sourceNote: text("source_note"),
+		// set once the connect automation sent the invite — never invite twice
+		invitedAt: timestamp("invited_at", { withTimezone: true }),
 		notes: text("notes"),
 		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp("updated_at", { withTimezone: true })
@@ -458,6 +472,16 @@ export const docs = pgTable(
 		// across newsletters) and never reused, so unlisting an issue doesn't
 		// renumber the rest. Null until first publish; newsletters only.
 		issueNumber: integer("issue_number"),
+		// ── Channel appendix (newsletters): per-channel copy AFTER the body —
+		// the CTA block. Never injected into body markdown; rendered after it
+		// by renderIssueBody(). Empty for pre-appendix issues.
+		emailAppendix: text("email_appendix").notNull().default(""),
+		webAppendix: text("web_appendix").notNull().default(""),
+		// ── Send tracking — reality checks for the learnings loop. Primary
+		// signals stay meetings/replies/clients; opens are one optional signal.
+		resendBroadcastId: text("resend_broadcast_id"),
+		opens: integer("opens").notNull().default(0),
+		clicks: integer("clicks").notNull().default(0),
 		scheduledFor: timestamp("scheduled_for", { withTimezone: true }),
 		publishedAt: timestamp("published_at", { withTimezone: true }),
 		publishError: text("publish_error"),
@@ -488,6 +512,27 @@ export const shortLinks = pgTable("short_links", {
 	docId: uuid("doc_id").references(() => docs.id, { onDelete: "set null" }),
 	createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// Per-person short-link clicks. Social clicks stay aggregate on
+// short_links.clicks (anonymous traffic — no identity exists); email clicks
+// arrive with ?r={{email}} (Resend's per-recipient variable) and land here,
+// so "who clicked what" joins against ICP prospects directly.
+export const shortLinkClicks = pgTable(
+	"short_link_clicks",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		slug: text("slug")
+			.notNull()
+			.references(() => shortLinks.slug, { onDelete: "cascade" }),
+		docId: uuid("doc_id").references(() => docs.id, { onDelete: "set null" }),
+		recipient: text("recipient").notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+	(t) => [
+		index("idx_short_link_clicks_person").on(t.recipient, t.createdAt),
+		index("idx_short_link_clicks_slug").on(t.slug, t.createdAt),
+	],
+);
 
 // OAuth tokens for scheduled publishing targets (LinkedIn). One row per
 // provider — access tokens are short-lived (~60d) and refreshed on use.
@@ -665,6 +710,9 @@ export const brainFacts = pgTable(
 		// freeform genre within the surface ("marketing" vs "informational" …);
 		// null = applies to every genre on that surface
 		genre: text("genre"),
+		// optional learning tag: 'subject' | 'cta' — what the lesson is about
+		// (email subjects vs calls-to-action). Null = general lesson.
+		topic: text("topic"),
 		// provenance INTO workspace tables: 'email_messages' | 'text_versions' |
 		// 'documents' | 'manual'
 		sourceTable: text("source_table").notNull(),
@@ -931,6 +979,52 @@ export const slackMessages = pgTable(
 	],
 );
 
+// ── Brain lead magnet — /brain form submissions (one funnel: everything
+// points here). You build the brain from the answers + public data; the
+// delivered brain URL doubles as outreach pipeline entry (prospectId).
+export const brainRequestStatus = pgEnum("brain_request_status", [
+	"new",
+	"building",
+	"delivered",
+	"declined",
+]);
+
+export const brainRequests = pgTable(
+	"brain_requests",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		// every form answer, verbatim — the extracted columns below are the
+		// queryable subset for the pipeline views
+		answers: jsonb("answers").notNull().default({}),
+		company: text("company").notNull(),
+		contactEmail: text("contact_email").notNull(),
+		jobTitle: text("job_title"),
+		headcount: text("headcount"),
+		status: brainRequestStatus("status").notNull().default("new"),
+		// which issue drove the request (utm on the /brain link) — attribution
+		sourceDocId: uuid("source_doc_id").references(() => docs.id, { onDelete: "set null" }),
+		// set when the shipped brain becomes an outreach prospect
+		prospectId: uuid("prospect_id").references(() => outreachProspects.id, { onDelete: "set null" }),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+	(t) => [index("idx_brain_requests_status").on(t.status, t.createdAt)],
+);
+
+// Resend webhook event log — the unique event id dedups provider retries
+// (at-least-once delivery), so counters never double-bump.
+export const resendEvents = pgTable(
+	"resend_events",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		eventId: text("event_id").notNull().unique(), // svix msg_id header
+		type: text("type").notNull(), // email.opened | email.clicked | …
+		// who fired it (payload data.to) — matches clicks against ICP prospects
+		recipient: text("recipient"),
+		docId: uuid("doc_id").references(() => docs.id, { onDelete: "set null" }),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+);
+
 // ── Inferred types (replaces hand-maintained interfaces) ───────────
 
 export type Company = typeof companies.$inferSelect;
@@ -960,3 +1054,6 @@ export type EmailAccount = typeof emailAccounts.$inferSelect;
 export type EmailThread = typeof emailThreads.$inferSelect;
 export type EmailMessage = typeof emailMessages.$inferSelect;
 export type EmailOutbox = typeof emailOutbox.$inferSelect;
+export type BrainRequest = typeof brainRequests.$inferSelect;
+export type ResendEvent = typeof resendEvents.$inferSelect;
+export type ShortLinkClick = typeof shortLinkClicks.$inferSelect;

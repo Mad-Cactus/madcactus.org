@@ -5,7 +5,7 @@ import { db } from "~/db";
 import { apiKeys, companies, outreachProspects, OUTREACH_STAGES } from "~/db/schema";
 import { brainQuery, entityFacts } from "~/lib/brain/search";
 import { brainJobs, docs, shortLinks } from "~/db/schema";
-import { agentWrite, createDoc, getDoc, getDocVersionDiff, listDocVersions, listDocs } from "~/lib/docs";
+import { agentWrite, createDoc, getDoc, getDocVersionDiff, listDocVersions, listDocs, renameDoc, setDocAppendix } from "~/lib/docs";
 import { getVoiceLessons, hasRecentLessonReview, lintGateError, lintVoiceText, listKnownGenres, recordLessonReview, topLessonsForText } from "~/lib/voice-lint-db";
 import { docSurface, type VoiceScope } from "~/lib/voice-lint";
 import { searchWorkspace, recentActivity } from "~/lib/brain/workspace-search";
@@ -231,6 +231,7 @@ const TOOLS = [
 				limit: { type: "number", description: "max lessons returned, default 25" },
 				surface: { type: "string", enum: ["email", "docs", "post", "newsletter"], description: "what you are writing — scopes the lessons" },
 				genre: { type: "string", description: "freeform subtype within the surface, e.g. marketing|informational|casual — match an existing genre spelling" },
+				topic: { type: "string", enum: ["subject", "cta"], description: "fetch only subject- or CTA-learnings — REQUIRED before drafting a newsletter subject or CTA copy" },
 				chat_uuid: { type: "string", description: "Your session id — records the lessons review that doc writes gate on. Pass it every time." },
 			},
 		},
@@ -289,12 +290,12 @@ lessons_reviewed: { type: "boolean", description: "true = you called get_voice_l
 	{
 		name: "create_newsletter",
 		description:
-			"Create a Cactus Dispatch newsletter issue draft (kind=newsletter). Read get_voice_lessons with surface=newsletter and your chat_uuid first. HARD GATES: the call is REJECTED if the body has any avoid-violation (fix and resubmit — no override). First write attempt auto-no's: the call bounces with the top voice lessons ranked for YOUR text — apply them, then resubmit with lessons_applied=true. Collin previews (email + web), edits, and schedules it; you never send. Drafts only.",
-			inputSchema: {
+			"Create a Cactus Dispatch newsletter issue draft (kind=newsletter). The doc title IS the email subject — set a real subject as the title (or refine it after with set_newsletter_subject). Read get_voice_lessons with surface=newsletter and your chat_uuid first — fetch topic=subject AND topic=cta lessons too (subject and CTA have their own learnings). HARD GATES: the call is REJECTED if the body has any avoid-violation (fix and resubmit — no override). First write attempt auto-no's: the call bounces with the top voice lessons ranked for YOUR text — apply them, then resubmit with lessons_applied=true. Channel CTA copy goes through set_channel_appendix (never in the body markdown). Collin previews (email + web), edits, and schedules it; you never send. Drafts only.",
+		inputSchema: {
 			type: "object",
 			properties: {
-				title: { type: "string" },
-				markdown: { type: "string", description: "Issue body — first H1 becomes the email subject. Must pass voice lint (zero avoid-violations)." },
+				title: { type: "string", description: "The email subject / issue headline — doubles as the subject line" },
+				markdown: { type: "string", description: "Issue body prose — no Subject: line, no CTA block (use set_channel_appendix). Must pass voice lint (zero avoid-violations)." },
 				genre: { type: "string", description: "Freeform subtype, e.g. marketing|informational — MUST reuse an existing genre from get_voice_lessons known_genres; new ones need confirm_new_genre=true." },
 				confirm_new_genre: { type: "boolean", description: "Set true only when no existing genre fits — mints this genre into the vocabulary." },
 				lessons_applied: { type: "boolean", description: "true = you read the lessons returned by the auto-no (or get_voice_lessons) and this text applies them. Required on resubmit." },
@@ -302,6 +303,33 @@ lessons_reviewed: { type: "boolean", description: "true = you called get_voice_l
 				chat_uuid: { type: "string", description: "Your session id — must match the chat_uuid used for get_voice_lessons." },
 			},
 			required: ["title", "markdown", "lessons_reviewed", "chat_uuid"],
+		},
+	},
+	{
+		name: "set_newsletter_subject",
+		description:
+			'Set the subject line of a newsletter issue (kind=newsletter). The doc title IS the subject — this renames the doc, and the same text becomes the email subject and the web headline. Never put the subject in the body markdown. Runs Collin\'s voice lint on the subject and returns warnings (advisory — the subject lands regardless); fix flagged wording before or after, Collin reviews in the dashboard.',
+		inputSchema: {
+			type: "object",
+			properties: {
+				doc_id: { type: "string" },
+				subject: { type: "string", description: "The email subject line / issue title" },
+			},
+			required: ["doc_id", "subject"],
+		},
+	},
+	{
+		name: "set_channel_appendix",
+		description:
+			'Set the AFTER-THE-BODY copy (CTA block) of a newsletter issue for one channel — channel: "email" or "web". This is the ONLY place channel-specific copy goes; never write channel CTAs into the body markdown. New issues already carry the default /brain CTA here — overwrite it only when Collin asks for different copy. Runs Collin\'s voice lint (surface=newsletter) and returns warnings (advisory — the copy lands regardless).',
+		inputSchema: {
+			type: "object",
+			properties: {
+				doc_id: { type: "string" },
+				channel: { type: "string", enum: ["email", "web"] },
+				content: { type: "string", description: "markdown rendered after the issue body" },
+			},
+			required: ["doc_id", "channel", "content"],
 		},
 	},
 	{
@@ -606,11 +634,12 @@ export async function POST(event: APIEvent) {
 					}
 				case "get_voice_lessons": {
 					const scope = toolScope(toolArgs);
+					const topic = toolArgs.topic === "subject" || toolArgs.topic === "cta" ? toolArgs.topic : undefined;
 					// the lessons gate marker: a doc write from this chat is only accepted
 					// within 1h of this call (and with lessons_reviewed=true on the write)
 					if (toolArgs.chat_uuid) await recordLessonReview(String(toolArgs.chat_uuid));
 					result = {
-						lessons: await getVoiceLessons(toolArgs.limit ? Number(toolArgs.limit) : undefined, scope),
+						lessons: await getVoiceLessons(toolArgs.limit ? Number(toolArgs.limit) : undefined, scope, topic),
 						known_genres: await listKnownGenres(),
 					};
 					break;
@@ -727,6 +756,53 @@ export async function POST(event: APIEvent) {
 						});
 					}
 						break;
+					case "set_newsletter_subject": {
+						const d = await getDoc(String(toolArgs.doc_id ?? ""));
+						if (!d) {
+							result = { error: "not found" };
+							break;
+						}
+						if (d.kind !== "newsletter") {
+							result = { error: `doc ${d.id} is not a newsletter (kind=${d.kind}) — the subject only exists for issues` };
+							break;
+						}
+						const subject = String(toolArgs.subject ?? "").trim();
+						if (!subject) {
+							result = { error: "subject is required" };
+							break;
+						}
+						// the title IS the subject — rename is the whole write. Subject lint
+						// is advisory: a subject is a fragment, not body prose, so warnings
+						// never block the rename.
+						const warnings = (await lintVoiceText(subject, { surface: "newsletter" })).violations;
+						await renameDoc(d.id, subject);
+						result = { id: d.id, subject, lint_warnings: warnings };
+						break;
+					}
+					case "set_channel_appendix": {
+						const d = await getDoc(String(toolArgs.doc_id ?? ""));
+						if (!d) {
+							result = { error: "not found" };
+							break;
+						}
+						if (d.kind !== "newsletter") {
+							result = { error: `doc ${d.id} is not a newsletter (kind=${d.kind}) — channel appendix only exists for issues` };
+							break;
+						}
+						const channel = toolArgs.channel === "email" || toolArgs.channel === "web" ? toolArgs.channel : null;
+						if (!channel) {
+							result = { error: 'channel must be "email" or "web"' };
+							break;
+						}
+						const content = String(toolArgs.content ?? "");
+						// advisory lint — channel copy lands either way, Collin reviews
+						const warnings = content.trim()
+							? (await lintVoiceText(content, { surface: "newsletter" })).violations
+							: [];
+						await setDocAppendix(d.id, channel, content);
+						result = { id: d.id, channel, lint_warnings: warnings };
+						break;
+					}
 					case "list_doc_versions":
 						result = { versions: await listDocVersions(String(toolArgs.doc_id ?? "")) };
 						break;

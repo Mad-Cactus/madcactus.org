@@ -5,8 +5,10 @@
 import type { APIEvent } from "@solidjs/start/server";
 import { eq, sql } from "drizzle-orm";
 import { db } from "~/db";
-import { shortLinks } from "~/db/schema";
+import { shortLinkClicks, shortLinks } from "~/db/schema";
 import { isBotUA } from "~/lib/bot-ua";
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export const GET = async (event: APIEvent) => {
 	const ua = event.request.headers.get("user-agent");
@@ -17,6 +19,16 @@ export const GET = async (event: APIEvent) => {
 				.set({ clicks: sql`${shortLinks.clicks} + 1` })
 				.where(eq(shortLinks.slug, event.params.slug))
 				.returning();
+	// email clicks carry ?r={{email}} (Resend's per-recipient substitution —
+	// see perPersonLinks in publish-core). Social clicks have no r and stay
+	// aggregate on short_links.clicks. Logging never blocks the redirect.
+	const r = new URL(event.request.url).searchParams.get("r")?.trim().toLowerCase() ?? "";
+	if (row && EMAIL_RE.test(r)) {
+		await db
+			.insert(shortLinkClicks)
+			.values({ slug: event.params.slug, docId: row.docId, recipient: r })
+			.catch((e) => console.error("[short-link] click log failed:", e));
+	}
 	return new Response(null, {
 		status: 302,
 		headers: { Location: row?.target ?? "/", "Referrer-Policy": "no-referrer" },

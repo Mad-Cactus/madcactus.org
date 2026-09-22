@@ -37,9 +37,10 @@ export async function tick(): Promise<{ docs: number; emails: number }> {
 
 	for (const doc of claimed) {
 		try {
-			await publishDoc(doc);
+			const externalId = await publishDoc(doc);
 			// snapshot the live web version for newsletters — later edits change
-			// `markdown` only; the page updates when it's republished
+			// `markdown` only; the page updates when it's republished. The Resend
+			// broadcast id lands on the row so webhook events can find the doc.
 			await db
 				.update(docs)
 				.set({
@@ -50,6 +51,10 @@ export async function tick(): Promise<{ docs: number; emails: number }> {
 						? { issueNumber: sql`(select coalesce(max(issue_number), 0) + 1 from docs where kind = 'newsletter')` }
 						: {}),
 					...(doc.kind === "newsletter" ? { webMarkdown: doc.markdown } : {}),
+					// broadcast ids are UUIDs ("web" returns "web", LinkedIn a post urn)
+					...(doc.kind === "newsletter" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(externalId)
+						? { resendBroadcastId: externalId }
+						: {}),
 				})
 				.where(eq(docs.id, doc.id));
 			docsPublished++;

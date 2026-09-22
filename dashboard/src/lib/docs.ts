@@ -11,6 +11,7 @@ import { db } from "~/db";
 import { docs, textVersions, type Doc } from "~/db/schema";
 import { lintGateError, lintVoiceText, type LintResult, type VoiceScope } from "~/lib/voice-lint-db";
 import { docSurface } from "~/lib/voice-lint";
+import { BRAIN_CTA_APPENDIX } from "~/lib/publish-core";
 import { trackText, listTextVersions, getTextVersionDiff } from "~/lib/crdt-text-db";
 import { UUID_RE } from "~/lib/uuid";
 
@@ -28,6 +29,9 @@ export async function createDoc(
 	} = {},
 ): Promise<Doc> {
 	const author = opts.author ?? "human";
+	// newsletters seed the /brain CTA into both appendix fields — the one
+	// funnel starts at creation; Collin edits the copy per issue as needed
+	const isNewsletter = opts.kind === "newsletter";
 	const [row] = await db
 		.insert(docs)
 		.values({
@@ -37,6 +41,7 @@ export async function createDoc(
 			...(opts.kind ? { kind: opts.kind } : {}),
 			...(opts.genre ? { genre: opts.genre.trim().toLowerCase() } : {}),
 			...(opts.chatUuid ? { chatUuid: opts.chatUuid } : {}),
+			...(isNewsletter ? { emailAppendix: BRAIN_CTA_APPENDIX, webAppendix: BRAIN_CTA_APPENDIX } : {}),
 		})
 		.returning();
 	if (markdown) {
@@ -115,6 +120,15 @@ export async function setDocGenre(id: string, genre: string | null) {
 /** Voice scope a doc's text lints/learns under — kind → surface, freeform genre. */
 export function docVoiceScope(doc: Pick<Doc, "kind" | "genre">): VoiceScope {
 	return { surface: docSurface(doc.kind), genre: doc.genre };
+}
+
+/** Per-channel appendix (the CTA block after the body). Channel copy lives in
+ *  its own fields, never inside body markdown. */
+export async function setDocAppendix(id: string, channel: "email" | "web", content: string) {
+	await db
+		.update(docs)
+		.set(channel === "email" ? { emailAppendix: content } : { webAppendix: content })
+		.where(eq(docs.id, id));
 }
 
 /** Queue a doc for the scheduler. Any status is allowed — rescheduling a

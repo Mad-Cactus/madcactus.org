@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { markdownToHtml, markdownToPostText, newsletterSubject, publishDoc } from "./publish";
+import { markdownToHtml, markdownToPostText, newsletterSubject, publishDoc, renderIssueBody, EMAIL_FOOTER_HTML } from "./publish";
 
 describe("publishDoc newsletter channel", () => {
 	const base = {
@@ -52,8 +52,8 @@ describe("markdownToPostText", () => {
 	});
 });
 
-	describe("newsletterSubject", () => {
-	test("leading Subject: line wins over h1 and title", () => {
+describe("newsletterSubject", () => {
+	test("leading Subject: line wins — legacy issues keep their stored subject", () => {
 		const doc = {
 			id: "x",
 			title: "The Cactus Dispatch — Issue 01",
@@ -62,16 +62,16 @@ describe("markdownToPostText", () => {
 		expect(newsletterSubject(doc)).toBe("A tool that surfaces warm leads");
 	});
 
-	test("prefers first h1 heading over title", () => {
+	test("title is the subject — the H1 fallback is gone", () => {
 		const doc = {
 			id: "x",
-			title: "Draft 3",
-			markdown: "# Teardown #7: 3 agents, 40 minutes\n\nbody",
+			title: "Teardown #7: 3 agents, 40 minutes",
+			markdown: "# Some old heading\n\nbody",
 		} as Parameters<typeof newsletterSubject>[0];
 		expect(newsletterSubject(doc)).toBe("Teardown #7: 3 agents, 40 minutes");
 	});
 
-	test("falls back to title when no h1", () => {
+	test("falls back to title when no Subject: line", () => {
 		const doc = { id: "x", title: "Issue 8", markdown: "no heading here" } as Parameters<
 			typeof newsletterSubject
 		>[0];
@@ -108,5 +108,46 @@ describe("markdownToHtml channels", () => {
 		expect(email).not.toContain("<blockquote>");
 		expect(email).toContain("paste this prompt");
 		expect(markdownToHtml(md, "web")).toContain("<blockquote>");
+	});
+});
+
+describe("renderIssueBody (body → appendix)", () => {
+	test("empty appendix renders exactly the body (pre-appendix issues)", () => {
+		const html = renderIssueBody("hello", "", "email");
+		expect(html).toContain("hello");
+		expect(html).not.toContain("CTA");
+	});
+
+	test("appendix renders after the body, through the same pipeline", () => {
+		const html = renderIssueBody("Body first.", "**CTA block**", "web");
+		const body = html.indexOf("Body first.");
+		const cta = html.indexOf("<strong>CTA block</strong>");
+		expect(body).toBeGreaterThan(-1);
+		expect(cta).toBeGreaterThan(body);
+	});
+
+	test("email appendix renders between body and the code-owned footer", () => {
+		const html = renderIssueBody("Body.", "CTA block", "email") + EMAIL_FOOTER_HTML;
+		const body = html.indexOf("Body.");
+		const cta = html.indexOf("CTA block");
+		const footer = html.indexOf("reply to this email");
+		expect(body).toBeLessThan(cta);
+		expect(cta).toBeLessThan(footer);
+	});
+
+	test("web appendix drops email-only blocks in channel copy too", () => {
+		const html = renderIssueBody("body", "<!-- email-only -->reply<!-- /email-only -->", "web");
+		expect(html).not.toContain("reply");
+	});
+
+	test("email /l/ links carry the per-person r variable, web links don't", () => {
+		const md = "[blueprint](https://madcactus.org/l/abc1234)";
+		expect(renderIssueBody(md, "", "email")).toContain('href="https://madcactus.org/l/abc1234?r={{email}}"');
+		expect(renderIssueBody(md, "", "web")).not.toContain("r=");
+	});
+
+	test("r is appended, not duplicated, on /l/ links that already have a query", () => {
+		const md = "[x](https://madcactus.org/l/abc1234?utm_source=n)";
+		expect(renderIssueBody(md, "", "email")).toContain('href="https://madcactus.org/l/abc1234?utm_source=n&r={{email}}"');
 	});
 });

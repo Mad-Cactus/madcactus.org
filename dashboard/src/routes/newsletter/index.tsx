@@ -135,15 +135,15 @@ export default function Newsletter() {
 			<div class="dark-band">
 				<div class="dark-band-inner">
 					<h2 class="dark-band-headline">
-						How much is manual work
+						What could your team do with a
 						<br />
-						<em>costing your firm?</em>
+						<em>company brain?</em>
 					</h2>
 					<p class="dark-band-body">
-						See where your team wastes the most time and where AI can have the biggest impact.
+						Your data, docs, and institutional knowledge — one intelligence layer your team actually uses.
 					</p>
-					<a href="/scorecard" class="cta-bracketed cta-hero" style={{ "color": "var(--color-letterpress-black)" }}>
-						&#123; TAKE THE AI SCORECARD &#125;
+					<a href="/brain" class="cta-bracketed cta-hero" style={{ "color": "var(--color-letterpress-black)" }}>
+						&#123; GET A FREE COMPANY BRAIN &#125;
 					</a>
 				</div>
 			</div>

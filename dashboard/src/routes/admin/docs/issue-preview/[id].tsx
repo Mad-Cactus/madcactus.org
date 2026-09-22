@@ -10,7 +10,7 @@ import MarketingPage from "~/components/marketing/MarketingPage";
 import { Header } from "~/components/marketing/Header";
 import { Footer } from "~/components/marketing/Footer";
 import { getDocQuery } from "~/lib/docs-queries";
-import { markdownToHtml, newsletterSubject } from "~/lib/publish-core";
+import { newsletterSubject, renderIssueBody } from "~/lib/publish-core";
 import "~/styles/marketing-issue.css";
 
 export default function DispatchIssuePreviewPage() {
@@ -30,12 +30,14 @@ export default function DispatchIssuePreviewPage() {
 									<a href="/newsletter">The Cactus Dispatch</a> &nbsp;/&nbsp; Preview
 								</p>
 								<h1 class="issue-title">{subject()}</h1>
-								<div class="issue-body" innerHTML={markdownToHtml(d().markdown, "web")} />
+								<div class="issue-body" innerHTML={renderIssueBody(d().markdown, d().webAppendix, "web")
+								.replaceAll('href="/brain"', `href="/brain?ref=${d().id}"`)
+								.replaceAll('href="https://madcactus.org/brain"', `href="/brain?ref=${d().id}"`)} />
 								<div class="issue-cta">
-									<h3>Where could AI save your team time?</h3>
-									<p>The AI Readiness Scorecard takes 5 minutes. No email required.</p>
-									<a href="/scorecard" class="cta-bracketed">
-										&#123; TAKE THE SCORECARD &#125;
+									<h3>Want one of these for your company?</h3>
+									<p>I build a custom company brain for a few businesses each month — free.</p>
+									<a href={`/brain?ref=${d().id}`} class="cta-bracketed">
+										&#123; GET YOUR FREE COMPANY BRAIN &#125;
 									</a>
 								</div>
 							</div>

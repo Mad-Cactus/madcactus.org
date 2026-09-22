@@ -6,9 +6,9 @@
 import { Resend } from "resend";
 import type { Doc } from "~/db/schema";
 import { postToLinkedIn, commentOnLinkedIn } from "~/lib/social";
-import { markdownToPostText, newsletterSubject, markdownToHtml, EMAIL_FOOTER_HTML } from "~/lib/publish-core";
+import { markdownToPostText, newsletterSubject, markdownToHtml, renderIssueBody, emailFooterHtml, EMAIL_FOOTER_HTML } from "~/lib/publish-core";
 
-export { markdownToPostText, newsletterSubject, markdownToHtml, EMAIL_FOOTER_HTML };
+export { markdownToPostText, newsletterSubject, markdownToHtml, renderIssueBody, emailFooterHtml, EMAIL_FOOTER_HTML };
 
 const ALERT_EMAIL = process.env.ALERT_EMAIL ?? "cpfeifer@madcactus.org";
 const NEWSLETTER_FROM = process.env.NEWSLETTER_FROM ?? "Collin Pfeifer <dispatch@madcactus.org>";
@@ -32,7 +32,7 @@ export async function publishDoc(doc: Doc): Promise<string> {
 	throw new Error(`doc ${doc.id} has no publishable kind`);
 }
 
-async function sendNewsletter(doc: Doc): Promise<string> {
+export async function sendNewsletter(doc: Doc): Promise<string> {
 	// web-only issue: no broadcast — marking it published puts the page on the
 	// site (dispatch pages SSR from status=published)
 	if (doc.publishChannel === "web") return "web";
@@ -50,7 +50,7 @@ async function sendNewsletter(doc: Doc): Promise<string> {
 		segmentId,
 		from: NEWSLETTER_FROM,
 		subject: newsletterSubject(doc),
-		html: markdownToHtml(doc.markdown, "email") + EMAIL_FOOTER_HTML,
+		html: renderIssueBody(doc.markdown, doc.emailAppendix, "email") + emailFooterHtml({ docId: doc.id }),
 	});
 	if (error) throw new Error(`resend broadcast create failed: ${error.message}`);
 	const sent = await resend.broadcasts.send(data.id);
