@@ -1,5 +1,5 @@
 import { Show, createSignal, createMemo } from "solid-js";
-import { markdownToPostText, newsletterSubject, renderIssueBody, emailFooterHtml } from "~/lib/publish-core";
+import { markdownToPostText, newsletterSubject, renderIssueEmail } from "~/lib/publish-core";
 
 export type PreviewMode = "linkedin" | "email" | "web";
 
@@ -106,15 +106,13 @@ export function LinkedInPreview(props: { markdown: string; title: string; firstC
  *  byte what sendNewsletter puts in the broadcast.
  */
 export function NewsletterEmailPreview(props: { markdown: string; title: string; appendix?: string }) {
+	// byte-for-byte the send, minus tracking (static seal)
 	const emailHtml = () =>
-		`<!doctype html><html><head><meta charset="utf-8">` +
-		`<meta name="viewport" content="width=device-width,initial-scale=1"></head>` +
-		`<body style="margin:0;background:#ffffff;">` +
-		`<div style="max-width:640px;margin:0 auto;padding:20px 24px;font-family:Georgia,'Times New Roman',serif;` +
-		`font-size:16px;line-height:1.6;color:#1a1a1a;">` +
-		renderIssueBody(props.markdown, props.appendix, "email") +
-		emailFooterHtml() +
-		`</div></body></html>`;
+		renderIssueEmail({
+			subject: newsletterSubject({ markdown: props.markdown, title: props.title }),
+			markdown: props.markdown,
+			appendix: props.appendix,
+		});
 	return (
 		<div style={{ width: "100%", "max-width": "640px" }}>
 			<div class="muted" style={{ "font-size": "12px", "margin-bottom": "8px" }}>

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { markdownToHtml, markdownToPostText, newsletterSubject, publishDoc, renderIssueBody, EMAIL_FOOTER_HTML } from "./publish";
+import { markdownToHtml, markdownToPostText, newsletterSubject, publishDoc, renderIssueBody, renderIssueEmail, EMAIL_FOOTER_HTML } from "./publish";
 
 describe("publishDoc newsletter channel", () => {
 	const base = {
@@ -149,5 +149,39 @@ describe("renderIssueBody (body → appendix)", () => {
 	test("r is appended, not duplicated, on /l/ links that already have a query", () => {
 		const md = "[x](https://madcactus.org/l/abc1234?utm_source=n)";
 		expect(renderIssueBody(md, "", "email")).toContain('href="https://madcactus.org/l/abc1234?utm_source=n&r={{email}}"');
+	});
+});
+
+describe("renderIssueEmail (the Dispatch template)", () => {
+	const full = renderIssueEmail({
+		subject: "Teardown #7",
+		markdown: "## The tension\n\nBody copy here.",
+		appendix: "[Build yours →](https://madcactus.org/l/abc1234?r={{email}})",
+		issueNumber: 7,
+		tracking: { docId: "d1" },
+	});
+
+	test("web-view chrome: vellum bg, gold eyebrow with issue number, serif title", () => {
+		expect(full).toContain("background:#f6f6f6");
+		expect(full).toContain("THE CACTUS DISPATCH · ISSUE 07");
+		expect(full).toContain("#bc9c5c");
+		expect(full).toContain("<h1 style=\"font-family:Georgia");
+		expect(full).toContain("Teardown #7</h1>");
+	});
+
+	test("body tags carry inline styles (email clients strip <style>)", () => {
+		expect(full).toContain("<h2 style=");
+		expect(full).toContain("<p style=");
+	});
+
+	test("footer seal is the tracked pixel when tracking, static otherwise", () => {
+		expect(full).toContain("/api/track/open/d1?r={{email}}");
+		const plain = renderIssueEmail({ subject: "S", markdown: "b" });
+		expect(plain).toContain('src="https://madcactus.org/cactus-seal.png"');
+		expect(plain).not.toContain("/api/track/open");
+	});
+
+	test("appendix /l/ link keeps the per-person r variable", () => {
+		expect(full).toContain("r={{email}}");
 	});
 });

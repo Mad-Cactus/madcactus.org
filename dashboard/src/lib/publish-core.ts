@@ -76,6 +76,63 @@ export const EMAIL_FOOTER_HTML =
 	`<p style="font-size:13px;color:#6b6455;line-height:1.6;">The Cactus Dispatch turns real AI deployments into ` +
 	`patterns you can use this week. Questions, ideas, comments? Just reply to this email, I read and answer every one.</p>`;
 
+// ── Email template — the Dispatch issue page (vellum, serif, gold accents)
+// rendered with inline styles only, because email clients strip <style>.
+// Shared byte-for-byte by the Resend broadcast and the dashboard preview.
+
+const E = {
+	gold: "#bc9c5c",
+	ink: "#000",
+	vellum: "#f6f6f6",
+	serif: "Georgia,'Times New Roman',serif",
+	sans: "Arial,Helvetica,sans-serif",
+};
+
+/** Inline styles onto the plain tags marked emits. */
+function inlineBodyStyles(html: string): string {
+	return html
+		.replace(/<h2>/g, `<h2 style="font-family:${E.sans};font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:${E.ink};margin:40px 0 14px;">`)
+		.replace(/<h3>/g, `<h3 style="font-family:${E.sans};font-size:14px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${E.ink};margin:32px 0 12px;">`)
+		.replace(/<p>/g, `<p style="font-family:${E.serif};font-size:16px;line-height:1.6;color:${E.ink};margin:0 0 18px;">`)
+		.replace(/<ul>/g, `<ul style="font-family:${E.serif};font-size:16px;line-height:1.6;color:${E.ink};margin:0 0 18px;padding-left:22px;">`)
+		.replace(/<ol>/g, `<ol style="font-family:${E.serif};font-size:16px;line-height:1.6;color:${E.ink};margin:0 0 18px;padding-left:22px;">`)
+		.replace(/<li>/g, `<li style="margin-bottom:8px;">`)
+		.replace(/<a href/g, `<a style="color:${E.ink};border-bottom:1px solid ${E.gold};text-decoration:none;" href`)
+		.replace(/<hr>/g, `<hr style="border:none;border-top:1px solid #d8d2c4;margin:32px 0;">`)
+		.replace(/<code>/g, `<code style="background:#f1ede2;padding:1px 4px;border-radius:3px;font-size:14px;">`)
+		.replace(/<pre>/g, `<pre style="background:#f1ede2;padding:12px;overflow-x:auto;font-size:13px;line-height:1.5;">`);
+}
+
+function escapeHtml(s: string): string {
+	return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/**
+ * The full email document for an issue: same design as the web Dispatch page
+ * (eyebrow → serif title → body → CTA appendix → footer + seal). `tracking`
+ * swaps the seal for the tracked pixel in real sends; previews render the
+ * static one. Everything inline-styled — no <style>, no webfonts (Playfair
+ * falls back to Georgia).
+ */
+export function renderIssueEmail(opts: {
+	subject: string;
+	markdown: string;
+	appendix?: string | null;
+	issueNumber?: number | null;
+	tracking?: { docId: string };
+}): string {
+	const eyebrow = `THE CACTUS DISPATCH${opts.issueNumber ? ` · ISSUE ${String(opts.issueNumber).padStart(2, "0")}` : ""}`;
+	const bodyHtml = inlineBodyStyles(renderIssueBody(opts.markdown, opts.appendix, "email"));
+	return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>` +
+		`<body style="margin:0;background:${E.vellum};">` +
+		`<div style="max-width:640px;margin:0 auto;padding:36px 24px 28px;">` +
+		`<p style="font-family:${E.sans};font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:${E.gold};margin:0 0 28px;">${eyebrow}</p>` +
+		`<h1 style="font-family:${E.serif};font-weight:400;font-size:32px;line-height:1.15;color:${E.ink};margin:0 0 28px;">${escapeHtml(opts.subject)}</h1>` +
+		bodyHtml +
+		emailFooterHtml(opts.tracking) +
+		`</div></body></html>`;
+}
+
 /**
  * The email footer's cactus seal doubles as the open tracker: in sends its src
  * hits /api/track/open/<docId> (logged, then 302 to the static seal); the
