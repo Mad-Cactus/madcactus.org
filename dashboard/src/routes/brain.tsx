@@ -60,7 +60,7 @@ export default function BrainLanding() {
 					institutional knowledge, unified so agents can actually reason over it.
 				</p>
 				<p style={{ "font-family": "var(--font-serif)", "font-size": "16px", "line-height": 1.6, "font-style": "italic", margin: "0 0 32px" }}>
-					Free for a few businesses each month, so you see what it does before you pay for anything.
+					I build 3 company brains a month, in the order requests arrive. You see what it does before you pay for anything.
 				</p>
 				<form onSubmit={submit}>
 					{/* honeypot — hidden from humans, bots fill it and get a silent ok */}
