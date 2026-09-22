@@ -969,7 +969,24 @@ export default function AdminEmail() {
 											<div class="muted" style={{ "font-size": "12px", "margin-bottom": "6px" }}>
 												{m.fromName ?? m.fromEmail} · {new Date(m.date).toLocaleString()}
 											</div>
-											<pre style={{ "white-space": "pre-wrap", "font-family": "inherit", "font-size": "14px", margin: 0 }}>{m.bodyText}</pre>
+											<Show
+												when={m.bodyHtml}
+												fallback={<pre style={{ "white-space": "pre-wrap", "font-family": "inherit", "font-size": "14px", margin: 0 }}>{m.bodyText}</pre>}
+											>
+												{(html) => (
+													// untrusted email HTML: sandbox without allow-scripts = no JS can run;
+													// allow-same-origin lets us auto-size; email CSS stays inside the frame
+													<iframe
+														sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+														srcdoc={html()}
+														style={{ width: "100%", border: "0", display: "block", "min-height": "160px" }}
+														onLoad={(e) => {
+															const doc = e.currentTarget.contentDocument;
+															if (doc?.body) e.currentTarget.style.height = `${doc.body.scrollHeight}px`;
+														}}
+													/>
+												)}
+											</Show>
 										</div>
 									);
 								}

@@ -1,1 +1,0 @@
-ALTER TABLE "resend_events" ADD COLUMN "recipient" text;
