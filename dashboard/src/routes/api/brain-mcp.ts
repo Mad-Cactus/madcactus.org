@@ -250,6 +250,20 @@ const TOOLS = [
 			required: ["text"],
 		},
 	},
+	{
+		name: "lint_voice_check",
+		description:
+			"One-off voice check for ANY text — no doc, no write, no gates. Returns the avoid-violations (with rule + fix example) AND the top 10 voice lessons ranked for exactly this text. The loop: call this, fix what the violations and lessons flag, call again, and only use the text elsewhere once it comes back clean. Same judgment a write-time auto-no gives, available standalone. Requires surface (email|docs|post|newsletter) so the right rules apply.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				text: { type: "string" },
+				surface: { type: "string", enum: ["email", "docs", "post", "newsletter"], description: "what the text is — scopes rules and lessons" },
+				genre: { type: "string", description: "freeform subtype, match an existing genre spelling" },
+			},
+			required: ["text", "surface"],
+		},
+	},
 	// ── Docs ──
 	{
 		name: "create_doc",
@@ -647,6 +661,20 @@ export async function POST(event: APIEvent) {
 				case "lint_voice_text": {
 					const scope = toolScope(toolArgs);
 					result = await lintVoiceText(String(toolArgs.text ?? ""), scope);
+					break;
+				}
+				case "lint_voice_check": {
+					const scope = toolScope(toolArgs);
+					if (!scope) {
+						result = { error: "surface is required (email|docs|post|newsletter) — rules and lessons are scoped per surface." };
+						break;
+					}
+					const text = String(toolArgs.text ?? "");
+					result = {
+						lint: await lintVoiceText(text, scope),
+						top_lessons: (await topLessonsForText(text, scope)).slice(0, 10),
+						known_genres: await listKnownGenres(),
+					};
 					break;
 				}
 				case "create_doc": {
