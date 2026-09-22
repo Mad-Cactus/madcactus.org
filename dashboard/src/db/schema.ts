@@ -477,11 +477,13 @@ export const docs = pgTable(
 		// by renderIssueBody(). Empty for pre-appendix issues.
 		emailAppendix: text("email_appendix").notNull().default(""),
 		webAppendix: text("web_appendix").notNull().default(""),
-		// ── Send tracking — reality checks for the learnings loop. Primary
-		// signals stay meetings/replies/clients; opens are one optional signal.
+		// ── Send tracking — reality checks for the learnings loop. Opens come
+		// from the seal pixel (/api/track/open), clicks live on short_links /
+		// short_link_clicks. resendBroadcastId = ops metadata (find the issue's
+		// broadcast in Resend's dashboard); primary signals stay
+		// meetings/replies/clients.
 		resendBroadcastId: text("resend_broadcast_id"),
 		opens: integer("opens").notNull().default(0),
-		clicks: integer("clicks").notNull().default(0),
 		scheduledFor: timestamp("scheduled_for", { withTimezone: true }),
 		publishedAt: timestamp("published_at", { withTimezone: true }),
 		publishError: text("publish_error"),
@@ -1012,14 +1014,15 @@ export const brainRequests = pgTable(
 	(t) => [index("idx_brain_requests_status").on(t.status, t.createdAt)],
 );
 
-// Resend webhook event log — the unique event id dedups provider retries
-// (at-least-once delivery), so counters never double-bump.
+// Open-tracking log written by the seal pixel (/api/track/open) — one row per
+// doc+recipient (unique event id doubles as the dedup key), so prefetches and
+// repeats never inflate the counter. No Resend webhook in the loop.
 export const resendEvents = pgTable(
 	"resend_events",
 	{
 		id: uuid("id").primaryKey().defaultRandom(),
 		eventId: text("event_id").notNull().unique(), // svix msg_id header
-		type: text("type").notNull(), // email.opened | email.clicked | …
+		type: text("type").notNull(), // pixel.open
 		// who fired it (payload data.to) — matches clicks against ICP prospects
 		recipient: text("recipient"),
 		docId: uuid("doc_id").references(() => docs.id, { onDelete: "set null" }),

@@ -40,7 +40,7 @@ export async function tick(): Promise<{ docs: number; emails: number }> {
 			const externalId = await publishDoc(doc);
 			// snapshot the live web version for newsletters — later edits change
 			// `markdown` only; the page updates when it's republished. The Resend
-			// broadcast id lands on the row so webhook events can find the doc.
+			// broadcast id is kept as ops metadata (find the send in Resend).
 			await db
 				.update(docs)
 				.set({

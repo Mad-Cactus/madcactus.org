@@ -4,7 +4,7 @@ import { brainFacts, brainRequests, docs, shortLinks } from "~/db/schema";
 import { getAuthedClient } from "~/lib/session";
 import { eq, desc } from "drizzle-orm";
 import { factHash } from "~/lib/brain/core";
-import { BRAIN_CTA_APPENDIX } from "~/lib/publish-core";
+import { seedNewsletterAppendix } from "~/lib/docs";
 
 async function requireAdmin() {
 	const supabase = await getAuthedClient();
@@ -34,21 +34,16 @@ export const createDocAction = action(async (formData: FormData) => {
 	const genre = String(formData.get("genre") || "").trim().toLowerCase() || null;
 	const [row] = await db
 		.insert(docs)
-		.values({
-			title,
-			kind,
-			...(genre ? { genre } : {}),
-			// the one funnel: new issues carry the /brain CTA in both channels
-			...(kind === "newsletter" ? { emailAppendix: BRAIN_CTA_APPENDIX, webAppendix: BRAIN_CTA_APPENDIX } : {}),
-		})
+		.values({ title, kind, ...(genre ? { genre } : {}) })
 		.returning();
+	if (kind === "newsletter") await seedNewsletterAppendix(row.id);
 	const base = kind === "post" ? "/admin/posts" : kind === "newsletter" ? "/admin/newsletters" : "/admin/docs";
 	throw redirect(`${base}/${row.id}`);
 }, "createDoc");
 
 // Per-issue reality checks for the newsletters list: short-link clicks (per
-// doc_id) and brain requests traced to the issue (utm ?ref= on the /brain
-// link). opens/clicks columns ride on the docs rows themselves.
+// doc_id) and brain requests traced to the issue (ref= carried by the CTA's
+// /l/ target). opens rides on the docs row (seal pixel).
 export const getIssueStatsQuery = query(async () => {
 	"use server";
 	await requireAdmin();

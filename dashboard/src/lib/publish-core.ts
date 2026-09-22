@@ -103,11 +103,14 @@ export function markdownToHtml(md: string, channel: "email" | "web" = "web"): st
 
 /**
  * Default per-channel CTA for new issues — the ONE funnel. Seeded into the
- * appendix fields at creation; channel copy never lives in the body markdown.
- * Absolute URL: appendix renders in email too, where relative links break.
+ * appendix fields at creation with the issue's own /l/ link, so CTA clicks are
+ * tracked per person in email (r={{email}}) and per issue everywhere, and the
+ * target carries ref=<docId> for brain-request attribution. Absolute URL: the
+ * appendix renders in email too, where relative links break.
  */
-export const BRAIN_CTA_APPENDIX =
-	`Want one of these for your company? I build a custom company brain for a few businesses each month — free, so you can see what it actually does before you pay for anything. [Answer a few questions about your company and I'll build yours →](https://madcactus.org/brain)`;
+export function brainCtaAppendix(link: string): string {
+	return `Want one of these for your company? I build a custom company brain for a few businesses each month — free, so you can see what it actually does before you pay for anything. [Answer a few questions about your company and I'll build yours →](${link})`;
+}
 
 /**
  * Email-only: /l/ links carry Resend's {{email}} variable so the /l/ redirect
