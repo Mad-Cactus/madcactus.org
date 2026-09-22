@@ -182,7 +182,7 @@ export default function Home() {
 					</div>
 					<div class="lead-right">
 						<p>
-							We build you a custom company brain — your data, docs, and institutional knowledge unified into one intelligence layer your team actually uses. Free for a few businesses each month.
+							We build you a custom company brain: your data, docs, and institutional knowledge unified into one intelligence layer your team actually uses. 3 built free each month, in the order requests arrive.
 						</p>
 						<a href="/brain" class="cta-bracketed" data-ph-event="cta_brain">
 							&#123; GET A FREE COMPANY BRAIN &#125;
