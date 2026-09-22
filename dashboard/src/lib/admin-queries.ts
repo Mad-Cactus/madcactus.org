@@ -1,5 +1,5 @@
 import { query, action, redirect, revalidate } from "@solidjs/router";
-import { eq, and, desc, asc, inArray, isNull, ilike, gt } from "drizzle-orm";
+import { eq, and, desc, asc, inArray, isNull, isNotNull, ilike, gt, lte, notInArray } from "drizzle-orm";
 import { getTableColumns } from "drizzle-orm";
 import { getAuthedClient } from "./session";
 import { supabaseService } from "./supabase";
@@ -18,6 +18,8 @@ import {
 	campaigns,
 	campaignCompanies,
 	emailMessages,
+	brainRequests,
+	docs,
 	OUTREACH_STAGES,
 } from "~/db/schema";
 import type {
@@ -790,19 +792,80 @@ export const createOutreachAction = action(async (formData: FormData) => {
 	return { success: `${company} added.` };
 }, "createOutreach");
 
+// next-action interval implied by each stage ADVANCE (plan: invite→+3d,
+// follow-up→+4d, reply→+1d). Manual date edits always win — presets only
+// apply when the advance button sends preset_next=1.
+const STAGE_NEXT_DAYS: Partial<Record<OutreachStage, number>> = {
+	sent: 3,
+	watching: 4,
+	replied: 1,
+	meeting: 1,
+};
+
 export const setOutreachStageAction = action(async (formData: FormData) => {
 	"use server";
 	await requireAdmin();
 	const id = String(formData.get("id"));
 	const stage = String(formData.get("stage")) as OutreachStage;
 	if (!OUTREACH_STAGES.includes(stage)) return { error: "Unknown stage." };
+	const presetNext = String(formData.get("preset_next") || "") === "1";
+	const days = STAGE_NEXT_DAYS[stage];
 	await db
 		.update(outreachProspects)
-		.set({ stage })
+		.set({
+			stage,
+			...(presetNext && days
+				? { nextActionAt: new Date(Date.now() + days * 86_400_000) }
+				: {}),
+		})
 		.where(eq(outreachProspects.id, id));
 	await revalidate(getOutreachQuery.key);
 	return { success: `Stage → ${stage}.` };
 }, "setOutreachStage");
+
+// ICP qualification — researched by Collin (or the sourcing automation), never
+// asked of the lead. icpApproved=yes is the gate that lets the connect
+// automation send an invite.
+export const setOutreachIcpAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const id = String(formData.get("id"));
+	const one = (k: string, allowed: string[]) => {
+		const v = String(formData.get(k) || "");
+		return allowed.includes(v) ? v : undefined;
+	};
+	await db
+		.update(outreachProspects)
+		.set({
+			...(one("region", ["unknown", "Midwest", "other"]) ? { region: one("region", ["unknown", "Midwest", "other"]) } : {}),
+			...(one("revenue_band", ["unknown", "low", "mid", "high"]) ? { revenueBand: one("revenue_band", ["unknown", "low", "mid", "high"]) } : {}),
+			...(one("tech_team", ["unknown", "none", "small", "large"]) ? { techTeam: one("tech_team", ["unknown", "none", "small", "large"]) } : {}),
+			...(one("ai_interest", ["unknown", "none", "some", "high"]) ? { aiInterest: one("ai_interest", ["unknown", "none", "some", "high"]) } : {}),
+			...(formData.has("icp_approved")
+				? { icpApproved: String(formData.get("icp_approved")) === "1" }
+				: {}),
+		})
+		.where(eq(outreachProspects.id, id));
+	await revalidate(getOutreachQuery.key);
+	return { success: "ICP fields saved." };
+}, "setOutreachIcp");
+
+// Sidebar badge: prospects whose next action is due now (excludes terminal stages).
+export const getDueOutreachCountQuery = query(async () => {
+	"use server";
+	await requireAdmin();
+	const rows = await db
+		.select({ id: outreachProspects.id })
+		.from(outreachProspects)
+		.where(
+			and(
+				isNotNull(outreachProspects.nextActionAt),
+				lte(outreachProspects.nextActionAt, new Date()),
+				notInArray(outreachProspects.stage, ["won", "shutdown"]),
+			),
+		);
+	return rows.length;
+}, "due-outreach-count");
 
 // Brain URL + activity key for an existing prospect (formerly a Fly env secret).
 export const setOutreachBrainAction = action(async (formData: FormData) => {
@@ -1137,3 +1200,61 @@ export const resetBrainActivityAction = action(async (formData: FormData) => {
 	await revalidate(getBrainActivityQuery.key);
 	return { success: "Brain metrics reset." };
 }, "resetBrainActivity");
+
+// ── Brain requests (the /brain lead magnet pipeline) ────────────────────────
+
+export const getBrainRequestsQuery = query(async () => {
+	"use server";
+	await requireAdmin();
+	const rows = await db.select().from(brainRequests).orderBy(desc(brainRequests.createdAt)).limit(200);
+	const issues = rows.length
+		? await db
+				.select({ id: docs.id, title: docs.title })
+				.from(docs)
+				.where(inArray(docs.id, [...new Set(rows.map((r) => r.sourceDocId).filter((x): x is string => !!x))]))
+		: [];
+	const titles = new Map(issues.map((i) => [i.id, i.title]));
+	return rows.map((r) => ({
+		...r,
+		answers: (r.answers ?? {}) as Record<string, unknown>,
+		sourceTitle: r.sourceDocId ? titles.get(r.sourceDocId) ?? null : null,
+	}));
+}, "brain-requests");
+
+export const setBrainRequestStatusAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const id = String(formData.get("id") || "");
+	const status = String(formData.get("status") || "") as "new" | "building" | "delivered" | "declined";
+	if (!["new", "building", "delivered", "declined"].includes(status)) return { error: "Unknown status." };
+	await db.update(brainRequests).set({ status }).where(eq(brainRequests.id, id));
+	await revalidate(getBrainRequestsQuery.key);
+	return { success: `Status → ${status}.` };
+}, "setBrainRequestStatus");
+
+// Ship the brain → it becomes outreach pipeline entry. Links (or creates) the
+// matching prospect row and marks the request delivered.
+export const linkBrainRequestToProspectAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const id = String(formData.get("id") || "");
+	const [req] = await db.select().from(brainRequests).where(eq(brainRequests.id, id)).limit(1);
+	if (!req) return { error: "Request not found." };
+	const company = String(formData.get("company") || "").trim() || req.company;
+	const [existing] = await db
+		.select({ id: outreachProspects.id })
+		.from(outreachProspects)
+		.where(ilike(outreachProspects.company, company))
+		.limit(1);
+	const prospectId =
+		existing?.id ??
+		(
+			await db
+				.insert(outreachProspects)
+				.values({ company, sourceNote: `brain-request ${req.createdAt.toISOString().slice(0, 10)}` })
+				.returning({ id: outreachProspects.id })
+		)[0].id;
+	await db.update(brainRequests).set({ prospectId, status: "delivered" }).where(eq(brainRequests.id, id));
+	await revalidate(getBrainRequestsQuery.key);
+	return { success: `Linked to prospect: ${company}.` };
+}, "linkBrainRequestProspect");

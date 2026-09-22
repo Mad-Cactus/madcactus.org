@@ -8,7 +8,7 @@ import MarketingPage from "~/components/marketing/MarketingPage";
 import { Header } from "~/components/marketing/Header";
 import { Footer } from "~/components/marketing/Footer";
 import { getDispatchIssueQuery } from "~/lib/dispatch-queries";
-import { markdownToHtml, newsletterSubject } from "~/lib/publish-core";
+import { newsletterSubject, renderIssueBody } from "~/lib/publish-core";
 import "~/styles/marketing-issue.css";
 
 export default function DispatchIssuePage() {
@@ -17,9 +17,14 @@ export default function DispatchIssuePage() {
 		getDispatchIssueQuery(params.id ?? "").then((i) => {
 			if (!i) return null;
 			// the snapshot published/republished to the web — edits after publish
-			// keep rendering the old version here until republished
+			// keep rendering the old version here until republished. The web
+			// appendix renders after the body; /brain links carry ?ref= so the
+			// request attributes itself to this issue.
 			const md = i.webMarkdown ?? i.markdown;
-			return { ...i, subject: newsletterSubject({ markdown: md, title: i.title }), html: markdownToHtml(md) };
+			const html = renderIssueBody(md, i.webAppendix, "web")
+				.replaceAll('href="/brain"', `href="/brain?ref=${i.id}"`)
+				.replaceAll('href="https://madcactus.org/brain"', `href="/brain?ref=${i.id}"`);
+			return { ...i, subject: newsletterSubject({ markdown: md, title: i.title }), html };
 		}),
 	);
 	return (
@@ -38,10 +43,10 @@ export default function DispatchIssuePage() {
 								{/* published issue html — the exact render the email send uses */}
 								<div class="issue-body" innerHTML={i().html} />
 								<div class="issue-cta">
-									<h3>Where could AI save your team time?</h3>
-									<p>The AI Readiness Scorecard takes 5 minutes. No email required.</p>
-									<a href="/scorecard" class="cta-bracketed">
-										&#123; TAKE THE SCORECARD &#125;
+									<h3>Want one of these for your company?</h3>
+									<p>I build a custom company brain for a few businesses each month — free.</p>
+									<a href={`/brain?ref=${i().id}`} class="cta-bracketed">
+										&#123; GET YOUR FREE COMPANY BRAIN &#125;
 									</a>
 								</div>
 							</div>

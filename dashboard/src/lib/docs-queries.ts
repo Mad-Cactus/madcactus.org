@@ -1,8 +1,10 @@
 import { query, action, redirect } from "@solidjs/router";
 import { db } from "~/db";
-import { docs } from "~/db/schema";
+import { brainFacts, brainRequests, docs, shortLinks } from "~/db/schema";
 import { getAuthedClient } from "~/lib/session";
 import { eq, desc } from "drizzle-orm";
+import { factHash } from "~/lib/brain/core";
+import { seedNewsletterAppendix } from "~/lib/docs";
 
 async function requireAdmin() {
 	const supabase = await getAuthedClient();
@@ -34,6 +36,49 @@ export const createDocAction = action(async (formData: FormData) => {
 		.insert(docs)
 		.values({ title, kind, ...(genre ? { genre } : {}) })
 		.returning();
+	if (kind === "newsletter") await seedNewsletterAppendix(row.id);
 	const base = kind === "post" ? "/admin/posts" : kind === "newsletter" ? "/admin/newsletters" : "/admin/docs";
 	throw redirect(`${base}/${row.id}`);
 }, "createDoc");
+
+// Per-issue reality checks for the newsletters list: short-link clicks (per
+// doc_id) and brain requests traced to the issue (ref= carried by the CTA's
+// /l/ target). opens rides on the docs row (seal pixel).
+export const getIssueStatsQuery = query(async () => {
+	"use server";
+	await requireAdmin();
+	const [links, requests] = await Promise.all([
+		db.select({ docId: shortLinks.docId, clicks: shortLinks.clicks }).from(shortLinks),
+		db.select({ docId: brainRequests.sourceDocId }).from(brainRequests),
+	]);
+	const clicksByDoc: Record<string, number> = {};
+	for (const l of links) if (l.docId) clicksByDoc[l.docId] = (clicksByDoc[l.docId] ?? 0) + l.clicks;
+	const requestsByDoc: Record<string, number> = {};
+	for (const r of requests) if (r.docId) requestsByDoc[r.docId] = (requestsByDoc[r.docId] ?? 0) + 1;
+	return { clicksByDoc, requestsByDoc };
+}, "issue-stats");
+
+// "Add learning" next to a sent issue's stats — a tagged voice lesson the
+// drafting agents must fetch (topic=subject / topic=cta) before writing.
+export const addIssueLearningAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const fact = String(formData.get("fact") || "").trim();
+	if (!fact) return { error: "Write the lesson first." };
+	const topicRaw = String(formData.get("topic") || "");
+	const topic = topicRaw === "subject" || topicRaw === "cta" ? topicRaw : null;
+	await db
+		.insert(brainFacts)
+		.values({
+			entitySlug: "voice",
+			kind: "lesson",
+			fact,
+			factHash: factHash(fact),
+			topic,
+			surface: "newsletter",
+			sourceTable: "manual",
+			confidence: 0.8,
+		})
+		.onConflictDoNothing({ target: [brainFacts.entitySlug, brainFacts.factHash] });
+	return { ok: true };
+}, "add-issue-learning");

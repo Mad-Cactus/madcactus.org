@@ -8,9 +8,11 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { randomHex } from "~/lib/crypto";
 import { db } from "~/db";
-import { docs, textVersions, type Doc } from "~/db/schema";
+import { docs, shortLinks, textVersions, type Doc } from "~/db/schema";
 import { lintGateError, lintVoiceText, type LintResult, type VoiceScope } from "~/lib/voice-lint-db";
 import { docSurface } from "~/lib/voice-lint";
+import { brainCtaAppendix } from "~/lib/publish-core";
+import { randomKey, shortLinkBase } from "~/lib/short-links";
 import { trackText, listTextVersions, getTextVersionDiff } from "~/lib/crdt-text-db";
 import { UUID_RE } from "~/lib/uuid";
 
@@ -28,6 +30,7 @@ export async function createDoc(
 	} = {},
 ): Promise<Doc> {
 	const author = opts.author ?? "human";
+	const isNewsletter = opts.kind === "newsletter";
 	const [row] = await db
 		.insert(docs)
 		.values({
@@ -39,6 +42,7 @@ export async function createDoc(
 			...(opts.chatUuid ? { chatUuid: opts.chatUuid } : {}),
 		})
 		.returning();
+	if (isNewsletter) await seedNewsletterAppendix(row.id);
 	if (markdown) {
 		const tracked = await trackText("doc", row.id, "", author, markdown);
 		if (tracked) {
@@ -115,6 +119,43 @@ export async function setDocGenre(id: string, genre: string | null) {
 /** Voice scope a doc's text lints/learns under — kind → surface, freeform genre. */
 export function docVoiceScope(doc: Pick<Doc, "kind" | "genre">): VoiceScope {
 	return { surface: docSurface(doc.kind), genre: doc.genre };
+}
+
+/** New issues seed the /brain CTA into both appendix fields, pointed at the
+ *  issue's OWN /l/ link: per-person clicks in email (r={{email}} via
+ *  perPersonLinks), per-issue aggregate on the web, and the target carries
+ *  ref=<docId> so brain requests attribute themselves. Slug collisions retry
+ *  (astronomically rare); the appendix never blocks doc creation.
+ *  ponytail: note the returned Doc from createDoc predates this update —
+ *  callers reading emailAppendix must refetch. */
+export async function seedNewsletterAppendix(docId: string): Promise<void> {
+	for (let attempt = 0; attempt < 3; attempt++) {
+		const slug = randomKey();
+		try {
+			await db.insert(shortLinks).values({
+				slug,
+				target: `${shortLinkBase()}/brain?ref=${docId}&utm_source=newsletter`,
+				docId,
+			});
+			const link = `${shortLinkBase()}/l/${slug}`;
+			await db
+				.update(docs)
+				.set({ emailAppendix: brainCtaAppendix(link), webAppendix: brainCtaAppendix(link) })
+				.where(eq(docs.id, docId));
+			return;
+		} catch (e) {
+			if (!(e instanceof Error) || !e.message.includes("duplicate key")) throw e;
+		}
+	}
+}
+
+/** Per-channel appendix (the CTA block after the body). Channel copy lives in
+ *  its own fields, never inside body markdown. */
+export async function setDocAppendix(id: string, channel: "email" | "web", content: string) {
+	await db
+		.update(docs)
+		.set(channel === "email" ? { emailAppendix: content } : { webAppendix: content })
+		.where(eq(docs.id, id));
 }
 
 /** Queue a doc for the scheduler. Any status is allowed — rescheduling a

@@ -50,6 +50,17 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 	const [schedInput, setSchedInput] = createSignal("");
 	const [firstComment, setFirstComment] = createSignal("");
 	const [channel, setChannel] = createSignal<"email+web" | "web">(doc().publishChannel ?? "email+web");
+	// newsletter channel appendix ("After the body" panel): one textarea
+	// switched between the two stored fields, autosaved like the first comment
+	const [emailAppendix, setEmailAppendix] = createSignal("");
+	const [webAppendix, setWebAppendix] = createSignal("");
+	const [appendixChannel, setAppendixChannel] = createSignal<"email" | "web">("email");
+	let appendixTimer: ReturnType<typeof setTimeout> | undefined;
+	const saveAppendix = (channel: "email" | "web", content: string) => {
+		(channel === "email" ? setEmailAppendix : setWebAppendix)(content);
+		clearTimeout(appendixTimer);
+		appendixTimer = setTimeout(() => void post(props.id, { op: "set-appendix", channel, content }), 1200);
+	};
 	// live web snapshot — differs from markdown() when a published newsletter
 	// was edited but not republished yet
 	const [webMd, setWebMd] = createSignal(doc().webMarkdown ?? doc().markdown);
@@ -161,6 +172,8 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 				if (d.shareToken) setShareUrl(`${location.origin}/share/${d.shareToken}`);
 				if (d.status === "scheduled" && d.scheduledFor) setSchedInput(toLocalInput(new Date(d.scheduledFor)));
 				setFirstComment(d.firstComment ?? "");
+				setEmailAppendix(d.emailAppendix ?? "");
+				setWebAppendix(d.webAppendix ?? "");
 				setChannel(d.publishChannel ?? "email+web");
 				setGenre(d.genre ?? "");
 				if (titleEl) {
@@ -467,8 +480,8 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 					class="doc-title"
 					ref={titleRef}
 					rows={1}
-					placeholder="Untitled"
-					title="Click to rename"
+					placeholder={kind() === "newsletter" ? "Subject / title" : "Untitled"}
+					title={kind() === "newsletter" ? "The email subject — same text as the web headline" : "Click to rename"}
 					onInput={(e) => {
 						const el = e.currentTarget;
 						el.style.height = "auto";
@@ -530,6 +543,31 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 					/>
 				</div>
 			</Show>
+			<Show when={kind() === "newsletter"}>
+				<div class="doc-firstcomment">
+					<label for="channel-appendix">After the body</label>
+					<div style={{ display: "flex", gap: "8px", "align-items": "center" }}>
+						<select
+							class="doc-sched-input"
+							style={{ width: "110px" }}
+							aria-label="Appendix channel"
+							value={appendixChannel()}
+							onChange={(e) => setAppendixChannel(e.currentTarget.value as "email" | "web")}
+						>
+							<option value="email">Email</option>
+							<option value="web">Web</option>
+						</select>
+						<textarea
+							rows={3}
+							class="doc-sched-input"
+							style={{ width: "100%" }}
+							placeholder="CTA block rendered after the issue body — markdown"
+							value={appendixChannel() === "email" ? emailAppendix() : webAppendix()}
+							onInput={(e) => saveAppendix(appendixChannel(), e.currentTarget.value)}
+						/>
+					</div>
+				</div>
+			</Show>
 				</div>
 				<Show when={preview()}>
 					<aside class="doc-history wide">
@@ -541,7 +579,7 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 								<LinkedInPreview markdown={markdown()} title={doc().title} firstComment={firstComment()} />
 							</Show>
 							<Show when={preview() === "email"}>
-								<NewsletterEmailPreview markdown={markdown()} title={doc().title} />
+								<NewsletterEmailPreview markdown={markdown()} title={doc().title} appendix={emailAppendix()} issueNumber={doc().issueNumber} />
 							</Show>
 							<Show when={preview() === "web"}>
 								<NewsletterWebPreview docId={props.id} />
