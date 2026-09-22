@@ -34,10 +34,10 @@ export default function DispatchIssuePreviewPage() {
 								.replaceAll('href="/brain"', `href="/brain?ref=${d().id}"`)
 								.replaceAll('href="https://madcactus.org/brain"', `href="/brain?ref=${d().id}"`)} />
 								<div class="issue-cta">
-									<h3>Want one of these for your company?</h3>
-									<p>I build a custom company brain for a few businesses each month — free.</p>
+									<h3>Want to start turning your company AI-native?</h3>
+									<p>I build a custom company brain for one reader every week, completely free. All you have to do is click below.</p>
 									<a href={`/brain?ref=${d().id}`} class="cta-bracketed">
-										&#123; GET YOUR FREE COMPANY BRAIN &#125;
+										&#123; GET YOUR COMPANY BRAIN &#125;
 									</a>
 								</div>
 							</div>

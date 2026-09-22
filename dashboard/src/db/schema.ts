@@ -478,9 +478,9 @@ export const docs = pgTable(
 		emailAppendix: text("email_appendix").notNull().default(""),
 		webAppendix: text("web_appendix").notNull().default(""),
 		// ── Send tracking — reality checks for the learnings loop. Opens come
-		// from the seal pixel (/api/track/open), clicks live on short_links /
-		// short_link_clicks. resendBroadcastId = ops metadata (find the issue's
-		// broadcast in Resend's dashboard); primary signals stay
+		// from the seal pixel (/api/track/open), per-person clicks from the /l/
+		// redirect (newsletter_events). resendBroadcastId = ops metadata (find the
+		// issue's broadcast in Resend's dashboard); primary signals stay
 		// meetings/replies/clients.
 		resendBroadcastId: text("resend_broadcast_id"),
 		opens: integer("opens").notNull().default(0),
@@ -515,26 +515,11 @@ export const shortLinks = pgTable("short_links", {
 	createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-// Per-person short-link clicks. Social clicks stay aggregate on
-// short_links.clicks (anonymous traffic — no identity exists); email clicks
-// arrive with ?r={{email}} (Resend's per-recipient variable) and land here,
-// so "who clicked what" joins against ICP prospects directly.
-export const shortLinkClicks = pgTable(
-	"short_link_clicks",
-	{
-		id: uuid("id").primaryKey().defaultRandom(),
-		slug: text("slug")
-			.notNull()
-			.references(() => shortLinks.slug, { onDelete: "cascade" }),
-		docId: uuid("doc_id").references(() => docs.id, { onDelete: "set null" }),
-		recipient: text("recipient").notNull(),
-		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-	},
-	(t) => [
-		index("idx_short_link_clicks_person").on(t.recipient, t.createdAt),
-		index("idx_short_link_clicks_slug").on(t.slug, t.createdAt),
-	],
-);
+// Social clicks stay aggregate on short_links.clicks (anonymous traffic —
+// no identity exists). Per-person newsletter events — opens from the seal
+// pixel and email clicks from the /l/ redirect (?r={{email}}, Resend's
+// per-recipient variable) — land in newsletter_events, the one per-recipient
+// newsletter log, so "who opened/clicked" joins against ICP prospects directly.
 
 // OAuth tokens for scheduled publishing targets (LinkedIn). One row per
 // provider — access tokens are short-lived (~60d) and refreshed on use.
@@ -1014,16 +999,18 @@ export const brainRequests = pgTable(
 	(t) => [index("idx_brain_requests_status").on(t.status, t.createdAt)],
 );
 
-// Open-tracking log written by the seal pixel (/api/track/open) — one row per
-// doc+recipient (unique event id doubles as the dedup key), so prefetches and
-// repeats never inflate the counter. No Resend webhook in the loop.
-export const resendEvents = pgTable(
-	"resend_events",
+// Per-recipient newsletter event log — opens (seal pixel, /api/track/open)
+// and email clicks (/l/ redirect). One row per doc+recipient for opens (the
+// unique event id doubles as the dedup key, so prefetches and repeats never
+// inflate); one row per human click. Not Resend webhooks — no webhook in the
+// loop.
+export const newsletterEvents = pgTable(
+	"newsletter_events",
 	{
 		id: uuid("id").primaryKey().defaultRandom(),
-		eventId: text("event_id").notNull().unique(), // svix msg_id header
-		type: text("type").notNull(), // pixel.open
-		// who fired it (payload data.to) — matches clicks against ICP prospects
+		eventId: text("event_id").notNull().unique(), // dedup key: `pixel:<docId>:<recipient>` / `click:<slug>:<recipient>:<ts>`
+		type: text("type").notNull(), // "open" | "click" — pre-2026-09 open rows say "pixel.open"; nothing filters on type
+		// who fired it ({{email}} substitution) — matches opens/clicks against ICP prospects
 		recipient: text("recipient"),
 		docId: uuid("doc_id").references(() => docs.id, { onDelete: "set null" }),
 		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -1060,5 +1047,4 @@ export type EmailThread = typeof emailThreads.$inferSelect;
 export type EmailMessage = typeof emailMessages.$inferSelect;
 export type EmailOutbox = typeof emailOutbox.$inferSelect;
 export type BrainRequest = typeof brainRequests.$inferSelect;
-export type ResendEvent = typeof resendEvents.$inferSelect;
-export type ShortLinkClick = typeof shortLinkClicks.$inferSelect;
+export type NewsletterEvent = typeof newsletterEvents.$inferSelect;

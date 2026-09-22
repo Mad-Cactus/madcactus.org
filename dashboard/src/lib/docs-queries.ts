@@ -1,8 +1,8 @@
 import { query, action, redirect } from "@solidjs/router";
 import { db } from "~/db";
-import { brainFacts, brainRequests, docs, shortLinks } from "~/db/schema";
+import { brainFacts, brainRequests, docs, newsletterEvents, shortLinks } from "~/db/schema";
 import { getAuthedClient } from "~/lib/session";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, sql } from "drizzle-orm";
 import { factHash } from "~/lib/brain/core";
 import { seedNewsletterAppendix } from "~/lib/docs";
 
@@ -24,6 +24,56 @@ export const getDocQuery = query(async (id: string) => {
 	if (!row) throw redirect("/admin/docs");
 	return row;
 }, "admin-doc");
+
+export type DocStats =
+	| {
+			kind: "newsletter";
+			opens: number;
+			clicks: number;
+			requests: number;
+			perPerson: { recipient: string | null; opens: number; clicks: number }[];
+	  }
+	| { kind: "post"; links: { slug: string; clicks: number }[] };
+
+// Per-doc reality checks for the editor: opens + per-person clicks + brain
+// requests for newsletters, linked-link clicks for posts. Per-person click
+// rows live in newsletter_events (email only); aggregate per-link totals stay
+// on short_links.clicks (links tab keeps reading those).
+export const getDocStatsQuery = query(async (id: string): Promise<DocStats | null> => {
+	"use server";
+	await requireAdmin();
+	const [doc] = await db.select({ id: docs.id, kind: docs.kind, opens: docs.opens }).from(docs).where(eq(docs.id, id));
+	if (!doc) return null;
+	if (doc.kind !== "newsletter") {
+		const links = await db
+			.select({ slug: shortLinks.slug, clicks: shortLinks.clicks })
+			.from(shortLinks)
+			.where(eq(shortLinks.docId, id))
+			.orderBy(desc(shortLinks.clicks));
+		return { kind: "post", links };
+	}
+	const num = sql<number>`count(*)`.mapWith(Number);
+	const [[{ n: clicks }], [{ n: requests }], perPerson] = await Promise.all([
+		db
+			.select({ n: num })
+			.from(newsletterEvents)
+			.where(sql`${newsletterEvents.docId} = ${id} and ${newsletterEvents.type} = 'click'`),
+		db.select({ n: num }).from(brainRequests).where(eq(brainRequests.sourceDocId, id)),
+		db
+			.select({
+				recipient: newsletterEvents.recipient,
+				opens: sql<number>`count(*) filter (where ${newsletterEvents.type} = 'open')`.mapWith(Number),
+				clicks: sql<number>`count(*) filter (where ${newsletterEvents.type} = 'click')`.mapWith(Number),
+			})
+			.from(newsletterEvents)
+			.where(eq(newsletterEvents.docId, id))
+			.groupBy(newsletterEvents.recipient)
+			// most recently active person first — the row you came to look for
+			.orderBy(desc(sql`max(${newsletterEvents.createdAt})`))
+			.limit(25),
+	]);
+	return { kind: "newsletter", opens: doc.opens, clicks, requests, perPerson };
+}, "doc-stats");
 
 export const createDocAction = action(async (formData: FormData) => {
 	"use server";

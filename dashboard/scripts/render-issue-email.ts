@@ -48,7 +48,7 @@ if (docId) {
 			"About $240/mo in model calls and two days of build time. The team caught 11 pricing mistakes in the first week.",
 		].join("\n"),
 		appendix:
-			"Want one of these for your company? I build a custom company brain for a few businesses each month — free. [Answer a few questions and I'll build yours →](https://madcactus.org/brain)",
+			"P.S. Want to start turning your company AI-native? I build a custom company brain for one reader every week, completely free. All you have to do is click below. [**{ GET YOUR COMPANY BRAIN }**](https://madcactus.org/brain)",
 	});
 	console.log("rendered: sample issue");
 }

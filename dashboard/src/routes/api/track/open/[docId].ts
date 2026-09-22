@@ -6,7 +6,7 @@
 import type { APIEvent } from "@solidjs/start/server";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "~/db";
-import { docs, resendEvents } from "~/db/schema";
+import { docs, newsletterEvents } from "~/db/schema";
 import { UUID_RE } from "~/lib/uuid";
 
 export const GET = async (event: APIEvent) => {
@@ -23,10 +23,10 @@ export const GET = async (event: APIEvent) => {
 				// insert-first dedup: unique (doc, person) — the counter is unique
 				// openers, not raw pixel loads
 				const inserted = await db
-					.insert(resendEvents)
-					.values({ eventId: `pixel:${docId}:${recipient ?? "anon"}`, type: "pixel.open", docId, recipient })
-					.onConflictDoNothing({ target: resendEvents.eventId })
-					.returning({ id: resendEvents.id });
+					.insert(newsletterEvents)
+					.values({ eventId: `pixel:${docId}:${recipient ?? "anon"}`, type: "open", docId, recipient })
+					.onConflictDoNothing({ target: newsletterEvents.eventId })
+					.returning({ id: newsletterEvents.id });
 				if (inserted.length) {
 					await db
 						.update(docs)
