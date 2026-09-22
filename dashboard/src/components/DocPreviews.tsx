@@ -105,13 +105,14 @@ export function LinkedInPreview(props: { markdown: string; title: string; firstC
  *  "wall of text" preview. Includes the code-owned footer so it is byte-for-
  *  byte what sendNewsletter puts in the broadcast.
  */
-export function NewsletterEmailPreview(props: { markdown: string; title: string; appendix?: string }) {
+export function NewsletterEmailPreview(props: { markdown: string; title: string; appendix?: string; issueNumber?: number | null }) {
 	// byte-for-byte the send, minus tracking (static seal)
 	const emailHtml = () =>
 		renderIssueEmail({
 			subject: newsletterSubject({ markdown: props.markdown, title: props.title }),
 			markdown: props.markdown,
 			appendix: props.appendix,
+			issueNumber: props.issueNumber,
 		});
 	return (
 		<div style={{ width: "100%", "max-width": "640px" }}>

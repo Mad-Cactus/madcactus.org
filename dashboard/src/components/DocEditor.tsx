@@ -579,7 +579,7 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 								<LinkedInPreview markdown={markdown()} title={doc().title} firstComment={firstComment()} />
 							</Show>
 							<Show when={preview() === "email"}>
-								<NewsletterEmailPreview markdown={markdown()} title={doc().title} appendix={emailAppendix()} />
+								<NewsletterEmailPreview markdown={markdown()} title={doc().title} appendix={emailAppendix()} issueNumber={doc().issueNumber} />
 							</Show>
 							<Show when={preview() === "web"}>
 								<NewsletterWebPreview docId={props.id} />
