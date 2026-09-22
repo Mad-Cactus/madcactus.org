@@ -849,6 +849,8 @@ export const emailMessages = pgTable(
 		fromEmail: text("from_email"),
 		toEmails: text("to_emails"),
 		bodyText: text("body_text").notNull().default(""),
+		// raw text/html part; NULL = never checked (pre-column rows), '' = text-only
+		bodyHtml: text("body_html"),
 		date: timestamp("date", { withTimezone: true }).notNull(),
 		isSent: boolean("is_sent").notNull().default(false),
 		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

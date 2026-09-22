@@ -135,29 +135,32 @@ export function addr(value: string): { name: string | null; email: string } {
 	return { name: null, email: value.trim() };
 }
 
-/** Extract plain text: prefer text/plain part, else strip tags from text/html. */
-export function extractText(payload: GmailPayload): string {
+/** First decoded part with the given MIME type, walking nested multipart. */
+function findPart(payload: GmailPayload, mimeType: string): string | null {
 	const walk = (p: GmailPayload): string | null => {
-		if (p.mimeType === "text/plain" && p.body?.data) return b64url(p.body.data);
+		if (p.mimeType === mimeType && p.body?.data) return b64url(p.body.data);
 		for (const part of p.parts ?? []) {
 			const found = walk(part);
 			if (found) return found;
 		}
 		return null;
 	};
-	const plain = walk(payload);
+	return walk(payload);
+}
+
+/** Raw text/html body — the reading pane renders this in a sandboxed iframe.
+ *  Empty string when the email has no HTML part. */
+export function extractHtml(payload: GmailPayload): string {
+	return findPart(payload, "text/html") ?? "";
+}
+
+/** Extract plain text: prefer text/plain part, else strip tags from text/html. */
+export function extractText(payload: GmailPayload): string {
+	const plain = findPart(payload, "text/plain");
 	if (plain) return plain;
-	const html = (p: GmailPayload): string | null => {
-		if (p.mimeType === "text/html" && p.body?.data) return b64url(p.body.data);
-		for (const part of p.parts ?? []) {
-			const found = html(part);
-			if (found) return found;
-		}
-		return null;
-	};
-	const raw = html(payload);
-	// ponytail: regex de-tagging — good enough for reading pane + diffing.
-	// Upgrade to a proper DOM parser if html emails render badly.
+	const raw = findPart(payload, "text/html");
+	// ponytail: regex de-tagging — good enough for search/diffing/quotes; the
+	// reading pane renders bodyHtml directly instead.
 	return raw?.replace(/<style[\s\S]*?<\/style>/gi, "").replace(/<br\s*\/?>/gi, "\n").replace(/<\/(p|div|tr)>/gi, "\n").replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/\n{3,}/g, "\n\n").trim() ?? "";
 }
 
@@ -189,6 +192,7 @@ async function upsertMessage(account: EmailAccount, threadRowId: string, msg: Gm
 			fromEmail: from.email,
 			toEmails: header(msg.payload, "To"),
 			bodyText: extractText(msg.payload),
+			bodyHtml: extractHtml(msg.payload),
 			date: new Date(Number(msg.internalDate)),
 			isSent: msg.labelIds?.includes("SENT") ?? false,
 		})
@@ -644,11 +648,32 @@ export async function threadWithMessages(account: EmailAccount, threadRowId: str
 		.from(emailThreads)
 		.where(and(eq(emailThreads.id, threadRowId), eq(emailThreads.accountId, account.id)));
 	if (!thread) return null;
-	const messages = await db
+	let messages = await db
 		.select()
 		.from(emailMessages)
 		.where(eq(emailMessages.threadId, threadRowId))
 		.orderBy(emailMessages.date);
+	// Rows synced before body_html existed: upsertMessage's onConflictDoNothing
+	// never fills them, so one full refetch backfills on first open (NULL →
+	// html or ''). Later opens stay DB-only.
+	if (messages.some((m) => m.bodyHtml === null)) {
+		try {
+			const full = await fetchFullThread(account, thread.gmailThreadId);
+			for (const msg of full.messages ?? []) {
+				await db
+					.update(emailMessages)
+					.set({ bodyHtml: extractHtml(msg.payload) })
+					.where(eq(emailMessages.gmailId, msg.id));
+			}
+			messages = await db
+				.select()
+				.from(emailMessages)
+				.where(eq(emailMessages.threadId, threadRowId))
+				.orderBy(emailMessages.date);
+		} catch (e) {
+			console.error(`backfill bodyHtml for thread ${threadRowId} failed:`, e instanceof Error ? e.message : e);
+		}
+	}
 	return { thread, messages };
 }
 

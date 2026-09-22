@@ -175,6 +175,8 @@ export async function sendOutboxInner(
 				gmailId: gmailMessageId,
 				toEmails: row.toEmail,
 				bodyText: body,
+				// plain-text send: '' marks the row "checked" so open-backfill never refetches
+				bodyHtml: "",
 				date: new Date(),
 				isSent: true,
 			})
