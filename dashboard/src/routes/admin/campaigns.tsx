@@ -52,6 +52,7 @@ function CampaignRow(props: { company: CampaignCompany }) {
 					placeholder="contact email"
 					value={props.company.contactEmail ?? ""}
 					style={{ width: "200px" }}
+					spellcheck={false}
 				/>
 				<label class="muted" style={{ "font-size": "12px" }}>
 					step <input type="number" name="sequence_step" min="1" value={props.company.sequenceStep} style={{ width: "52px" }} />
@@ -146,7 +147,7 @@ function Campaign(props: { campaign: { id: string; name: string; description: st
 				style={{ display: "flex", gap: "8px", "flex-wrap": "wrap", "margin-top": "14px", "align-items": "center" }}
 			>
 				<input type="text" name="company_name" placeholder="Company *" required />
-				<input type="email" name="contact_email" placeholder="Contact email" style={{ width: "200px" }} />
+				<input type="email" name="contact_email" placeholder="Contact email" style={{ width: "200px" }} spellcheck={false} />
 				<input type="datetime-local" name="next_send_at" />
 				<input type="text" name="next_email_note" placeholder="What the first/next email should say" style={{ flex: "1", "min-width": "180px" }} />
 				<button type="submit" class="btn btn-primary btn-sm">Add company</button>

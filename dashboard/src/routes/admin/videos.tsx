@@ -49,7 +49,7 @@ export default function AdminVideos() {
 							)}
 						</For>
 					</select>
-					<input type="url" name="video_url" placeholder="Video URL (cap.so share link) *" required />
+					<input type="url" name="video_url" placeholder="Video URL (cap.so share link) *" required spellcheck={false} />
 					<input type="text" name="video_description" placeholder="Description — what it shows / why it exists" />
 					<button type="submit" class="btn btn-primary">Save video</button>
 				</form>

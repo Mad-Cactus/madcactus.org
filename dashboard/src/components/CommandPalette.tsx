@@ -144,7 +144,7 @@ export default function CommandPalette() {
 			}}
 			label="Command menu"
 		>
-			<CommandInput value={search()} onValueChange={setSearch} placeholder="Type a command…" />
+			<CommandInput value={search()} onValueChange={setSearch} placeholder="Type a command…" spellcheck={false} />
 			<CommandList>
 				<CommandEmpty>No matches.</CommandEmpty>
 				<For each={cmds()}>

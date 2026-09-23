@@ -208,7 +208,7 @@ export default function CompanyDetail() {
 											</div>
 											<div class="form-group">
 												<label for="m_email">Email (login)</label>
-												<input type="email" id="m_email" name="email" required placeholder="john@company.com" />
+												<input type="email" id="m_email" name="email" required placeholder="john@company.com" spellcheck={false} />
 											</div>
 										</div>
 										<p class="muted" style={{ "font-size": "12px", "margin-bottom": "12px" }}>An invite email will be sent so they can set their own password.</p>
