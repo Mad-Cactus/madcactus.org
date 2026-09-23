@@ -90,6 +90,7 @@ export default function ProjectDocuments(props: {
 								name="url"
 								required
 								placeholder="https://docs.google.com/…"
+								spellcheck={false}
 							/>
 						</div>
 						<div class="form-group">

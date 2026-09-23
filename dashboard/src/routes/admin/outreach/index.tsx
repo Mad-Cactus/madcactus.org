@@ -667,16 +667,16 @@ function BoardCard(props: {
 					<form onSubmit={handleSave} style={{ display: "grid", gap: "8px", "margin-top": "12px" }}>
 						<input type="hidden" name="id" value={p().id} />
 						<input type="text" name="contact_name" placeholder="Contact name" value={p().contactName ?? ""} />
-						<input type="email" name="email" placeholder="Email (sent-to address)" value={p().email ?? ""} />
+						<input type="email" name="email" placeholder="Email (sent-to address)" value={p().email ?? ""} spellcheck={false} />
 						<select name="stage" value={p().stage}>
 							<For each={OUTREACH_STAGES}>{(s) => <option value={s}>{stageLabel(s)}</option>}</For>
 						</select>
 						<input type="datetime-local" name="next_action_at" value={toInputValue(p().nextActionAt)} />
-						<input type="url" name="video_url" placeholder="Video URL (cap.so share link)" value={p().videoUrl ?? ""} />
+						<input type="url" name="video_url" placeholder="Video URL (cap.so share link)" value={p().videoUrl ?? ""} spellcheck={false} />
 						<input type="text" name="video_description" placeholder="Video description (what it shows / why)" value={p().videoDescription ?? ""} />
 						<input type="text" name="next_action_note" placeholder="Next action note" value={p().nextActionNote ?? ""} />
-						<input type="url" name="brain_url" placeholder="Brain URL (https://….madcactus.org)" value={p().brainUrl ?? ""} />
-						<input type="text" name="brain_activity_key" placeholder="Brain activity key" value={p().brainActivityKey ?? ""} />
+						<input type="url" name="brain_url" placeholder="Brain URL (https://….madcactus.org)" value={p().brainUrl ?? ""} spellcheck={false} />
+						<input type="text" name="brain_activity_key" placeholder="Brain activity key" value={p().brainActivityKey ?? ""} spellcheck={false} />
 						<select name="campaign_id" value={p().campaignId ?? ""}>
 							<option value="">— no campaign —</option>
 							<For each={props.campaigns ?? []}>{(c) => <option value={c.id}>{c.name}</option>}</For>
@@ -856,12 +856,12 @@ export default function AdminOutreach() {
 					<div style={{ display: "flex", gap: "8px", "flex-wrap": "wrap" }}>
 						<input type="text" name="company" placeholder="Company *" required />
 						<input type="text" name="contact_name" placeholder="Contact name" />
-						<input type="email" name="email" placeholder="Email" />
+						<input type="email" name="email" placeholder="Email" spellcheck={false} />
 					</div>
 					<div style={{ display: "flex", gap: "8px", "flex-wrap": "wrap" }}>
-						<input type="url" name="brain_url" placeholder="Brain URL (https://…)" />
-						<input type="text" name="brain_activity_key" placeholder="Brain activity key" />
-						<input type="url" name="video_url" placeholder="Video URL" />
+						<input type="url" name="brain_url" placeholder="Brain URL (https://…)" spellcheck={false} />
+						<input type="text" name="brain_activity_key" placeholder="Brain activity key" spellcheck={false} />
+						<input type="url" name="video_url" placeholder="Video URL" spellcheck={false} />
 					</div>
 					<div style={{ display: "flex", gap: "8px", "flex-wrap": "wrap" }}>
 						<select name="stage">

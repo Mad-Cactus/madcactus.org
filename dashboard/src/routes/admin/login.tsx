@@ -55,6 +55,7 @@ export default function Login() {
 									required
 									autocomplete="email"
 									placeholder="you@company.com"
+									spellcheck={false}
 								/>
 							</div>
 							<div class="form-group">

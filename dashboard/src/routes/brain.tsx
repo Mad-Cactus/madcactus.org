@@ -75,7 +75,7 @@ export default function BrainLanding() {
 						</div>
 						<div>
 							<label for="brain-email" style={label}>Work email *</label>
-							<input id="brain-email" name="email" type="email" required style={input} autocomplete="email" />
+							<input id="brain-email" name="email" type="email" required style={input} autocomplete="email" spellcheck={false} />
 						</div>
 						<div>
 							<label for="brain-title" style={label}>Job title</label>
