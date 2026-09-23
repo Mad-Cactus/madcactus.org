@@ -122,3 +122,12 @@ test("renderDocx: Heading2 style is Arial 16pt bold near-black", async () => {
 	expect(h2).toContain("w:val=\"32\""); // 16pt in half-points
 	expect(h2).toContain("w:color w:val=\"111111\"");
 });
+
+test("renderDocx: DIRECT run formatting + exact leading (Apple's importer ignores styles)", async () => {
+	const buf = await renderDocx("T", "Plain **bold** para.\n\n## Head two");
+	const zip = await JSZip.loadAsync(buf);
+	const xml = (await zip.file("word/document.xml")?.async("text")) ?? "";
+	expect((xml.match(/w:ascii="Arial"/g) ?? []).length).toBeGreaterThanOrEqual(4); // every run carries its font
+	expect(xml).toContain('w:lineRule="exact"'); // editor-density leading on paragraphs
+	expect(xml).toContain("<w:b/>"); // bold directly on the run
+});
