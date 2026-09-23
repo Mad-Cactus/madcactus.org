@@ -15,6 +15,7 @@ import {
 	Document,
 	ExternalHyperlink,
 	HeadingLevel,
+	LineRuleType,
 	PageBreak,
 	Packer,
 	ShadingType,
@@ -271,39 +272,70 @@ export async function computePageMap(title: string, md: string): Promise<number[
 
 // ── .docx ─────────────────────────────────────────────────────────────────
 const CODE_FONT = "Courier New";
+const ARIAL = "Arial";
 const HEADINGS = [HeadingLevel.HEADING_1, HeadingLevel.HEADING_2, HeadingLevel.HEADING_3, HeadingLevel.HEADING_4, HeadingLevel.HEADING_5, HeadingLevel.HEADING_6];
 // editor-look ink + gold underline (page-spec typography, twips = pt × 20)
 const INK = "111111";
 const GOLD = "BC9C5C";
+const HSIZES = [42, 32, 27, 24, 22, 22]; // hSizes px → half-points: 21/16/13.5/12/11/11pt
+// Exact line spacing mirrors the editor's line density (px × SPEC.lh, px → twips
+// is ×15). Apple's importer (Pages/Quick Look/textutil) ignores w:docDefaults
+// and style definitions entirely (it renders in 12px Times), so every run gets
+// DIRECT font/size/color and every paragraph DIRECT spacing — the style block
+// in renderDocx stays only for Word's style pane. The exact leading is also
+// what makes Word reflow like computePageMap's model: natural Word leading
+// (~1.15em) is ~25% looser and pushed every computed break wrong.
+const line = (px: number) => ({ line: Math.round(px * SPEC.lh * 15), lineRule: LineRuleType.EXACT });
 
-function docxRuns(ss: Span[], bold = false) {
+type RunOpts = { size?: number; color?: string; italic?: boolean };
+
+function docxRuns(ss: Span[], bold = false, opts: RunOpts = {}) {
 	return ss.map((s) => {
 		// editor look: dark text with a gold underline — not Word's blue Hyperlink style
-		if (s.href) return new ExternalHyperlink({ link: s.href, children: [new TextRun({ text: s.text, color: INK, underline: { color: GOLD } })] });
-		return new TextRun({ text: s.text, bold: s.bold || bold, italics: s.italic, font: s.code ? CODE_FONT : undefined });
+		if (s.href)
+			return new ExternalHyperlink({
+				link: s.href,
+				children: [new TextRun({ text: s.text, font: ARIAL, size: opts.size ?? 22, color: INK, bold: s.bold || bold, italics: s.italic, underline: { color: GOLD } })],
+			});
+		return new TextRun({
+			text: s.text,
+			bold: s.bold || bold,
+			italics: s.italic || opts.italic,
+			font: s.code ? CODE_FONT : ARIAL,
+			size: opts.size ?? (s.code ? 20 : 22),
+			color: opts.color ?? INK,
+		});
 	});
 }
 
 function docxBlocks(blocks: Block[]): (Paragraph | Table)[] {
 	const out: (Paragraph | Table)[] = [];
-	const para = (ss: Span[], extra: IParagraphOptions = {}) => new Paragraph({ children: docxRuns(ss), ...extra });
+	const para = (ss: Span[], extra: IParagraphOptions = {}, opts: RunOpts = {}) => new Paragraph({ children: docxRuns(ss, false, opts), ...extra });
 
 	for (const b of blocks) {
 		switch (b.t) {
-			case "heading":
-				out.push(new Paragraph({ children: docxRuns(b.spans), heading: HEADINGS[b.depth - 1] ?? HEADINGS[5] }));
+			case "heading": {
+				const d = Math.min(6, Math.max(1, b.depth));
+				out.push(
+					new Paragraph({
+						children: docxRuns(b.spans, true, { size: HSIZES[d - 1] }),
+						heading: HEADINGS[d - 1] ?? HEADINGS[5],
+						spacing: { before: d <= 2 ? 280 : 200, after: 60, ...line(SPEC.hSizes[d - 1]) },
+					}),
+				);
 				break;
+			}
 			case "para":
-				out.push(para(b.spans, { spacing: { after: 140 } })); // 7pt — SPEC.paraAfter
+				out.push(para(b.spans, { spacing: { after: 140, ...line(SPEC.body) } })); // 7pt — SPEC.paraAfter
 				break;
 			case "quote":
 				for (const inner of b.blocks) {
 					if (inner.t === "para")
 						out.push(
 							new Paragraph({
-								children: docxRuns(inner.spans),
+								children: docxRuns(inner.spans, false, { italic: true, color: "555555" }),
 								indent: { left: 360 },
-								spacing: { after: 160 }, // 8pt — SPEC.quoteAfter
+								spacing: { after: 160, ...line(SPEC.body) }, // 8pt — SPEC.quoteAfter
 								border: { left: { style: BorderStyle.SINGLE, size: 18, color: GOLD, space: 4 } },
 							}),
 						);
@@ -317,20 +349,21 @@ function docxBlocks(blocks: Block[]): (Paragraph | Table)[] {
 							out.push(...docxBlocks([inner]));
 							continue;
 						}
+						const sp = { after: 80, ...line(SPEC.body) }; // 4pt — SPEC.listItemAfter
 						if (b.ordered)
 							// ponytail: faked "N." marker, no Word numbering config — upgrade if an export needs real numbered lists
-							out.push(new Paragraph({ children: [new TextRun({ text: `${i + 1}.  ` }), ...docxRuns(inner.spans)], indent: { left: 360 }, spacing: { after: 80 } }));
+							out.push(new Paragraph({ children: [new TextRun({ text: `${i + 1}.  `, font: ARIAL, size: 22, color: INK }), ...docxRuns(inner.spans)], indent: { left: 360 }, spacing: sp }));
 						// Word-native hanging indent: wrapped lines align under the text
-						else out.push(new Paragraph({ children: docxRuns(inner.spans), bullet: { level: 0 }, spacing: { after: 80 } }));
+						else out.push(new Paragraph({ children: docxRuns(inner.spans), bullet: { level: 0 }, spacing: sp }));
 					}
 				});
 				break;
 			case "code":
 				out.push(
 					new Paragraph({
-						children: [new TextRun({ text: b.text, font: CODE_FONT, size: 20 })],
+						children: [new TextRun({ text: b.text, font: CODE_FONT, size: 20, color: "333333" })],
 						shading: { type: ShadingType.CLEAR, fill: "F4F4F4" },
-						spacing: { before: 80, after: 160 }, // SPEC.codeAfter = 8pt
+						spacing: { before: 80, after: 160, ...line(SPEC.codeFont) }, // SPEC.codeAfter = 8pt
 					}),
 				);
 				break;
@@ -342,7 +375,7 @@ function docxBlocks(blocks: Block[]): (Paragraph | Table)[] {
 						width,
 						margins: { top: 80, bottom: 80, left: 120, right: 120 },
 						shading: head ? { type: ShadingType.CLEAR, fill: "EFEADD" } : undefined,
-						children: [para(ss.map((s) => ({ ...s, bold: s.bold || head })))],
+						children: [para(ss.map((s) => ({ ...s, bold: s.bold || head })), { spacing: { ...line(SPEC.tableFont) } }, { size: 19 })],
 					});
 				out.push(
 					new Table({
@@ -353,24 +386,26 @@ function docxBlocks(blocks: Block[]): (Paragraph | Table)[] {
 						],
 					}),
 				);
-				out.push(para([{ text: "" }], { spacing: { after: 0 } })); // spacing after table
+				out.push(para([{ text: "" }], { spacing: { after: 0, ...line(SPEC.body) } })); // spacing after table
 				break;
 			}
 			case "hr":
 				out.push(
 					new Paragraph({
-						children: [new TextRun({ text: "" })],
+						children: [new TextRun({ text: "", font: ARIAL, size: 22, color: INK })],
 						border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: "999999", space: 1 } },
-						spacing: { before: 160, after: 280 }, // SPEC.hrBefore / hrAfter
+						spacing: { before: 160, after: 280, ...line(SPEC.body) }, // SPEC.hrBefore / hrAfter
 					}),
 				);
 				break;
 			case "pagebreak":
-				out.push(new Paragraph({ children: [new PageBreak()] }));
+				// the break paragraph itself sits at the top of the next page — keep it
+				// ~1pt tall so the section starts at the page edge like in the editor
+				out.push(new Paragraph({ children: [new PageBreak()], spacing: { after: 0, line: 20, lineRule: LineRuleType.EXACT } }));
 				break;
 			case "blank":
 				// one empty line at body size — same height a blank line occupies in GDocs
-				out.push(new Paragraph({ children: [new TextRun({ text: "" })], spacing: { after: 0 } }));
+				out.push(new Paragraph({ children: [new TextRun({ text: "", font: ARIAL, size: 22, color: INK })], spacing: { after: 0, ...line(SPEC.body) } }));
 				break;
 		}
 	}
@@ -384,12 +419,16 @@ export async function renderDocx(title: string, md: string): Promise<Uint8Array<
 	// block already emits its own break, so only top up the counter for it
 	let page = 0;
 	const children: (Paragraph | Table)[] = [
-		new Paragraph({ children: [new TextRun({ text: title, bold: true, size: 44, color: INK })], spacing: { after: 200 } }), // 22pt, 10pt after
+		new Paragraph({
+			children: [new TextRun({ text: title, bold: true, size: 44, color: INK, font: ARIAL })], // 22pt
+			spacing: { after: 200, ...line(SPEC.title) }, // 10pt after
+		}),
 	];
 	blocks.forEach((b, i) => {
 		if (b.t !== "pagebreak") {
 			while (page < map[i + 1]) {
-				children.push(new Paragraph({ children: [new PageBreak()] }));
+				// ~1pt-tall carrier so the break lands at the very page edge
+				children.push(new Paragraph({ children: [new PageBreak()], spacing: { after: 0, line: 20, lineRule: LineRuleType.EXACT } }));
 				page++;
 			}
 		}
