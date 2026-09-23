@@ -5,7 +5,7 @@
 import type { APIEvent } from "@solidjs/start/server";
 import { eq, sql } from "drizzle-orm";
 import { db } from "~/db";
-import { shortLinkClicks, shortLinks } from "~/db/schema";
+import { newsletterEvents, shortLinks } from "~/db/schema";
 import { isBotUA } from "~/lib/bot-ua";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -25,8 +25,13 @@ export const GET = async (event: APIEvent) => {
 	const r = new URL(event.request.url).searchParams.get("r")?.trim().toLowerCase() ?? "";
 	if (row && EMAIL_RE.test(r)) {
 		await db
-			.insert(shortLinkClicks)
-			.values({ slug: event.params.slug, docId: row.docId, recipient: r })
+			.insert(newsletterEvents)
+			.values({
+				eventId: `click:${event.params.slug}:${r}:${Date.now()}`,
+				type: "click",
+				docId: row.docId ?? null,
+				recipient: r,
+			})
 			.catch((e) => console.error("[short-link] click log failed:", e));
 	}
 	return new Response(null, {

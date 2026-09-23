@@ -1,10 +1,10 @@
 import { For, Show, createSignal, onMount, onCleanup } from "solid-js";
-import { useNavigate } from "@solidjs/router";
+import { useNavigate, createAsync } from "@solidjs/router";
 import LexicalDocEditor from "~/components/LexicalDocEditor";
 import ConfirmButton from "~/components/ConfirmButton";
 import { LinkedInPreview, NewsletterEmailPreview, NewsletterWebPreview, type PreviewMode } from "~/components/DocPreviews";
 import type { DocEditorApi } from "~/components/LexicalDocEditor";
-import { getDocQuery } from "~/lib/docs-queries";
+import { getDocQuery, getDocStatsQuery } from "~/lib/docs-queries";
 import { computeBreaks } from "~/lib/doc-pages";
 import { VoiceLintPanel } from "~/components/VoiceLintPanel";
 import { docSurface, type LintResult } from "~/lib/voice-lint";
@@ -43,6 +43,17 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 		return undefined;
 	};
 	const kind = () => doc().kind ?? null;
+	// per-doc reality checks (opens/clicks/requests or linked links) — footer
+	// section below the editor column
+	const stats = createAsync(() => getDocStatsQuery(props.id));
+	const newsletterStats = () => {
+		const s = stats();
+		return s?.kind === "newsletter" ? s : undefined;
+	};
+	const postStats = () => {
+		const s = stats();
+		return s?.kind === "post" ? s : undefined;
+	};
 	const [docStatus, setDocStatus] = createSignal(doc().status as string);
 	const [publishedAt, setPublishedAt] = createSignal(doc().publishedAt?.toISOString() ?? null);
 	const [schedFor, setSchedFor] = createSignal<string | null>(doc().scheduledFor?.toISOString() ?? null);
@@ -567,6 +578,55 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 						/>
 					</div>
 				</div>
+			</Show>
+			<Show when={newsletterStats()}>
+				{(s) => (
+					<div class="doc-firstcomment" style={{ display: "block", gap: 0 }}>
+						<label for="doc-stats">Stats</label>
+						<p class="muted" style={{ margin: "4px 0 8px" }} id="doc-stats">
+							{s().opens} opens · {s().clicks} clicks · {s().requests} brain requests
+						</p>
+						<Show when={s().perPerson.length}>
+							<table style={{ "font-size": "12px", "border-collapse": "collapse", width: "100%" }}>
+								<thead>
+									<tr class="muted" style={{ "text-align": "left" }}>
+										<th style={{ padding: "2px 12px 2px 0", "font-weight": 500 }}>Recipient</th>
+										<th style={{ padding: "2px 12px 2px 0", "font-weight": 500 }}>Opens</th>
+										<th style={{ padding: "2px 0", "font-weight": 500 }}>Clicks</th>
+									</tr>
+								</thead>
+								<tbody>
+									<For each={s().perPerson}>
+										{(p) => (
+											<tr>
+												<td style={{ padding: "2px 12px 2px 0" }}>{p.recipient ?? "(anon)"}</td>
+												<td style={{ padding: "2px 12px 2px 0" }}>{p.opens}</td>
+												<td style={{ padding: "2px 0" }}>{p.clicks}</td>
+											</tr>
+										)}
+									</For>
+								</tbody>
+							</table>
+						</Show>
+					</div>
+				)}
+			</Show>
+			<Show when={postStats()}>
+				{(s) => (
+					<div class="doc-firstcomment">
+						<label for="doc-links">Linked links</label>
+						<span class="muted" id="doc-links">
+							<For each={s().links}>
+								{(l, i) => (
+									<span>
+										{i() > 0 ? " · " : ""}/l/{l.slug} ({l.clicks})
+									</span>
+								)}
+							</For>
+							<Show when={!s().links.length}>no short links point at this post</Show>
+						</span>
+					</div>
+				)}
 			</Show>
 				</div>
 				<Show when={preview()}>

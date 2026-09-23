@@ -121,11 +121,13 @@ export function docVoiceScope(doc: Pick<Doc, "kind" | "genre">): VoiceScope {
 	return { surface: docSurface(doc.kind), genre: doc.genre };
 }
 
-/** New issues seed the /brain CTA into both appendix fields, pointed at the
- *  issue's OWN /l/ link: per-person clicks in email (r={{email}} via
- *  perPersonLinks), per-issue aggregate on the web, and the target carries
- *  ref=<docId> so brain requests attribute themselves. Slug collisions retry
- *  (astronomically rare); the appendix never blocks doc creation.
+/** New issues seed the /brain CTA into the EMAIL appendix, pointed at the
+ *  issue's OWN /l/ link: per-person clicks land in newsletter_events in email
+ *  (r={{email}} via perPersonLinks), and the target carries ref=<docId> so
+ *  brain requests attribute themselves. Web stays clean — the styled CTA
+ *  block on the issue page covers it (seeding both would show two CTAs).
+ *  Slug collisions retry (astronomically rare); the appendix never blocks
+ *  doc creation.
  *  ponytail: note the returned Doc from createDoc predates this update —
  *  callers reading emailAppendix must refetch. */
 export async function seedNewsletterAppendix(docId: string): Promise<void> {
@@ -140,7 +142,7 @@ export async function seedNewsletterAppendix(docId: string): Promise<void> {
 			const link = `${shortLinkBase()}/l/${slug}`;
 			await db
 				.update(docs)
-				.set({ emailAppendix: brainCtaAppendix(link), webAppendix: brainCtaAppendix(link) })
+				.set({ emailAppendix: brainCtaAppendix(link), webAppendix: "" })
 				.where(eq(docs.id, docId));
 			return;
 		} catch (e) {

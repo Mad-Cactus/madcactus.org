@@ -140,7 +140,7 @@ export default function Newsletter() {
 						<em>company brain?</em>
 					</h2>
 					<p class="dark-band-body">
-						Your data, docs, and institutional knowledge: one intelligence layer your team actually uses. 3 built free each month, in the order requests arrive.
+						Your data, docs, and institutional knowledge: one intelligence layer your team actually uses. One built free every week, in the order requests arrive.
 					</p>
 					<a href="/brain" class="cta-bracketed cta-hero" style={{ "color": "var(--color-letterpress-black)" }}>
 						&#123; GET A FREE COMPANY BRAIN &#125;

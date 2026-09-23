@@ -166,7 +166,7 @@ export function markdownToHtml(md: string, channel: "email" | "web" = "web"): st
  * appendix renders in email too, where relative links break.
  */
 export function brainCtaAppendix(link: string): string {
-	return `Want one of these for your company? I build a custom company brain for a few businesses each month — free, so you can see what it actually does before you pay for anything. [Answer a few questions about your company and I'll build yours →](${link})`;
+	return `P.S. Want to start turning your company AI-native? I build a custom company brain for one reader every week, completely free. All you have to do is click below. [**{ GET YOUR COMPANY BRAIN }**](${link})`;
 }
 
 /**

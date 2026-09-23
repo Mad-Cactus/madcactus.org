@@ -48,7 +48,7 @@ export default function BrainLanding() {
 	return (
 		<MarketingPage
 			title="Get a Free Custom Company Brain | Mad Cactus"
-			description="Answer a few questions about your company. We build you a custom company brain — free — so you can see what AI actually does for your business."
+			description="Answer a few questions about your company. We build you a custom company brain, free, so you can see what AI actually does for your business."
 		>
 			<Header />
 			<section style={{ "max-width": "680px", margin: "0 auto", padding: "48px 24px 96px" }}>
@@ -56,11 +56,11 @@ export default function BrainLanding() {
 					We'll build your company a <em>brain</em>. Free.
 				</h1>
 				<p style={{ "font-family": "var(--font-serif)", "font-size": "18px", "line-height": 1.6, margin: "0 0 8px" }}>
-					Answer a few questions about your company below. We build you a custom company brain — your data, docs, and
+					Answer a few questions about your company below. We build you a custom company brain: your data, docs, and
 					institutional knowledge, unified so agents can actually reason over it.
 				</p>
 				<p style={{ "font-family": "var(--font-serif)", "font-size": "16px", "line-height": 1.6, "font-style": "italic", margin: "0 0 32px" }}>
-					I build 3 company brains a month, in the order requests arrive. You see what it does before you pay for anything.
+					I build one company brain every week, in the order requests arrive. You see what it does before you pay for anything.
 				</p>
 				<form onSubmit={submit}>
 					{/* honeypot — hidden from humans, bots fill it and get a silent ok */}
