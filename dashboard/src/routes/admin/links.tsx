@@ -138,25 +138,25 @@ export default function AdminLinks() {
 				<form id="link-form" onSubmit={save} style={{ display: "grid", gap: "8px", "max-width": "640px", "margin-top": "12px" }}>
 					<label style={{ display: "grid", gap: "4px" }}>
 						Destination page
-						<input name="dest" value="https://madcactus.org/newsletter" style={{ padding: "8px" }} />
+						<input name="dest" value="https://madcactus.org/newsletter" style={{ padding: "8px" }} spellcheck={false} />
 					</label>
 					<div style={{ display: "grid", "grid-template-columns": "1fr 1fr 1fr", gap: "8px" }}>
 						<label style={{ display: "grid", gap: "4px" }}>
 							Source
-							<input name="source" value="linkedin" style={{ padding: "8px" }} />
+							<input name="source" value="linkedin" style={{ padding: "8px" }} spellcheck={false} />
 						</label>
 						<label style={{ display: "grid", gap: "4px" }}>
 							Medium
-							<input name="medium" value="social" style={{ padding: "8px" }} />
+							<input name="medium" value="social" style={{ padding: "8px" }} spellcheck={false} />
 						</label>
 						<label style={{ display: "grid", gap: "4px" }}>
 							Campaign
-							<input name="campaign" placeholder="td2" style={{ padding: "8px" }} />
+							<input name="campaign" placeholder="td2" style={{ padding: "8px" }} spellcheck={false} />
 						</label>
 					</div>
 					<details>
 						<summary style={{ cursor: "pointer", "font-size": "13px" }}>Or paste a full target URL (UTMs included) instead</summary>
-						<input name="target" placeholder="https://…?utm_source=…" style={{ padding: "8px", width: "100%", "margin-top": "8px" }} />
+						<input name="target" placeholder="https://…?utm_source=…" style={{ padding: "8px", width: "100%", "margin-top": "8px" }} spellcheck={false} />
 					</details>
 					<label style={{ display: "grid", gap: "4px" }}>
 						Attached post / newsletter
@@ -234,7 +234,7 @@ export default function AdminLinks() {
 					<form onSubmit={saveEdit} style={{ display: "grid", gap: "8px" }}>
 						<label style={{ display: "grid", gap: "4px" }}>
 							Target URL
-							<input name="target" value={editing()!.target} required style={{ padding: "8px" }} />
+							<input name="target" value={editing()!.target} required style={{ padding: "8px" }} spellcheck={false} />
 						</label>
 						<label style={{ display: "grid", gap: "4px" }}>
 							Attached post / newsletter

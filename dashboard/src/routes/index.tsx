@@ -122,7 +122,7 @@ export default function Home() {
 						</p>
 					</div>
 					<form class="newsletter-band-form" id="newsletterBandForm">
-						<input type="email" name="email" placeholder="your@email.com" required autocomplete="email" />
+						<input type="email" name="email" placeholder="your@email.com" required autocomplete="email" spellcheck={false} />
 						<button type="submit" class="cta-bracketed" data-ph-event="newsletter_signup_home">
 							&#123; SUBSCRIBE &#125;
 						</button>
