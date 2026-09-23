@@ -162,9 +162,10 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 	};
 	const scheduleLayout = () => {
 		clearTimeout(layoutTimer);
-		// while editing, reconcile after a 1s pause (stale breaks would otherwise
-		// leave whitespace holes); unfocused changes settle in 200ms
-		layoutTimer = setTimeout(runLayout, editing() ? 1000 : 200);
+		// while editing, reconcile quickly — a slow debounce lets page-2 text drift
+		// up into the sheet gap while deleting (caretViewAnchor keeps the caret
+		// planted during re-layout); unfocused changes settle in 200ms
+		layoutTimer = setTimeout(runLayout, editing() ? 150 : 200);
 	};
 	onMount(() => {
 		const onResize = () => scheduleLayout();
