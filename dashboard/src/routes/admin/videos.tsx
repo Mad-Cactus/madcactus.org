@@ -20,7 +20,28 @@ export default function AdminVideos() {
 		e.preventDefault();
 		setError("");
 		setMessage("");
-		const res = (await saveVideo(new FormData(e.target as HTMLFormElement))) as { error?: string; success?: string };
+		const form = e.target as HTMLFormElement;
+		const file = (form.elements.namedItem("video_file") as HTMLInputElement).files?.[0];
+		if (file) {
+			// Stream the raw file to storage first; the action gets the public URL.
+			setMessage(`Uploading ${file.name}…`);
+			const up = await fetch(`/api/upload-video?name=${encodeURIComponent(file.name)}`, {
+				method: "POST",
+				headers: { "Content-Type": file.type || "video/mp4" },
+				body: file,
+			});
+			const data = (await up.json().catch(() => ({}))) as { url?: string; error?: string };
+			if (!up.ok || !data.url) {
+				setError(data.error ?? "Upload failed.");
+				setMessage("");
+				return;
+			}
+			(form.elements.namedItem("video_url") as HTMLInputElement).value = data.url;
+			setMessage("");
+		}
+		const fd = new FormData(form);
+		fd.delete("video_file"); // action endpoint must not re-receive the big file
+		const res = (await saveVideo(fd)) as { error?: string; success?: string };
 		if (res.error) {
 			setError(res.error);
 			return;
@@ -49,7 +70,8 @@ export default function AdminVideos() {
 							)}
 						</For>
 					</select>
-					<input type="url" name="video_url" placeholder="Video URL (cap.so share link) *" required spellcheck={false} />
+					<input type="file" name="video_file" accept="video/mp4,video/quicktime,video/webm" />
+					<input type="url" name="video_url" placeholder="Video URL — cap.so link, mp4 URL, or pick a file above" spellcheck={false} />
 					<input type="text" name="video_description" placeholder="Description — what it shows / why it exists" />
 					<button type="submit" class="btn btn-primary">Save video</button>
 				</form>
