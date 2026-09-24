@@ -106,6 +106,36 @@ else
 fi
 cd ..
 
+# Local Supabase stack for AUTH + STORAGE (videos bucket, no hosted 50MB cap).
+# The stack is machine-global (one per machine — container names come from the
+# committed config.toml), so `start` is a no-op if another worktree already runs
+# it. App DATABASE_URL keeps pointing at the compose DB above: auth users live
+# in the stack's own Postgres and never join app tables.
+if command -v supabase >/dev/null; then
+	echo "→ local Supabase stack (auth+storage :54321, Studio :54323)"
+	supabase start >/dev/null
+	STATUS=$(supabase status -o json 2>/dev/null)
+	API_URL=$(echo "$STATUS" | grep -o '"API_URL": "[^"]*"' | cut -d'"' -f4)
+	ANON=$(echo "$STATUS" | grep -o '"ANON_KEY": "[^"]*"' | cut -d'"' -f4)
+	SVC=$(echo "$STATUS" | grep -o '"SERVICE_ROLE_KEY": "[^"]*"' | cut -d'"' -f4)
+	if [ -n "$API_URL" ] && [ -n "$ANON" ] && [ -n "$SVC" ] && [ ! -f dashboard/.env.local ]; then
+		cat > dashboard/.env.local <<LOCAL
+# Local Supabase overrides (dev only) — written by scripts/dev-setup.sh.
+# Point the database here instead to use the stack's own Postgres (:54322).
+SUPABASE_URL=$API_URL
+SUPABASE_ANON_KEY=$ANON
+SUPABASE_SERVICE_KEY=$SVC
+DEV_ADMIN_EMAIL=admin@madcactus.org
+DEV_ADMIN_PASSWORD=cactus-local-dev
+LOCAL
+		echo "→ wrote dashboard/.env.local (local auth + storage; login: admin@madcactus.org / cactus-local-dev)"
+	fi
+	# Dev admin user for the local auth — 422 = already exists, fine.
+	curl -s -o /dev/null -m 10 -X POST "$API_URL/auth/v1/signup" \
+		-H "apikey: $ANON" -H "Content-Type: application/json" \
+		-d '{"email":"admin@madcactus.org","password":"cactus-local-dev"}' || true
+fi
+
 cat <<TIP
 
 Dev environment ready (DATABASE_URL → localhost:$PORT).
