@@ -1412,3 +1412,35 @@ textarea.doc-title { resize: none; overflow: hidden; display: block; height: aut
 	background: transparent;
 	pointer-events: auto;
 }
+
+/* ── Toasts — global queue in src/lib/toast.ts, rendered by components/Toaster.tsx ── */
+.toaster {
+	position: fixed;
+	bottom: 16px;
+	right: 16px;
+	display: grid;
+	gap: 8px;
+	z-index: 1000;
+	max-width: 380px;
+}
+
+.toast {
+	background: var(--bg-elevated);
+	color: #fff;
+	border: 1px solid var(--gold-border);
+	border-left: 3px solid var(--green);
+	padding: 10px 14px;
+	font-family: var(--font-sans);
+	font-size: 13px;
+	cursor: pointer;
+	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+	word-break: break-word;
+}
+
+.toast-error {
+	border-left-color: var(--red);
+}
+
+.toast-info {
+	border-left-color: var(--gold);
+}
