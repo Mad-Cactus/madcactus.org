@@ -6,20 +6,22 @@ import { getUserQuery } from "~/lib/queries";
 import { getOutreachQuery, setOutreachVideoAction } from "~/lib/admin-queries";
 import { stageLabel } from "~/db/schema";
 import { videoSummary } from "~/lib/video-summary";
+import { toast } from "~/lib/toast";
 
 // Mirrors the server's free-plan cap (dashboard/src/routes/api/upload-video.ts).
 const MAX_BYTES = 50 * 1024 * 1024;
 
 // ponytail: the ~31MB ffmpeg.wasm core loads from unpkg (pinned), cached by the
-// browser after first use. If the CDN/wasm load or encode fails we fall back to
-// the raw upload — the server's 413 message names scripts/compress-video.sh.
+// browser after first use. MUST be the /esm/ build: Vite runs the ffmpeg worker
+// as a module worker, whose fallback does `import(coreURL).default` — the umd
+// build exports nothing there, so load rejects instantly (ERROR_IMPORT_FAILURE).
 let ffmpegP: Promise<import("@ffmpeg/ffmpeg").FFmpeg> | null = null;
 
 function getFFmpeg() {
 	return (ffmpegP ??= (async () => {
 		const { FFmpeg } = await import("@ffmpeg/ffmpeg");
 		const ff = new FFmpeg();
-		const base = "https://unpkg.com/@ffmpeg/core@0.12.10/dist/umd";
+		const base = "https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm";
 		// Blob URLs dodge the cross-origin classic-worker restriction.
 		const blobURL = async (url: string, type: string) =>
 			URL.createObjectURL(new Blob([await (await fetch(url)).blob()], { type }));
@@ -67,15 +69,13 @@ export default function AdminVideos() {
 	const user = createAsync(() => getUserQuery(), { deferStream: true });
 	const outreach = createAsync(() => getOutreachQuery(), { deferStream: true });
 	const saveVideo = useAction(setOutreachVideoAction);
-	const [error, setError] = createSignal("");
-	const [message, setMessage] = createSignal("");
+	// Progress text renders inside the submit button while it's truthy.
+	const [busy, setBusy] = createSignal("");
 
 	const vids = () => (outreach()?.all ?? []).filter((p) => p.videoUrl);
 
 	async function handleLink(e: Event) {
 		e.preventDefault();
-		setError("");
-		setMessage("");
 		const form = e.target as HTMLFormElement;
 		const file = (form.elements.namedItem("video_file") as HTMLInputElement).files?.[0];
 		if (file) {
@@ -83,16 +83,24 @@ export default function AdminVideos() {
 			if (file.size > MAX_BYTES) {
 				// Free plan rejects >50MB at upload — compress in the browser first.
 				try {
-					const out = await compressTo50MB(file, (pct) => setMessage(`Compressing ${pct}%…`));
+					const out = await compressTo50MB(file, (pct) => setBusy(`Compressing ${pct}%…`));
 					if (out) uploadFile = out;
-					// out === null → too big even at crf 32; the server's 413 message
-					// names the escape hatch.
-				} catch {
-					// wasm/CDN failure → try the raw upload anyway.
+					else {
+						// Still ≥49MB at crf 32 — a raw upload can't clear the 50MB cap
+						// either, so don't waste 12s on a guaranteed 413.
+						toast(`"${file.name}" is too long/dense to fit under 50MB even at low quality — export a shorter clip from Cap, or run scripts/compress-video.sh locally.`, "error");
+						return;
+					}
+				} catch (err) {
+					// Raw upload can't pass the cap from here — surface why instead of
+					// silently 413-ing (the HAR showed load failing in ~100ms).
+					ffmpegP = null; // a rejected load must not poison the next attempt
+					toast(`Browser compression failed (${err instanceof Error ? err.message : "unknown error"}) — run scripts/compress-video.sh on this file instead.`, "error");
+					return;
 				}
 			}
 			// Stream the file to storage first; the action gets the public URL.
-			setMessage(`Uploading ${uploadFile.name}…`);
+			setBusy(`Uploading ${uploadFile.name}…`);
 			const up = await fetch(`/api/upload-video?name=${encodeURIComponent(uploadFile.name)}`, {
 				method: "POST",
 				headers: { "Content-Type": uploadFile.type || "video/mp4" },
@@ -100,21 +108,24 @@ export default function AdminVideos() {
 			});
 			const data = (await up.json().catch(() => ({}))) as { url?: string; error?: string };
 			if (!up.ok || !data.url) {
-				setError(data.error ?? "Upload failed.");
-				setMessage("");
+				toast(data.error ?? "Upload failed.", "error");
+				setBusy("");
 				return;
 			}
 			(form.elements.namedItem("video_url") as HTMLInputElement).value = data.url;
-			setMessage("");
+			setBusy("");
 		}
 		const fd = new FormData(form);
 		fd.delete("video_file"); // action endpoint must not re-receive the big file
+		setBusy("Saving…");
 		const res = (await saveVideo(fd)) as { error?: string; success?: string };
+		setBusy("");
 		if (res.error) {
-			setError(res.error);
+			toast(res.error, "error");
 			return;
 		}
-		setMessage(res.success ?? "Video saved.");
+		toast(res.success ?? "Video saved.", "success");
+		form.reset();
 	}
 
 	return (
@@ -141,15 +152,11 @@ export default function AdminVideos() {
 					<input type="file" name="video_file" accept="video/mp4,video/quicktime,video/webm" />
 					<input type="url" name="video_url" placeholder="Video URL — cap.so link, mp4 URL, or pick a file above" spellcheck={false} />
 					<input type="text" name="video_description" placeholder="Description — what it shows / why it exists" />
-					<button type="submit" class="btn btn-primary">Save video</button>
+					<button type="submit" class="btn btn-primary" disabled={!!busy()}>
+						{busy() || "Save video"}
+					</button>
 				</form>
 			</details>
-			<Show when={error()}>
-				<p class="login-error">{error()}</p>
-			</Show>
-			<Show when={message()}>
-				<p class="muted">{message()}</p>
-			</Show>
 
 			<Suspense fallback={<p class="muted">Loading…</p>}>
 				<Show

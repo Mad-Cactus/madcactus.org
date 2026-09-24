@@ -3,6 +3,7 @@ import { clientOnly } from "@solidjs/start";
 import { For, ParentComponent, Show, createEffect, createSignal, onMount } from "solid-js";
 import Timer from "~/components/Timer";
 import CommandPalette from "~/components/CommandPalette";
+import Toaster from "~/components/Toaster";
 import { getDueOutreachCountQuery } from "~/lib/admin-queries";
 
 // clientOnly: the widget mounts via <Portal> and throws during hydration in
@@ -116,6 +117,7 @@ const Layout: ParentComponent<{ user?: { id?: string; email?: string } | null }>
 				</div>
 			</aside>
 			<main class="content">{props.children}</main>
+			<Toaster />
 		</div>
 	);
 };
