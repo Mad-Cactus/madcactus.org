@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@aspectrr/feedback-widget": "^0.1.6",
+    "@ffmpeg/ffmpeg": "^0.12.15",
     "@kobalte/core": "^0.13.12",
     "@lexical/code": "0.45.0",
     "@lexical/headless": "0.45.0",

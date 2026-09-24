@@ -62,7 +62,16 @@ export async function POST(event: APIEvent) {
 	);
 
 	if (!res.ok) {
-		return Response.json({ error: `Upload failed: ${await res.text()}` }, { status: 500 });
+		const body = await res.text();
+		// Free-plan cap: storage answers 413/EntityTooLarge for >50MB. Name the
+		// escape hatch instead of surfacing raw storage XML.
+		if (res.status === 413 || /EntityTooLarge/i.test(body)) {
+			return Response.json(
+				{ error: "File exceeds the 50MB Supabase free-plan cap — export a smaller file or run scripts/compress-video.sh locally." },
+				{ status: 413 },
+			);
+		}
+		return Response.json({ error: `Upload failed: ${body}` }, { status: 500 });
 	}
 	const { data } = supabaseService().storage.from(BUCKET).getPublicUrl(path);
 	return Response.json({ url: data.publicUrl });

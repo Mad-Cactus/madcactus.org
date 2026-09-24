@@ -57,7 +57,15 @@ if [[ "${ROWCOUNT// /}" -eq 0 ]]; then
 		CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/madcactus"
 		mkdir -p "$CACHE_DIR"
 		(
-			flock 9
+			# flock is Linux-only — guard the shared dump with a mkdir lock (atomic
+			# on POSIX). Wait ≤60s for a concurrent worktree, then proceed unlocked:
+			# a torn snapshot only costs us the seed fallback.
+			LOCKED=0
+			for _ in $(seq 60); do
+				if mkdir "$CACHE_DIR/.dump.lock" 2>/dev/null; then LOCKED=1; break; fi
+				sleep 1
+			done
+			trap '[[ $LOCKED == 1 ]] && rmdir "$CACHE_DIR/.dump.lock" 2>/dev/null' EXIT
 			STALE=1
 			if [[ -s "$CACHE_DIR/prod.dump" ]]; then
 				AGE=$(( $(date +%s) - $(stat -f %m "$CACHE_DIR/prod.dump") ))
@@ -70,7 +78,7 @@ if [[ "${ROWCOUNT// /}" -eq 0 ]]; then
 				|| { echo "→ prod dump failed — falling back to seed"; exit 0; }
 				mv "$CACHE_DIR/prod.dump.tmp" "$CACHE_DIR/prod.dump"
 			fi
-		) 9>"$CACHE_DIR/.dump.lock"
+		)
 		if [[ -s "$CACHE_DIR/prod.dump" ]]; then
 			echo "→ restoring prod snapshot into :$PORT"
 			"${COMPOSE[@]}" exec -T db psql -U postgres -d madcactus -c 'create extension if not exists vector;' >/dev/null 2>&1 || true
