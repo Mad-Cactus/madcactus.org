@@ -1,22 +1,20 @@
 #!/usr/bin/env bash
-# Undo everything dev-setup.sh created for this workspace:
-#   ./scripts/dev-teardown.sh                → stop + remove compose stack, DELETE its data volume, remove dashboard/.env
-#   ./scripts/dev-teardown.sh --keep-env     → keep dashboard/.env (keys you added)
+# Undo this checkout's dev setup:
+#   ./scripts/dev-teardown.sh            → remove dashboard/.env + dashboard/.env.local
+#   ./scripts/dev-teardown.sh --keep-env → keep dashboard/.env (keys you added)
 #
-# node_modules is kept (rm -rf dashboard/node_modules yourself if you want it gone).
+# There is no per-checkout database anymore: the local Supabase stack is
+# machine-global and shared by every worktree, so teardown does NOT stop it.
+# `supabase stop` stops it for the whole machine.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-
-# Same compose selection as dev-setup.sh: main checkout = docker-compose.yml, others = worktree file.
-DIR=$(basename "$PWD")
-if [[ "$DIR" == "madcactus.org" ]]; then COMPOSE=(docker compose); else COMPOSE=(docker compose -f docker-compose.worktree.yml); fi
-
-echo "→ stopping compose stack and removing its data volume"
-"${COMPOSE[@]}" --profile app down -v --remove-orphans
 
 if [[ "${1:-}" != "--keep-env" && -f dashboard/.env ]]; then
 	rm dashboard/.env
 	echo "→ removed dashboard/.env"
 fi
-
-echo "Dev environment removed. Re-create anytime: ./scripts/dev-setup.sh"
+if [ -f dashboard/.env.local ]; then
+	rm dashboard/.env.local
+	echo "→ removed dashboard/.env.local"
+fi
+echo "Dev env files removed. The shared Supabase stack keeps running (supabase stop = machine-wide). Re-create anytime: ./scripts/dev-setup.sh"

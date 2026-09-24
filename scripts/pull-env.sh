@@ -60,9 +60,9 @@ printf '%s\n' "$SRC" | awk -v ov="$OVERRIDDEN" '$0 !~ ov' > dashboard/.env
 	echo "PUBLIC_SITE_URL=http://localhost:3000  # OAuth redirects → allowlisted localhost URI"
 	if [[ "$ARG" == "--prod-db" ]]; then
 		echo "# Read-only PROD database (testing against real data — writes fail at Postgres level):"
-		echo "DATABASE_URL=${RO_URL:-${DEV_DATABASE_URL:-postgres://postgres:postgres@localhost:5434/madcactus}}"
+		echo "DATABASE_URL=${RO_URL:-${DEV_DATABASE_URL:-postgres://postgres:postgres@127.0.0.1:54322/madcactus}}"
 	else
-		echo "DATABASE_URL=${DEV_DATABASE_URL:-postgres://postgres:postgres@localhost:5434/madcactus}"
+		echo "DATABASE_URL=${DEV_DATABASE_URL:-postgres://postgres:postgres@127.0.0.1:54322/madcactus}"
 	fi
 	echo "# Dev-only portal logins are not in prod env — see supabase/seed-portal.sql + seed.sql"
 } >> dashboard/.env
