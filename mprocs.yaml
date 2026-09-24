@@ -1,5 +1,7 @@
 procs:
-  db:
-    shell: WORKTREE_DB_PORT=5505 docker compose -f docker-compose.worktree.yml up
+  supabase:
+    # Local Supabase stack: Postgres :54322, auth+storage :54321, Studio :54323.
+    # One-shot — containers daemonize under Docker (OrbStack); re-run anytime.
+    shell: supabase start
   dashboard:
     shell: cd dashboard && bun run dev
