@@ -15,7 +15,7 @@ import {
 	type ElementTransformer,
 } from "@lexical/markdown";
 import { HeadingNode, QuoteNode } from "@lexical/rich-text";
-import { ListNode, ListItemNode } from "@lexical/list";
+import { ListNode, ListItemNode, $isListItemNode } from "@lexical/list";
 import { CodeNode, CodeHighlightNode } from "@lexical/code";
 import { LinkNode, AutoLinkNode } from "@lexical/link";
 import {
@@ -37,6 +37,8 @@ import {
 	$createParagraphNode,
 	$createLineBreakNode,
 	type LexicalNode,
+	type BaseSelection,
+	$isRangeSelection,
 	type EditorConfig,
 	type SerializedElementNode,
 } from "lexical";
@@ -82,6 +84,18 @@ export class PageBreakNode extends DecoratorNode<null> {
 }
 const $createPageBreakNode = () => new PageBreakNode();
 export const $isPageBreakNode = (node: LexicalNode | null | undefined): node is PageBreakNode => node instanceof PageBreakNode;
+
+/** True when a collapsed selection sits at the very start of an empty list
+ *  item (no text, or whitespace/line-breaks only) — the state where Backspace
+ *  should exit the list instead of merging into the previous item. Handles
+ *  both anchor shapes Lexical produces on a fresh item (element-anchor on the
+ *  ListItemNode, text-anchor on its child). */
+export const $isAtEmptyListItemStart = (sel: BaseSelection | null | undefined): boolean => {
+	if (!sel || !$isRangeSelection(sel) || !sel.isCollapsed() || sel.anchor.offset !== 0) return false;
+	const n = sel.anchor.getNode();
+	const li = $isListItemNode(n) ? n : $isListItemNode(n.getParent()) ? n.getParent() : null;
+	return li !== null && li.getTextContent().trim() === "";
+};
 
 const PAGEBREAK: ElementTransformer = {
 	type: "element",
