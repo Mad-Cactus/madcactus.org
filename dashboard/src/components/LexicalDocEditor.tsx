@@ -8,7 +8,7 @@
 // Node registry + markdown transformers (GFM tables, page breaks) live in
 // ~/lib/doc-markdown so they stay testable headless.
 import { onCleanup, onMount, createEffect, createSignal, Show } from "solid-js";
-import { DOC_NODES, DOC_TRANSFORMERS } from "~/lib/doc-markdown";
+import { DOC_NODES, DOC_TRANSFORMERS, $isAtEmptyListItemStart } from "~/lib/doc-markdown";
 import { TableCellNode, TableRowNode, TableNode, $isTableNode, $createTableNode, $isTableCellNode, $isTableRowNode } from "@lexical/table";
 import type { LexicalNode } from "lexical";
 import { $convertFromMarkdownString, $convertToMarkdownString, registerMarkdownShortcuts } from "@lexical/markdown";
@@ -18,7 +18,8 @@ import {
 	createEditor,
 	FORMAT_TEXT_COMMAND,
 	INSERT_PARAGRAPH_COMMAND,
-	KEY_DOWN_COMMAND,
+		DELETE_CHARACTER_COMMAND,
+		KEY_DOWN_COMMAND,
 	KEY_ENTER_COMMAND,
 	KEY_TAB_COMMAND,
 	BEFORE_INPUT_COMMAND,
@@ -404,6 +405,23 @@ export default function LexicalDocEditor(props: {
 				return true;
 			},
 			COMMAND_PRIORITY_EDITOR,
+		);
+
+		// Backspace on an empty list item exits the list (Google Docs behavior).
+		// Desktop Backspace never reaches BEFORE_INPUT — registerRichText's
+		// KEY_BACKSPACE handler preventDefaults keydown and dispatches
+		// DELETE_CHARACTER_COMMAND, whose stock impl merges the empty item into
+		// the previous one and stays numbered, leaving Enter as the only escape.
+		// Intercept above it (LOW > EDITOR) and reuse registerList's INSERT_PARAGRAPH
+		// exit, which replaces the empty item with a plain paragraph.
+		ed.registerCommand(
+			DELETE_CHARACTER_COMMAND,
+			(isBackward: boolean) => {
+				if (!isBackward || !$isAtEmptyListItemStart($getSelection())) return false;
+				ed.dispatchCommand(INSERT_PARAGRAPH_COMMAND, undefined);
+				return true;
+			},
+			COMMAND_PRIORITY_LOW,
 		);
 
 		// Tab / Shift+Tab move between table cells (0.45's applyTableHandlers
