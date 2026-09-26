@@ -1,14 +1,9 @@
-# Outreach templates — moved to the dashboard
+# Outreach templates — live on the campaign
 
-The frozen rung-1 templates now live in the Mad Cactus dashboard as a versioned
-doc, editable in the UI:
+The frozen rung-1 copy is NOT a doc anymore. It lives on the campaign itself:
+`campaigns.templates` (one {step, subject, body} per touch), edited in the
+dashboard's campaign view and voice-linted on every save. Agents read it via
+`list_campaigns` → `templates` and set it via `set_campaign_templates`.
 
-**"Outreach templates — Rung-1 findings" — doc id `a63c4637-af63-4c9d-9ecf-8d72f0ff6db5`** (genre `template`)
-
-The dispatcher reads it fresh with `get_doc` on every run. Every edit is
-versioned and word-diffed (`madcactus_get_doc_diff`), and the voice engine
-pairs agent writes with Collin's edits to learn — the same machinery the
-newsletter and posts already use.
-
-This file remains only as the seed record of what went into doc version 1
-(commit history has the full original). Do not update it; update the doc.
+Send container: campaign "Rung-1 findings" (`bd1aa268-5d61-4a85-8197-a496d4fd8c4f`).
+The old doc (`a63c4637`) is superseded seed material only.

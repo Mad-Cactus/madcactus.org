@@ -268,8 +268,46 @@ const TOOLS = [
 	},
 	{
 		name: "list_campaigns",
-		description: "Campaigns with their target companies (step, next_send_at, note) and each company's linked CRM board stage.",
+		description:
+			"Campaigns with their frozen templates (subject+body per touch, on the campaign — never a doc) and their target companies (step, next_send_at, note) with each company's linked CRM board stage.",
 		inputSchema: { type: "object", properties: {} },
+	},
+	{
+		name: "set_campaign_templates",
+		description:
+			"Set a campaign's full email sequence — the frozen copy lives ON the campaign. touches: [{step, subject, body}] with {{slots}} for the per-company fill (first_name, company, watch_sentence, finding_1..3, link, owner_role). EVERY body is voice-linted (surface=email) before persisting; any avoid-violation rejects the whole call with per-touch violations — nothing is saved partially. Replaces the campaign's templates wholesale.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				campaign_id: { type: "string" },
+				campaign_name: { type: "string", description: "resolved case-insensitively" },
+				touches: {
+					type: "array",
+					items: {
+						type: "object",
+						properties: {
+							step: { type: "number", description: "1-based sequence position" },
+							subject: { type: "string" },
+							body: { type: "string" },
+						},
+							required: ["step", "subject", "body"],
+					},
+				},
+			},
+			required: ["touches"],
+		},
+	},
+	{
+		name: "campaign_stats",
+		description:
+			"Gmail-grounded per-campaign stats: for each company — sends, first/last sent, replied, reply count, last reply snippet — plus totals (companies touched, emails sent, companies replied, reply rate) and per-touch reply counts. Replies are counted from synced inbound messages from the exact contact after the first linked send; no stage flags. Omit campaign args for all campaigns.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				campaign_id: { type: "string" },
+				campaign_name: { type: "string", description: "resolved case-insensitively" },
+			},
+		},
 	},
 	{
 		name: "get_due_follow_ups",
@@ -560,11 +598,36 @@ lessons_reviewed: { type: "boolean", description: "true = you called get_voice_l
 chat_uuid: { type: "string" },
 				thread_id: { type: "string", description: "set for replies" },
 				send_at: { type: "string", description: "ISO timestamp — schedules the draft for auto-send via the outbox ticker; omit for a plain draft" },
+				campaign_company_id: { type: "string", description: "campaign_companies id — links this send to its campaign company for Gmail-grounded stats (list_campaigns has ids)" },
+				campaign_step: { type: "number", description: "which touch of the campaign sequence this email is (1-based)" },
 			},
 			required: ["to", "subject", "body"],
 		},
 	},
 ] as const;
+
+/** Resolve a campaign row by id, or case-insensitive name. */
+async function resolveCampaign(
+	toolArgs: Record<string, unknown>,
+): Promise<{ id: string; name: string } | { error: string }> {
+	if (toolArgs.campaign_id) {
+		const [row] = await db
+			.select({ id: campaigns.id, name: campaigns.name })
+			.from(campaigns)
+			.where(eq(campaigns.id, String(toolArgs.campaign_id)))
+			.limit(1);
+		return row ?? { error: "campaign not found — check campaign_id (list_campaigns has ids)" };
+	}
+	if (toolArgs.campaign_name) {
+		const [row] = await db
+			.select({ id: campaigns.id, name: campaigns.name })
+			.from(campaigns)
+			.where(ilike(campaigns.name, String(toolArgs.campaign_name)))
+			.limit(1);
+		return row ?? { error: `campaign "${String(toolArgs.campaign_name)}" not found` };
+	}
+	return { error: "pass campaign_id or campaign_name" };
+}
 
 /** Resolve a campaign_companies row by id, or campaign name + company name. */
 async function resolveCampaignCompany(
@@ -856,6 +919,62 @@ export async function POST(event: APIEvent) {
 									.map((x) => ({ ...x, prospectStage: stageByCompany.get(x.companyName.toLowerCase()) ?? null })),
 							})),
 						};
+						break;
+					}
+					case "set_campaign_templates": {
+						const camp = await resolveCampaign(toolArgs);
+						if ("error" in camp) {
+							result = camp;
+							break;
+						}
+						const rawTouches = Array.isArray(toolArgs.touches) ? toolArgs.touches : [];
+						const touches: { step: number; subject: string; body: string }[] = [];
+						for (const t of rawTouches) {
+							const step = Number((t as Record<string, unknown>).step);
+							const subject = String((t as Record<string, unknown>).subject ?? "").trim();
+							const body = String((t as Record<string, unknown>).body ?? "");
+							if (!Number.isInteger(step) || step < 1) {
+								result = { error: `touch ${touches.length + 1}: step must be a positive integer` };
+								break;
+							}
+							if (!subject || !body.trim()) {
+								result = { error: `touch ${step}: subject and body are required` };
+								break;
+							}
+							touches.push({ step, subject, body });
+					}
+						if (result) break;
+						// voice-lint every body BEFORE persisting: any violation rejects the
+						// whole call — no partial template state
+						const violations: { step: number; violations: Awaited<ReturnType<typeof lintVoiceText>>["violations"] }[] = [];
+						for (const t of touches) {
+							const lint = await lintVoiceText(t.body, { surface: "email" });
+							if (lint.avoidCount > 0) violations.push({ step: t.step, violations: lint.violations });
+						}
+						if (violations.length > 0) {
+							result = { error: `write REJECTED: ${violations.length} touch(es) have avoid-violations. Rewrite the flagged text and resubmit.`, violations };
+							break;
+						}
+						const [updated] = await db
+							.update(campaigns)
+							.set({ templates: touches })
+							.where(eq(campaigns.id, camp.id))
+							.returning({ id: campaigns.id, name: campaigns.name });
+						result = { ...updated, touches: touches.length, saved: true };
+						break;
+					}
+					case "campaign_stats": {
+						let campaignId: string | undefined;
+						if (toolArgs.campaign_id || toolArgs.campaign_name) {
+							const camp = await resolveCampaign(toolArgs);
+							if ("error" in camp) {
+								result = camp;
+								break;
+							}
+							campaignId = camp.id;
+						}
+						const { campaignStats } = await import("~/lib/campaign-stats");
+						result = { campaigns: await campaignStats(campaignId) };
 						break;
 					}
 					case "get_due_follow_ups": {
@@ -1182,6 +1301,30 @@ export async function POST(event: APIEvent) {
 							result = lintGateError(draftLint);
 							break;
 						}
+						// campaign linkage: validate the target row exists, then carry both
+						// fields onto the outbox row — every campaign send becomes a real
+						// outbox row joined to its campaign company
+						let campaignCompanyId: string | undefined;
+						let campaignStep: number | undefined;
+						if (toolArgs.campaign_company_id) {
+							campaignCompanyId = String(toolArgs.campaign_company_id);
+							const [cc] = await db
+								.select({ id: campaignCompanies.id })
+								.from(campaignCompanies)
+								.where(eq(campaignCompanies.id, campaignCompanyId))
+								.limit(1);
+							if (!cc) {
+								result = { error: "campaign_company_id not found — get ids from list_campaigns" };
+								break;
+							}
+							if (toolArgs.campaign_step !== undefined) {
+								campaignStep = Number(toolArgs.campaign_step);
+								if (!Number.isInteger(campaignStep) || campaignStep < 1) {
+									result = { error: "campaign_step must be a positive integer" };
+									break;
+								}
+							}
+						}
 						if (toolArgs.draft_id) {
 							const upd = await updateEmailDraft({
 								outboxId: String(toolArgs.draft_id),
@@ -1190,6 +1333,7 @@ export async function POST(event: APIEvent) {
 								bcc: toolArgs.bcc ? String(toolArgs.bcc) : undefined,
 								subject: String(toolArgs.subject ?? ""),
 								body: draftBody,
+								...(campaignCompanyId ? { campaignCompanyId, campaignStep } : {}),
 							});
 							result = upd;
 							if (!(upd && typeof upd === "object" && "outboxId" in upd)) break;
@@ -1204,6 +1348,7 @@ export async function POST(event: APIEvent) {
 							body: draftBody,
 							chatUuid: String(toolArgs.chat_uuid ?? ""),
 							threadId: toolArgs.thread_id ? String(toolArgs.thread_id) : undefined,
+							...(campaignCompanyId ? { campaignCompanyId, campaignStep } : {}),
 						});
 						result = created;
 						if (toolArgs.send_at) await scheduleDraftResult(created.outboxId);

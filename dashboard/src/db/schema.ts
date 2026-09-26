@@ -163,10 +163,15 @@ export const companies = pgTable("companies", {
 // The CRM board tracks people progressing through stages; campaigns track
 // the sequence itself — which companies are in it, when the next email goes
 // out, and what it should say. Prospects link here via campaignId.
+// One touch of a campaign's email sequence — the frozen copy lives ON the
+// campaign (templates jsonb), not in a doc. step is the sequence position.
+export type CampaignTouch = { step: number; subject: string; body: string };
+
 export const campaigns = pgTable("campaigns", {
 	id: uuid("id").primaryKey().defaultRandom(),
 	name: text("name").notNull(),
 	description: text("description"),
+	templates: jsonb("templates").$type<CampaignTouch[]>().notNull().default([]),
 	createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 	updatedAt: timestamp("updated_at", { withTimezone: true })
 		.notNull()
@@ -912,6 +917,12 @@ export const emailOutbox = pgTable(
 		sendAt: timestamp("send_at", { withTimezone: true }),
 		gmailMessageId: text("gmail_message_id"),
 		error: text("error"),
+		// campaign linkage: every campaign send is a real outbox row pointing at
+		// its campaign_companies row — stats and reply detection join through here
+		campaignCompanyId: uuid("campaign_company_id").references(() => campaignCompanies.id, {
+			onDelete: "set null",
+		}),
+		campaignStep: integer("campaign_step"),
 		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp("updated_at", { withTimezone: true })
 			.notNull()
