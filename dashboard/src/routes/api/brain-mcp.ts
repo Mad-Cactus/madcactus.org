@@ -1,8 +1,8 @@
 import type { APIEvent } from "@solidjs/start/server";
-import { eq, and, desc, inArray, sql, ilike } from "drizzle-orm";
+import { eq, and, desc, inArray, sql, ilike, lte, isNotNull } from "drizzle-orm";
 import { hashKey } from "~/lib/crypto";
 import { db } from "~/db";
-import { apiKeys, companies, outreachProspects, OUTREACH_STAGES } from "~/db/schema";
+import { apiKeys, companies, outreachProspects, OUTREACH_STAGES, campaigns, campaignCompanies } from "~/db/schema";
 import { brainQuery, entityFacts } from "~/lib/brain/search";
 import { brainJobs, docs, shortLinks } from "~/db/schema";
 import { agentWrite, createDoc, getDoc, getDocVersionDiff, listDocVersions, listDocs, renameDoc, setDocAppendix } from "~/lib/docs";
@@ -25,6 +25,17 @@ import { maybeRunCycle } from "~/lib/brain/distill";
  */
 
 const PROTOCOL_VERSION = "2025-06-18";
+
+// ── Follow-up cadences: days from each send to the next ────────────
+// rung-1 (findings ladder): day-0 → +5d → +12d → done (deltas 5, 7)
+// rung-2 (post-Loom):       day-0 → +4d → +8d  → done (deltas 4, 4)
+// After the last step next_send_at goes null — sequence complete.
+const CADENCES: Record<string, number[]> = {
+	"rung-1": [5, 7],
+	"rung-2": [4, 4],
+};
+// board stages that kill a sequence — replied or gone
+const DEAD_STAGES = new Set(["replied", "meeting", "won", "shutdown"]);
 
 function json(body: unknown, status = 200) {
 	return new Response(JSON.stringify(body), {
@@ -203,7 +214,7 @@ const TOOLS = [
 	{
 		name: "set_outreach_brain",
 		description:
-			'Create or update an outreach prospect\'s brain wiring. Matches by company (case-insensitive; creates the prospect if unknown). Set brain_url (e.g. https://<name>.madcactus.org) and brain_activity_key (the brain\'s ACTIVITY_KEY) so the dashboard can pull /activity. Set video_url to the CAP share link once the outreach video is recorded (the dashboard then serves the tracked /v/:id email link). Omit brain_activity_key / video_url to leave them unchanged. Omit stage to leave it unchanged; stages: ' + OUTREACH_STAGES.join(" → ") + ".",
+			'Create or update an outreach prospect\'s brain wiring. Matches by company (case-insensitive; creates the prospect if unknown). Set brain_url (e.g. https://<name>.madcactus.org) and brain_activity_key (the brain\'s ACTIVITY_KEY) so the dashboard can pull /activity. Set video_url to the CAP share link once the outreach video is recorded (the dashboard then serves the tracked /v/:id email link). Omit brain_activity_key / video_url to leave them unchanged. Omit stage to leave it unchanged; stages: ' + OUTREACH_STAGES.join(" → ") + ". The ICP fit fields are research facts (region, revenue_band, tech_team). ai_interest fills ONLY from observed behavior (gate fired → high; click without return → some; sequence ended silent → none) — never guess it. icpApproved is UI-only: the human approves fit.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -216,8 +227,94 @@ const TOOLS = [
 				contact_name: { type: "string" },
 				email: { type: "string" },
 				notes: { type: "string" },
+				region: { type: "string", description: "ICP fit: e.g. Indiana / Midwest" },
+				revenue_band: { type: "string", description: "ICP fit: e.g. $30-70M" },
+				tech_team: { type: "string", enum: ["unknown", "none", "small", "large"] },
+				ai_interest: { type: "string", enum: ["unknown", "none", "some", "high"], description: "behavior only: gate fired → high; click no return → some; silent → none" },
+				source_note: { type: "string", description: "where the row came from + which finding elicited any response" },
 			},
 			required: ["company"],
+		},
+	},
+	// ── Campaigns (email sequences) ──
+	{
+		name: "create_campaign",
+		description: "Create an outreach campaign (a named email-sequence container). Companies attach with add_campaign_company.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				name: { type: "string" },
+				description: { type: "string" },
+			},
+			required: ["name"],
+		},
+	},
+	{
+		name: "add_campaign_company",
+		description:
+			"Add or update a company in a campaign's target list. Resolves the campaign by campaign_id, or lazily creates it by campaign_name. Upserts on (campaign, company). sequence_step starts at 1; set next_send_at to when the first email should go and next_email_note to what it should say (the finding).",
+		inputSchema: {
+			type: "object",
+			properties: {
+				campaign_id: { type: "string" },
+				campaign_name: { type: "string", description: "resolved case-insensitively; created if unknown" },
+				company_name: { type: "string" },
+				contact_email: { type: "string" },
+				next_send_at: { type: "string", description: "ISO timestamp; empty string clears it" },
+				next_email_note: { type: "string", description: "what the next email should say — the finding for this touch" },
+			},
+			required: ["company_name"],
+		},
+	},
+	{
+		name: "list_campaigns",
+		description: "Campaigns with their target companies (step, next_send_at, note) and each company's linked CRM board stage.",
+		inputSchema: { type: "object", properties: {} },
+	},
+	{
+		name: "get_due_follow_ups",
+		description:
+			"Campaign companies whose next_send_at is now or past — the daily send queue. Excludes companies whose board stage is replied/meeting/won/shutdown. Each row: campaign, company, contact email, step, note.",
+		inputSchema: { type: "object", properties: {} },
+	},
+	{
+		name: "mark_campaign_email_sent",
+		description:
+			'Record that this company\'s step-N email went out and schedule the next. Advances sequence_step; next_send_at = sent_at + cadence delta. cadence "rung-1" (findings ladder): day-0 → +5d → +12d, done after step 3. cadence "rung-2" (post-Loom): day-0 → +4d → +8d, done after step 3. After the last step next_send_at goes null — sequence complete (then newsletter_subscribe applies). Optionally set next_email_note for the next touch.',
+		inputSchema: {
+			type: "object",
+			properties: {
+				id: { type: "string", description: "campaign_companies id" },
+				campaign_name: { type: "string" },
+				company_name: { type: "string" },
+				cadence: { type: "string", enum: ["rung-1", "rung-2"], description: "default rung-1" },
+				sent_at: { type: "string", description: "ISO timestamp, default now" },
+				next_email_note: { type: "string", description: "omit to leave unchanged" },
+			},
+		},
+	},
+	{
+		name: "stop_campaign_company",
+		description:
+			"Kill a company's sequence: next_send_at → null, note prefixed STOPPED:<reason>. Use on reply, bounce, or gate-fired escalation.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				id: { type: "string" },
+				campaign_name: { type: "string" },
+				company_name: { type: "string" },
+				reason: { type: "string" },
+			},
+		},
+	},
+	{
+		name: "newsletter_subscribe",
+		description:
+			"Add an email to The Cactus Dispatch (Resend contact, Cactus segment) — the nurture handoff when a rung-1 sequence completes. The shutdown email discloses the add; Resend's unsubscribe is honored.",
+		inputSchema: {
+			type: "object",
+			properties: { email: { type: "string" } },
+			required: ["email"],
 		},
 	},
 	// ── Voice ──
@@ -449,7 +546,7 @@ lessons_reviewed: { type: "boolean", description: "true = you called get_voice_l
 	{
 		name: "create_email_draft",
 		description:
-			"Create an email for Collin to review in the dashboard Drafts tab. Read get_voice_lessons FIRST and pre-check with lint_voice_text (surface=email). HARD GATE: any avoid-violation REJECTS the call before anything is saved — fix the flagged text and resubmit; nothing lands until it's clean. First write attempt auto-no's: the call bounces with the top voice lessons ranked for YOUR text — apply them, then resubmit with lessons_applied=true. To revise a draft you already created, pass its draft_id (same fields) instead of creating a new one. The human sends; you never send. Pass chat_uuid = your session id for provenance.",
+			"Create an email for Collin to review in the dashboard Drafts tab. Read get_voice_lessons FIRST and pre-check with lint_voice_text (surface=email). HARD GATE: any avoid-violation REJECTS the call before anything is saved — fix the flagged text and resubmit; nothing lands until it's clean. First write attempt auto-no's: the call bounces with the top voice lessons ranked for YOUR text — apply them, then resubmit with lessons_applied=true. To revise a draft you already created, pass its draft_id (same fields) instead of creating a new one. The human sends by default; pass send_at (ISO) to schedule auto-send via the outbox ticker — the voice gate applies either way. Pass chat_uuid = your session id for provenance.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -462,11 +559,41 @@ lessons_reviewed: { type: "boolean", description: "true = you called get_voice_l
 				lessons_applied: { type: "boolean", description: "true = you read the lessons returned by the auto-no (or get_voice_lessons) and this text applies them. Required on resubmit." },
 chat_uuid: { type: "string" },
 				thread_id: { type: "string", description: "set for replies" },
+				send_at: { type: "string", description: "ISO timestamp — schedules the draft for auto-send via the outbox ticker; omit for a plain draft" },
 			},
 			required: ["to", "subject", "body"],
 		},
 	},
 ] as const;
+
+/** Resolve a campaign_companies row by id, or campaign name + company name. */
+async function resolveCampaignCompany(
+	toolArgs: Record<string, unknown>,
+): Promise<{ id: string; sequenceStep: number } | { error: string }> {
+	if (toolArgs.id) {
+		const [row] = await db
+			.select({ id: campaignCompanies.id, sequenceStep: campaignCompanies.sequenceStep })
+			.from(campaignCompanies)
+			.where(eq(campaignCompanies.id, String(toolArgs.id)))
+			.limit(1);
+		return row ?? { error: "campaign company not found — check id" };
+	}
+	if (toolArgs.campaign_name && toolArgs.company_name) {
+		const [camp] = await db
+			.select({ id: campaigns.id })
+			.from(campaigns)
+			.where(ilike(campaigns.name, String(toolArgs.campaign_name)))
+			.limit(1);
+		if (!camp) return { error: `campaign "${String(toolArgs.campaign_name)}" not found` };
+		const [row] = await db
+			.select({ id: campaignCompanies.id, sequenceStep: campaignCompanies.sequenceStep })
+			.from(campaignCompanies)
+			.where(and(eq(campaignCompanies.campaignId, camp.id), ilike(campaignCompanies.companyName, String(toolArgs.company_name))))
+			.limit(1);
+		return row ?? { error: "campaign company not found — check campaign_name + company_name" };
+	}
+	return { error: "pass id, or campaign_name + company_name" };
+}
 
 // ── HTTP handler ───────────────────────────────────────────────────
 
@@ -624,6 +751,11 @@ export async function POST(event: APIEvent) {
 									...(toolArgs.contact_name ? { contactName: String(toolArgs.contact_name) } : {}),
 									...(toolArgs.email ? { email: String(toolArgs.email) } : {}),
 									...(toolArgs.notes ? { notes: String(toolArgs.notes) } : {}),
+									...(toolArgs.region !== undefined ? { region: String(toolArgs.region) } : {}),
+									...(toolArgs.revenue_band !== undefined ? { revenueBand: String(toolArgs.revenue_band) } : {}),
+									...(toolArgs.tech_team !== undefined ? { techTeam: String(toolArgs.tech_team) } : {}),
+									...(toolArgs.ai_interest !== undefined ? { aiInterest: String(toolArgs.ai_interest) } : {}),
+									...(toolArgs.source_note !== undefined ? { sourceNote: String(toolArgs.source_note) } : {}),
 								})
 								.where(eq(outreachProspects.id, existing.id));
 							result = { id: existing.id, company, updated: true };
@@ -640,10 +772,176 @@ export async function POST(event: APIEvent) {
 									contactName: toolArgs.contact_name ? String(toolArgs.contact_name) : null,
 									email: toolArgs.email ? String(toolArgs.email) : null,
 									notes: toolArgs.notes ? String(toolArgs.notes) : null,
+									...(toolArgs.region !== undefined ? { region: String(toolArgs.region) } : {}),
+									...(toolArgs.revenue_band !== undefined ? { revenueBand: String(toolArgs.revenue_band) } : {}),
+									...(toolArgs.tech_team !== undefined ? { techTeam: String(toolArgs.tech_team) } : {}),
+									...(toolArgs.ai_interest !== undefined ? { aiInterest: String(toolArgs.ai_interest) } : {}),
+									...(toolArgs.source_note !== undefined ? { sourceNote: String(toolArgs.source_note) } : {}),
 								})
 								.returning({ id: outreachProspects.id });
 							result = { id: created.id, company, created: true };
 						}
+						break;
+					}
+					case "create_campaign": {
+						const name = String(toolArgs.name ?? "").trim();
+						if (!name) {
+							result = { error: "name is required" };
+							break;
+						}
+						const [row] = await db
+							.insert(campaigns)
+							.values({ name, description: toolArgs.description ? String(toolArgs.description) : null })
+							.returning({ id: campaigns.id, name: campaigns.name });
+						result = row;
+						break;
+					}
+					case "add_campaign_company": {
+						const companyName = String(toolArgs.company_name ?? "").trim();
+						if (!companyName) {
+							result = { error: "company_name is required" };
+							break;
+						}
+						let campaignId = toolArgs.campaign_id ? String(toolArgs.campaign_id) : null;
+						if (!campaignId && toolArgs.campaign_name) {
+							const cname = String(toolArgs.campaign_name).trim();
+							const [existing] = await db.select({ id: campaigns.id }).from(campaigns).where(ilike(campaigns.name, cname)).limit(1);
+							if (existing) campaignId = existing.id;
+							else {
+								const [createdCamp] = await db.insert(campaigns).values({ name: cname }).returning({ id: campaigns.id });
+								campaignId = createdCamp.id;
+							}
+						}
+						if (!campaignId) {
+							result = { error: "campaign_id or campaign_name is required" };
+							break;
+						}
+						const nextSendAt = toolArgs.next_send_at !== undefined ? new Date(String(toolArgs.next_send_at)) : undefined;
+						if (nextSendAt && Number.isNaN(nextSendAt.getTime())) {
+							result = { error: "invalid next_send_at" };
+							break;
+						}
+						const [row] = await db
+							.insert(campaignCompanies)
+							.values({
+								campaignId,
+								companyName,
+								contactEmail: toolArgs.contact_email !== undefined ? String(toolArgs.contact_email) || null : null,
+								sequenceStep: 1,
+								nextSendAt: nextSendAt ?? null,
+								nextEmailNote: toolArgs.next_email_note !== undefined ? String(toolArgs.next_email_note) : null,
+							})
+							.onConflictDoUpdate({
+								target: [campaignCompanies.campaignId, campaignCompanies.companyName],
+								set: {
+									...(toolArgs.contact_email !== undefined ? { contactEmail: String(toolArgs.contact_email) || null } : {}),
+								...(nextSendAt !== undefined ? { nextSendAt: nextSendAt ?? null } : {}),
+								...(toolArgs.next_email_note !== undefined ? { nextEmailNote: String(toolArgs.next_email_note) } : {}),
+								},
+							})
+							.returning({ id: campaignCompanies.id, sequenceStep: campaignCompanies.sequenceStep, nextSendAt: campaignCompanies.nextSendAt });
+						result = row;
+						break;
+					}
+					case "list_campaigns": {
+						const campRows = await db.select().from(campaigns).orderBy(campaigns.createdAt);
+						const compRows = await db.select().from(campaignCompanies).orderBy(campaignCompanies.companyName);
+						const prospectRows = await db.select({ company: outreachProspects.company, stage: outreachProspects.stage }).from(outreachProspects);
+						const stageByCompany = new Map(prospectRows.map((p) => [p.company.toLowerCase(), p.stage] as const));
+						result = {
+							campaigns: campRows.map((c) => ({
+								...c,
+								companies: compRows
+									.filter((x) => x.campaignId === c.id)
+									.map((x) => ({ ...x, prospectStage: stageByCompany.get(x.companyName.toLowerCase()) ?? null })),
+							})),
+						};
+						break;
+					}
+					case "get_due_follow_ups": {
+						const rows = await db
+							.select({
+								id: campaignCompanies.id,
+								campaignId: campaignCompanies.campaignId,
+								companyName: campaignCompanies.companyName,
+								contactEmail: campaignCompanies.contactEmail,
+								sequenceStep: campaignCompanies.sequenceStep,
+								nextSendAt: campaignCompanies.nextSendAt,
+								nextEmailNote: campaignCompanies.nextEmailNote,
+								prospectStage: outreachProspects.stage,
+							})
+							.from(campaignCompanies)
+							.leftJoin(outreachProspects, ilike(outreachProspects.company, campaignCompanies.companyName))
+							.where(and(isNotNull(campaignCompanies.nextSendAt), lte(campaignCompanies.nextSendAt, new Date())))
+							.orderBy(campaignCompanies.nextSendAt);
+						result = { due: rows.filter((r) => !r.prospectStage || !DEAD_STAGES.has(r.prospectStage)) };
+						break;
+					}
+					case "mark_campaign_email_sent": {
+						const cadence = CADENCES[String(toolArgs.cadence ?? "rung-1")] ?? CADENCES["rung-1"];
+						const sentAt = toolArgs.sent_at ? new Date(String(toolArgs.sent_at)) : new Date();
+						if (Number.isNaN(sentAt.getTime())) {
+							result = { error: "invalid sent_at" };
+							break;
+						}
+						const row = await resolveCampaignCompany(toolArgs);
+						if ("error" in row) {
+							result = row;
+							break;
+						}
+						const deltaDays = cadence[row.sequenceStep - 1]; // step just sent is 1-based
+						const nextSendAt = deltaDays === undefined ? null : new Date(sentAt.getTime() + deltaDays * 86_400_000);
+						const [updated] = await db
+							.update(campaignCompanies)
+							.set({
+								sequenceStep: row.sequenceStep + 1,
+								nextSendAt,
+								...(toolArgs.next_email_note !== undefined ? { nextEmailNote: String(toolArgs.next_email_note) } : {}),
+							})
+							.where(eq(campaignCompanies.id, row.id))
+							.returning({ id: campaignCompanies.id, sequenceStep: campaignCompanies.sequenceStep, nextSendAt: campaignCompanies.nextSendAt });
+						result = { ...updated, sequenceDone: nextSendAt === null };
+						break;
+					}
+					case "stop_campaign_company": {
+						const reason = String(toolArgs.reason ?? "stopped").trim();
+						const row = await resolveCampaignCompany(toolArgs);
+						if ("error" in row) {
+							result = row;
+							break;
+						}
+						const [updated] = await db
+							.update(campaignCompanies)
+							.set({ nextSendAt: null, nextEmailNote: `STOPPED: ${reason}` })
+							.where(eq(campaignCompanies.id, row.id))
+							.returning({ id: campaignCompanies.id, nextSendAt: campaignCompanies.nextSendAt, note: campaignCompanies.nextEmailNote });
+						result = updated;
+						break;
+					}
+					case "newsletter_subscribe": {
+						const email = String(toolArgs.email ?? "").trim().toLowerCase();
+						if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+							result = { error: "valid email required" };
+							break;
+						}
+						const key = process.env.RESEND_API_KEY;
+						if (!key) {
+							result = { error: "RESEND_API_KEY not configured" };
+							break;
+						}
+						const { Resend } = await import("resend");
+						const resend = new Resend(key);
+						const segmentId = process.env.RESEND_SEGMENT_ID;
+						const { error } = await resend.contacts.create({
+								email,
+								unsubscribed: false,
+								...(segmentId ? { segments: [{ id: segmentId }] } : {}),
+							});
+						if (error) {
+								result = { error: `resend contacts.create failed: ${error.message}` };
+							break;
+						}
+						result = { ok: true, email, note: "added to the Cactus Dispatch segment — Resend unsubscribe is honored" };
 						break;
 					}
 				case "get_voice_lessons": {
@@ -861,6 +1159,19 @@ export async function POST(event: APIEvent) {
 						// an already-landed draft go through draft_id instead of a new row.
 						const { createEmailDraft, updateEmailDraft } = await import("~/lib/email-outbox");
 						const draftBody = String(toolArgs.body ?? "");
+						// send_at: schedule the landed draft for auto-send via the outbox ticker
+						const scheduleDraftResult = async (outboxId: string) => {
+							const when = new Date(String(toolArgs.send_at));
+							if (Number.isNaN(when.getTime())) {
+								result = { ...(result as object), scheduled: false, error: "invalid send_at — draft left unscheduled" };
+								return;
+							}
+							const { scheduleOutboxDraft } = await import("~/lib/email-outbox");
+							const sched = await scheduleOutboxDraft(outboxId, when);
+							result = sched.ok
+								? { ...(result as object), scheduled: true, sendAt: sched.sendAt }
+								: { ...(result as object), scheduled: false, scheduleError: "error" in sched ? sched.error : "voice_lint blocked" };
+						};
 						const lessons = await gateLessonsForText(toolArgs, draftBody, { surface: "email", genre: null });
 						if (!lessons.ok) {
 							result = lessons;
@@ -872,7 +1183,7 @@ export async function POST(event: APIEvent) {
 							break;
 						}
 						if (toolArgs.draft_id) {
-							result = await updateEmailDraft({
+							const upd = await updateEmailDraft({
 								outboxId: String(toolArgs.draft_id),
 								to: String(toolArgs.to ?? ""),
 								cc: toolArgs.cc ? String(toolArgs.cc) : undefined,
@@ -880,9 +1191,12 @@ export async function POST(event: APIEvent) {
 								subject: String(toolArgs.subject ?? ""),
 								body: draftBody,
 							});
+							result = upd;
+							if (!(upd && typeof upd === "object" && "outboxId" in upd)) break;
+							if (toolArgs.send_at) await scheduleDraftResult(String(upd.outboxId));
 							break;
 						}
-						result = await createEmailDraft({
+						const created = await createEmailDraft({
 							to: String(toolArgs.to ?? ""),
 							cc: toolArgs.cc ? String(toolArgs.cc) : undefined,
 							bcc: toolArgs.bcc ? String(toolArgs.bcc) : undefined,
@@ -891,6 +1205,8 @@ export async function POST(event: APIEvent) {
 							chatUuid: String(toolArgs.chat_uuid ?? ""),
 							threadId: toolArgs.thread_id ? String(toolArgs.thread_id) : undefined,
 						});
+						result = created;
+						if (toolArgs.send_at) await scheduleDraftResult(created.outboxId);
 						break;
 					}
 					// ── Short links ──
