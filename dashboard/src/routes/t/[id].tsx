@@ -6,20 +6,9 @@
 import { Title } from "@solidjs/meta";
 import { useParams } from "@solidjs/router";
 import { createResource, Show } from "solid-js";
-import { eq, and } from "drizzle-orm";
-import { db } from "~/db";
-import { docs } from "~/db/schema";
+import { getTeaser } from "~/lib/teaser";
 import { markdownToHtml } from "~/lib/publish-core";
 import Layout from "~/components/Layout";
-
-async function getTeaser(id: string) {
-	const [row] = await db
-		.select({ id: docs.id, title: docs.title, markdown: docs.markdown })
-		.from(docs)
-		.where(and(eq(docs.id, id), eq(docs.genre, "teaser")))
-		.limit(1);
-	return row ?? null;
-}
 
 export default function TeaserPage() {
 	const params = useParams();
