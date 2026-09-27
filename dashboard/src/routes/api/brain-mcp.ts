@@ -2,7 +2,7 @@ import type { APIEvent } from "@solidjs/start/server";
 import { eq, and, desc, inArray, sql, ilike, lte, isNotNull } from "drizzle-orm";
 import { hashKey } from "~/lib/crypto";
 import { db } from "~/db";
-import { apiKeys, companies, outreachProspects, OUTREACH_STAGES, campaigns, campaignCompanies } from "~/db/schema";
+import { apiKeys, companies, outreachProspects, OUTREACH_STAGES, campaigns, campaignCompanies, videos } from "~/db/schema";
 import { brainQuery, entityFacts } from "~/lib/brain/search";
 import { brainJobs, docs, shortLinks } from "~/db/schema";
 import { agentWrite, createDoc, getDoc, getDocVersionDiff, listDocVersions, listDocs, renameDoc, setDocAppendix } from "~/lib/docs";
@@ -11,6 +11,9 @@ import { docSurface, type VoiceScope } from "~/lib/voice-lint";
 import { searchWorkspace, recentActivity } from "~/lib/brain/workspace-search";
 import { randomKey, shortLinkBase, TARGET_RE } from "~/lib/short-links";
 import { maybeRunCycle } from "~/lib/brain/distill";
+import { listComponentTypes, getComponent, resolveCard, searchAll, linksFor, loadRow } from "~/registry/registry";
+import { linkComponents, listLinks, UnknownKindError } from "~/lib/entity-links";
+import { createVideo, setProspectVideo } from "~/lib/videos";
 
 
 /**
@@ -604,6 +607,78 @@ chat_uuid: { type: "string" },
 			required: ["to", "subject", "body"],
 		},
 	},
+	// ── Components (registry-driven generic tools) ──
+	{
+		name: "list_component_types",
+		description:
+			"THE MAP OF THE BUSINESS. Every first-class component (company, contact, project, doc, email-thread, email-draft, campaign, prospect, video, meeting, short-link, invoice, deliverable) with a teaching description of what it IS. Call this before hand-rolling any tool or query — components are addressable as {kind, id} everywhere: get_component, search_components, link_components, @[kind:id] mentions in docs.",
+		inputSchema: { type: "object", properties: {} },
+	},
+	{
+		name: "get_component",
+		description:
+			"Card + row + links for one component (kind, id from list_component_types/search_components). Links include BOTH directions of entity_links AND declared FK ownership (project→company, video→prospect, …) — backlinks are complete without any agent effort.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				kind: { type: "string", description: "component kind — list_component_types" },
+				id: { type: "string", description: "row id (uuid, or slug for short-link)" },
+			},
+			required: ["kind", "id"],
+		},
+	},
+	{
+		name: "search_components",
+		description:
+			"Search every registered component at once (titles, subtitles, searchable columns). Returns kind+id+title hits — feed ids into get_component. workspace-search stays for raw brain retrieval; this is the component-level finder.",
+		inputSchema: {
+			type: "object",
+			properties: { q: { type: "string" } },
+			required: ["q"],
+		},
+	},
+	{
+		name: "link_components",
+		description:
+			"Cross-reference two components (from → to). Ownership NEVER goes here — real FKs own rows; this records references/mentions (e.g. video relates-to prospect, doc mentions company). Idempotent.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				from_kind: { type: "string" },
+				from_id: { type: "string" },
+				to_kind: { type: "string" },
+				to_id: { type: "string" },
+				link_type: { type: "string", description: "default 'references'" },
+				context: { type: "string", description: "why this link exists" },
+			},
+			required: ["from_kind", "from_id", "to_kind", "to_id"],
+		},
+	},
+	{
+		name: "list_links",
+		description: "All links for one component with resolved cards — entity_links both directions plus declared FK owners/children.",
+		inputSchema: {
+			type: "object",
+			properties: { kind: { type: "string" }, id: { type: "string" } },
+			required: ["kind", "id"],
+		},
+	},
+	{
+		name: "create_video",
+		description:
+			"Record an outreach video (CAP share link or mp4 URL) as a first-class video component. Pass prospect (company name, fuzzy — created if unknown) to own it; the tracked email link is /v/<video-id>. Watch telemetry lands on the video row automatically.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				url: { type: "string", description: "CAP share URL or direct .mp4 URL" },
+				title: { type: "string", description: "what the video is; defaults to 'Outreach video — <company>'" },
+				description: { type: "string", description: "what it shows / why it exists" },
+				prospect: { type: "string", description: "prospect company name (matched case-insensitively; created if unknown)" },
+				prospect_id: { type: "string", description: "outreach_prospects id, alternative to prospect" },
+			},
+			required: ["url"],
+		},
+	},
 ] as const;
 
 /** Resolve a campaign row by id, or case-insensitive name. */
@@ -762,22 +837,35 @@ export async function POST(event: APIEvent) {
 						result = { clients: rows };
 						break;
 					}
-					case "list_outreach":
-						result = await db
+					case "list_outreach": {
+						const rows = await db
 							.select({
 								id: outreachProspects.id,
 								company: outreachProspects.company,
 								stage: outreachProspects.stage,
 								contactName: outreachProspects.contactName,
 								email: outreachProspects.email,
-								videoUrl: outreachProspects.videoUrl,
-								videoDescription: outreachProspects.videoDescription,
 								brainUrl: outreachProspects.brainUrl,
 								brainActivityKey: outreachProspects.brainActivityKey,
 							})
 							.from(outreachProspects)
 							.orderBy(outreachProspects.company);
+						// videos own the link now — latest video per prospect rides along
+						const vids = await db.select().from(videos).orderBy(desc(videos.createdAt));
+						const latestVideo = new Map<string, (typeof vids)[number]>();
+						for (const v of vids) if (v.prospectId && !latestVideo.has(v.prospectId)) latestVideo.set(v.prospectId, v);
+						result = rows.map((p) => {
+							const v = latestVideo.get(p.id);
+							return {
+								...p,
+								videoId: v?.id ?? null,
+								videoUrl: v?.url ?? null,
+								videoDescription: v?.description ?? null,
+								videoStatus: v?.status ?? null,
+							};
+						});
 						break;
+					}
 					case "set_outreach_brain": {
 						const company = String(toolArgs.company ?? "").trim();
 						if (!company) {
@@ -808,8 +896,6 @@ export async function POST(event: APIEvent) {
 								.set({
 									...(brainUrl !== null ? { brainUrl } : {}),
 									...(activityKey ? { brainActivityKey: activityKey } : {}),
-									...(toolArgs.video_url !== undefined ? { videoUrl } : {}),
-									...(toolArgs.video_description !== undefined ? { videoDescription } : {}),
 									...(stage ? { stage } : {}),
 									...(toolArgs.contact_name ? { contactName: String(toolArgs.contact_name) } : {}),
 									...(toolArgs.email ? { email: String(toolArgs.email) } : {}),
@@ -829,8 +915,6 @@ export async function POST(event: APIEvent) {
 									company,
 									brainUrl,
 									brainActivityKey: activityKey || null,
-									videoUrl,
-									videoDescription,
 									...(stage ? { stage } : {}),
 									contactName: toolArgs.contact_name ? String(toolArgs.contact_name) : null,
 									email: toolArgs.email ? String(toolArgs.email) : null,
@@ -842,6 +926,12 @@ export async function POST(event: APIEvent) {
 									...(toolArgs.source_note !== undefined ? { sourceNote: String(toolArgs.source_note) } : {}),
 								})
 								.returning({ id: outreachProspects.id });
+							if (videoUrl) {
+								await setProspectVideo(created.id, {
+									url: videoUrl,
+									...(videoDescription !== null ? { description: videoDescription } : {}),
+								});
+							}
 							result = { id: created.id, company, created: true };
 						}
 						break;
@@ -1409,6 +1499,85 @@ export async function POST(event: APIEvent) {
 							.leftJoin(docs, eq(shortLinks.docId, docs.id))
 							.orderBy(desc(shortLinks.clicks), desc(shortLinks.createdAt));
 						break;
+					// ── Components (registry-driven generic tools) ──
+					case "list_component_types":
+						result = { components: listComponentTypes() };
+						break;
+					case "get_component": {
+						const kind = String(toolArgs.kind ?? "");
+						const id = String(toolArgs.id ?? "");
+						const def = getComponent(kind);
+						if (!def) {
+							result = { error: `unknown kind "${kind}" — call list_component_types` };
+							break;
+						}
+						const card = await resolveCard({ kind, id });
+						const links = await linksFor({ kind, id });
+						// row subset: scalars only, long strings truncated (bodies never dump)
+						const row = card.deleted ? null : Object.fromEntries(
+							Object.entries((await loadRow(def, id)) ?? {}).filter(([, v]) => ["string", "number", "boolean"].includes(typeof v))
+								.map(([k, v]) => [k, typeof v === "string" && v.length > 200 ? v.slice(0, 200) + "…" : v]),
+						);
+						result = { card, row, links };
+						break;
+					}
+					case "search_components":
+						result = { hits: await searchAll(String(toolArgs.q ?? "")) };
+						break;
+					case "link_components": {
+						try {
+							await linkComponents(
+								{ kind: String(toolArgs.from_kind ?? ""), id: String(toolArgs.from_id ?? "") },
+								{ kind: String(toolArgs.to_kind ?? ""), id: String(toolArgs.to_id ?? "") },
+								{ linkType: toolArgs.link_type ? String(toolArgs.link_type) : "references", context: toolArgs.context ? String(toolArgs.context) : null, createdBy: "agent" },
+							);
+							result = { linked: true };
+						} catch (e) {
+							result = e instanceof UnknownKindError ? { error: e.message } : { error: String(e) };
+						}
+						break;
+					}
+					case "list_links": {
+						const kind = String(toolArgs.kind ?? "");
+						if (!getComponent(kind)) {
+							result = { error: `unknown kind "${kind}" — call list_component_types` };
+							break;
+						}
+						result = await listLinks({ kind, id: String(toolArgs.id ?? "") });
+						break;
+					}
+					case "create_video": {
+						const url = String(toolArgs.url ?? "").trim();
+						if (!/^https?:\/\//i.test(url)) {
+							result = { error: "url must be an http(s) URL (CAP share link or direct mp4)" };
+							break;
+						}
+						let prospectId: string | null = null;
+						if (toolArgs.prospect_id) {
+							const [row] = await db.select({ id: outreachProspects.id }).from(outreachProspects).where(eq(outreachProspects.id, String(toolArgs.prospect_id))).limit(1);
+							prospectId = row?.id ?? null;
+							if (!prospectId) {
+								result = { error: "prospect_id not found — list_outreach has ids" };
+								break;
+							}
+						} else if (toolArgs.prospect) {
+							const cname = String(toolArgs.prospect).trim();
+							const [existing] = await db.select({ id: outreachProspects.id }).from(outreachProspects).where(ilike(outreachProspects.company, cname)).limit(1);
+							if (existing) prospectId = existing.id;
+							else {
+								const [created] = await db.insert(outreachProspects).values({ company: cname }).returning({ id: outreachProspects.id });
+								prospectId = created.id;
+							}
+						}
+						const v = await createVideo({
+							url,
+							title: toolArgs.title ? String(toolArgs.title) : undefined,
+							description: toolArgs.description ? String(toolArgs.description) : null,
+							prospectId,
+						});
+						result = { id: v.id, url: v.url, prospectId: v.prospectId, watchLink: `/v/${v.id}`, fullWatchLink: `https://madcactus.org/v/${v.id}` };
+						break;
+					}
 					default:
 						return rpcError(id, -32601, `Unknown tool: ${toolName}`);
 				}

@@ -15,6 +15,7 @@ import {
 	deliverableUpdates,
 	apiKeys,
 	outreachProspects,
+	videos,
 	campaigns,
 	campaignCompanies,
 	emailMessages,
@@ -36,6 +37,8 @@ import { contactSuggestionsFor, latestThreadFor } from "~/lib/outreach-email";
 import { triggerSyncIfStale } from "~/lib/email-queries";
 import { campaignStats } from "~/lib/campaign-stats";
 import { lintVoiceText } from "~/lib/voice-lint-db";
+import { setProspectVideo } from "~/lib/videos";
+import type { Video } from "~/db/schema";
 
 // ── Auth guard ────────────────────────────────────────────────────
 
@@ -744,14 +747,18 @@ export const getOutreachQuery = query(async () => {
 		.select()
 		.from(outreachProspects)
 		.orderBy(desc(outreachProspects.createdAt));
-	const all = [] as (typeof rows[number] & { emailStatus: ProspectEmailStatus | null })[];
+	// latest video per prospect (videos own the link now — one pass, newest wins)
+	const videoRows = await db.select().from(videos).orderBy(desc(videos.createdAt));
+	const videoByProspect = new Map<string, Video>();
+	for (const v of videoRows) if (v.prospectId && !videoByProspect.has(v.prospectId)) videoByProspect.set(v.prospectId, v);
+	const all = [] as (typeof rows[number] & { emailStatus: ProspectEmailStatus | null; video: Video | null })[];
 	for (const p of rows) {
 		const status = p.email ? await prospectEmailStatus(p.email) : null;
 		if (status?.repliedAt && ["proposed", "sent", "watching"].includes(p.stage)) {
 			await db.update(outreachProspects).set({ stage: "replied" }).where(eq(outreachProspects.id, p.id));
 			p.stage = "replied";
 		}
-		all.push({ ...p, emailStatus: status });
+		all.push({ ...p, emailStatus: status, video: p.id ? (videoByProspect.get(p.id) ?? null) : null });
 	}
 	const now = new Date();
 	const due = all
@@ -778,20 +785,31 @@ export const createOutreachAction = action(async (formData: FormData) => {
 	const company = String(formData.get("company") || "").trim();
 	if (!company) return { error: "Company is required." };
 	const rawNext = String(formData.get("next_action_at") || "");
-	await db.insert(outreachProspects).values({
-		company,
-		contactName: String(formData.get("contact_name") || "").trim() || null,
-		email: String(formData.get("email") || "").trim() || null,
-		brainUrl: String(formData.get("brain_url") || "").trim() || null,
-		brainActivityKey: String(formData.get("brain_activity_key") || "").trim() || null,
-		videoUrl: String(formData.get("video_url") || "").trim() || null,
-		stage: String(formData.get("stage") || "proposed") as OutreachStage,
-		// Client converts datetime-local to ISO+Z in the browser's tz before
-		// submitting, so this parses to the intended instant regardless of
-		// the server's TZ (prod runs UTC).
-		nextActionAt: rawNext ? new Date(rawNext) : new Date(Date.now() + 5 * 86_400_000),
-	});
+	const [created] = await db
+		.insert(outreachProspects)
+		.values({
+			company,
+			contactName: String(formData.get("contact_name") || "").trim() || null,
+			email: String(formData.get("email") || "").trim() || null,
+			brainUrl: String(formData.get("brain_url") || "").trim() || null,
+			brainActivityKey: String(formData.get("brain_activity_key") || "").trim() || null,
+			stage: String(formData.get("stage") || "proposed") as OutreachStage,
+			// Client converts datetime-local to ISO+Z in the browser's tz before
+			// submitting, so this parses to the intended instant regardless of
+			// the server's TZ (prod runs UTC).
+			nextActionAt: rawNext ? new Date(rawNext) : new Date(Date.now() + 5 * 86_400_000),
+		})
+		.returning({ id: outreachProspects.id });
+	// optional video at creation — lands on the videos table
+	const videoUrl = String(formData.get("video_url") || "").trim();
+	if (videoUrl) {
+		await setProspectVideo(created.id, {
+			url: videoUrl,
+			description: String(formData.get("video_description") || "").trim() || null,
+		});
+	}
 	await revalidate(getOutreachQuery.key);
+	await revalidate(getVideosQuery.key);
 	return { success: `${company} added.` };
 }, "createOutreach");
 
@@ -886,22 +904,37 @@ export const setOutreachBrainAction = action(async (formData: FormData) => {
 	return { success: "Brain settings saved." };
 }, "setOutreachBrain");
 
-// Video link + description. Empty video_url clears the video. "Empty string
-// clears, absent leaves unchanged" via has(): the card edit form always
-// submits both fields; the Videos page form posts exactly these keys too.
+// Videos list for /admin/videos — the videos table joined to its prospect.
+export const getVideosQuery = query(async () => {
+	"use server";
+	await requireAdmin();
+	return db
+		.select({
+			video: videos,
+			company: outreachProspects.company,
+			stage: outreachProspects.stage,
+		})
+		.from(videos)
+		.leftJoin(outreachProspects, eq(videos.prospectId, outreachProspects.id))
+		.orderBy(desc(videos.createdAt));
+}, "admin-videos");
+
+// Video link + description for a prospect, on the videos table. Empty
+// video_url removes the video ("empty clears, absent leaves unchanged" via
+// has(): card + videos-page forms always submit both fields).
 export const setOutreachVideoAction = action(async (formData: FormData) => {
 	"use server";
 	await requireAdmin();
 	const id = String(formData.get("id"));
 	if (!id) return { error: "id is required" };
-	await db
-		.update(outreachProspects)
-		.set({
-			videoUrl: String(formData.get("video_url") || "").trim() || null,
-			videoDescription: String(formData.get("video_description") || "").trim() || null,
-		})
-		.where(eq(outreachProspects.id, id));
+	await setProspectVideo(id, {
+		url: String(formData.get("video_url") || "").trim(),
+		description: formData.has("video_description")
+			? String(formData.get("video_description") || "").trim() || null
+			: undefined,
+	});
 	await revalidate(getOutreachQuery.key);
+	await revalidate(getVideosQuery.key);
 	return { success: "Video saved." };
 }, "setOutreachVideo");
 

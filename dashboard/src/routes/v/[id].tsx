@@ -84,10 +84,10 @@ export default function WatchVideo() {
 						<Switch
 							fallback={
 								// Other hosts (e.g. YouTube): no native stream, bounce to the raw URL.
-								<meta http-equiv="refresh" content={`0;url=${v().videoUrl!}`} />
+								<meta http-equiv="refresh" content={`0;url=${v().url}`} />
 							}
 						>
-							<Match when={playableUrl(v().videoUrl!)}>
+							<Match when={playableUrl(v().url)}>
 								{(src) => (
 									<div
 										style={{
@@ -115,9 +115,9 @@ export default function WatchVideo() {
 										<div style={{ display: "flex", "align-items": "baseline", gap: "12px" }}>
 											<div style={{ "min-width": 0 }}>
 												<h1 style={{ margin: 0, "font-size": "18px", "font-weight": 600 }}>{v().company}</h1>
-												<Show when={v().videoDescription}>
+												<Show when={v().description}>
 													<p style={{ margin: "2px 0 0", "font-size": "13px", color: "#999" }}>
-														{v().videoDescription}
+														{v().description}
 													</p>
 												</Show>
 											</div>
@@ -148,7 +148,7 @@ export default function WatchVideo() {
 						</Switch>
 						{/* test=1 = Collin previewing the video — no tracker, zero metrics */}
 						<Show when={!searchParams.test}>
-							<script src="/v-watch.js" data-prospect-id={v().id} />
+							<script src="/v-watch.js" data-video-id={v().id} />
 						</Show>
 					</main>
 				)}

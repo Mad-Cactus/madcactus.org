@@ -21,7 +21,7 @@ import {
 	type BrainActivity,
 	type BrainDigestItem,
 } from "~/lib/admin-queries";
-import { OUTREACH_STAGES, stageLabel, type OutreachProspect, type OutreachStage } from "~/db/schema";
+import { OUTREACH_STAGES, stageLabel, type OutreachProspect, type OutreachStage, type Video } from "~/db/schema";
 import type { ProspectEmailStatus } from "~/lib/admin-queries";
 import { fmtDate, fmtDur, videoSummary } from "~/lib/video-summary";
 
@@ -362,7 +362,7 @@ function VideoSection(props: { videoUrl?: string | null; videoId: string; descri
 }
 
 function BoardCard(props: {
-		prospect: OutreachProspect & { emailStatus?: ProspectEmailStatus | null };
+		prospect: OutreachProspect & { emailStatus?: ProspectEmailStatus | null; video?: Video | null };
 		due: boolean;
 		overdue?: boolean;
 		onDragStart?: (id: string | undefined) => void;
@@ -518,7 +518,7 @@ function BoardCard(props: {
 		}
 		const videoUrl = String(fd.get("video_url") || "").trim();
 		const videoDesc = String(fd.get("video_description") || "").trim();
-		if (videoUrl !== (p().videoUrl ?? "") || videoDesc !== (p().videoDescription ?? "")) {
+		if (videoUrl !== (p().video?.url ?? "") || videoDesc !== (p().video?.description ?? "")) {
 			const r3 = (await setVideo(fd)) as { error?: string };
 			if (r3.error) {
 				setError(r3.error);
@@ -648,7 +648,7 @@ function BoardCard(props: {
 						<Show when={p().brainUrl}>
 							<a class="btn btn-sm" href={brainHref(p())} target="_blank" rel="noreferrer">brain ↗</a>
 						</Show>
-						<VideoSection videoUrl={p().videoUrl} videoId={p().id} description={p().videoDescription} />
+						<VideoSection videoUrl={p().video?.url} videoId={p().video?.id ?? p().id} description={p().video?.description} />
 					</div>
 					<Show when={p().brainUrl}>
 						<ActivityDetails prospect={p()} />
@@ -657,8 +657,8 @@ function BoardCard(props: {
 							<DigestSection brainUrl={p().brainUrl!} />
 						</details>
 					</Show>
-					<Show when={p().videoUrl && videoSummary(p())}>
-						<div style={{ color: "var(--orange)", "font-size": "12px", margin: "8px 0" }}>{videoSummary(p())}</div>
+					<Show when={(() => { const v = p().video; return v ? videoSummary(v) : null; })()}>
+						{(s) => <div style={{ color: "var(--orange)", "font-size": "12px", margin: "8px 0" }}>{s()}</div>}
 					</Show>
 					<Show when={p().notes}>
 						<p class="muted" style={{ "font-size": "12px", margin: "8px 0" }}>{p().notes}</p>
@@ -673,8 +673,8 @@ function BoardCard(props: {
 							<For each={OUTREACH_STAGES}>{(s) => <option value={s}>{stageLabel(s)}</option>}</For>
 						</select>
 						<input type="datetime-local" name="next_action_at" value={toInputValue(p().nextActionAt)} />
-						<input type="url" name="video_url" placeholder="Video URL (cap.so share link)" value={p().videoUrl ?? ""} spellcheck={false} />
-						<input type="text" name="video_description" placeholder="Video description (what it shows / why)" value={p().videoDescription ?? ""} />
+						<input type="url" name="video_url" placeholder="Video URL (cap.so share link)" value={p().video?.url ?? ""} spellcheck={false} />
+						<input type="text" name="video_description" placeholder="Video description (what it shows / why)" value={p().video?.description ?? ""} />
 						<input type="text" name="next_action_note" placeholder="Next action note" value={p().nextActionNote ?? ""} />
 						<input type="url" name="brain_url" placeholder="Brain URL (https://….madcactus.org)" value={p().brainUrl ?? ""} spellcheck={false} />
 						<input type="text" name="brain_activity_key" placeholder="Brain activity key" value={p().brainActivityKey ?? ""} spellcheck={false} />

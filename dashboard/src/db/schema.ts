@@ -99,17 +99,9 @@ export const outreachProspects = pgTable(
 		// secret the brain's /activity endpoint expects (x-activity-key). Lives
 		// here, not in an env secret — one row per prospect, editable in the UI.
 		brainActivityKey: text("brain_activity_key"),
-		videoUrl: text("video_url"),
-		// what to say about the video in the email / why it exists (agent- or human-written)
-		videoDescription: text("video_description"),
-		// email link points at /v/:id → 302 here after logging the click
-		videoViewCount: integer("video_view_count").notNull().default(0),
-		videoFirstViewedAt: timestamp("video_first_viewed_at", { withTimezone: true }),
-		videoLastViewedAt: timestamp("video_last_viewed_at", { withTimezone: true }),
-		videoWatchSeconds: integer("video_watch_seconds").notNull().default(0),
-		videoMaxPosition: integer("video_max_position").notNull().default(0),
-		videoDurationSeconds: integer("video_duration_seconds"),
-		videoCompleted: boolean("video_completed").notNull().default(false),
+		// outreach videos live in the `videos` table (first-class component;
+		// telemetry + watch links there). Legacy /v/<prospect-id> email links
+		// still resolve via the watch route's prospect fallback.
 		// campaign this prospect came from (set null when the campaign is deleted)
 		campaignId: uuid("campaign_id").references(() => campaigns.id, { onDelete: "set null" }),
 		// ── ICP qualification (researched by Collin or the sourcing loop — never asked of the lead) ──
@@ -1028,6 +1020,77 @@ export const newsletterEvents = pgTable(
 	},
 );
 
+// ── Cross-references between first-class components ────────────────
+// Registry (src/registry) is the source of truth for what a `kind` is;
+// this table stores only references — mentions (@[kind:id]) and ad-hoc
+// links. Ownership stays in real FKs on component tables (cascade
+// deletes); entity_links rows persist when a target is deleted (the card
+// renders a "deleted" state) — that's the ownership-vs-reference split.
+// ponytail: ids are text, not uuid — short-link ids are slugs; every other
+// kind's uuid stores fine in text.
+export const entityLinks = pgTable(
+	"entity_links",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		fromKind: text("from_kind").notNull(),
+		fromId: text("from_id").notNull(),
+		toKind: text("to_kind").notNull(),
+		toId: text("to_id").notNull(),
+		// "mentions" (synced from doc @[kind:id] syntax) | freeform agent/human links
+		linkType: text("link_type").notNull().default("mentions"),
+		context: text("context"),
+		createdBy: text("created_by").notNull().default("human"), // "human" | "agent"
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+	(t) => [
+		uniqueIndex("entity_links_uq").on(t.fromKind, t.fromId, t.toKind, t.toId, t.linkType),
+		index("idx_entity_links_from").on(t.fromKind, t.fromId),
+		index("idx_entity_links_to").on(t.toKind, t.toId),
+	],
+);
+
+// ── Outreach videos (first-class — not prospect columns) ──────────
+// One row per outreach Loom/recording. Telemetry lives here (watch pages
+// /v/:id beacon into it); the prospect link is ownership (set null when
+// the prospect is deleted, so the video and its history survive).
+export const VIDEO_STATUSES = ["unwatched", "watching", "watched", "completed"] as const;
+export type VideoStatus = (typeof VIDEO_STATUSES)[number];
+
+export const videos = pgTable(
+	"videos",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		title: text("title").notNull(),
+		description: text("description"),
+		// cap.so share link, direct .mp4 URL, or Supabase videos bucket URL
+		url: text("url").notNull(),
+		// bucket path when the file was uploaded through /api/upload-video
+		storagePath: text("storage_path"),
+		// derived from telemetry by the beacon handlers: unwatched → watching
+		// (opened) → watched (real playback) → completed
+		status: text("status").notNull().default("unwatched"),
+		viewCount: integer("view_count").notNull().default(0),
+		firstViewedAt: timestamp("first_viewed_at", { withTimezone: true }),
+		lastViewedAt: timestamp("last_viewed_at", { withTimezone: true }),
+		watchSeconds: integer("watch_seconds").notNull().default(0),
+		maxPosition: integer("max_position").notNull().default(0),
+		durationSeconds: integer("duration_seconds"),
+		completed: boolean("completed").notNull().default(false),
+		// the prospect this video was recorded for (ownership; nullable so a
+		// video can exist before its prospect does, and survives deletion)
+		prospectId: uuid("prospect_id").references(() => outreachProspects.id, { onDelete: "set null" }),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date()),
+	},
+	(t) => [
+		check("video_status_check", sql`${t.status} in ${sql.raw(`(${VIDEO_STATUSES.map((s) => `'${s}'`).join(", ")})`)}`),
+		index("idx_videos_prospect").on(t.prospectId),
+	],
+);
+
 // ── Inferred types (replaces hand-maintained interfaces) ───────────
 
 export type Company = typeof companies.$inferSelect;
@@ -1049,6 +1112,7 @@ export type DocumentType = Document["type"];
 export type DocumentVisibility = Document["visibility"];
 export type InvoiceStatus = Invoice["status"];
 export type OutreachProspect = typeof outreachProspects.$inferSelect;
+export type Video = typeof videos.$inferSelect;
 export type Campaign = typeof campaigns.$inferSelect;
 export type CampaignCompany = typeof campaignCompanies.$inferSelect;
 export type Doc = typeof docs.$inferSelect;

@@ -4,7 +4,7 @@ import { For, Show, Suspense, createSignal } from "solid-js";
 import CreateDialog from "~/components/CreateDialog";
 import Layout from "~/components/Layout";
 import { getUserQuery } from "~/lib/queries";
-import { getOutreachQuery, setOutreachVideoAction } from "~/lib/admin-queries";
+import { getOutreachQuery, getVideosQuery, setOutreachVideoAction } from "~/lib/admin-queries";
 import { stageLabel } from "~/db/schema";
 import { videoSummary } from "~/lib/video-summary";
 
@@ -68,11 +68,10 @@ async function compressTo50MB(file: File, onProgress: (pct: number) => void): Pr
 export default function AdminVideos() {
 	const user = createAsync(() => getUserQuery(), { deferStream: true });
 	const outreach = createAsync(() => getOutreachQuery(), { deferStream: true });
+	const videoRows = createAsync(() => getVideosQuery(), { deferStream: true });
 	const saveVideo = useAction(setOutreachVideoAction);
 	// Progress text renders inside the submit button while it's truthy.
 	const [busy, setBusy] = createSignal("");
-
-	const vids = () => (outreach()?.all ?? []).filter((p) => p.videoUrl);
 
 	/** Returns the action result; errors come back as { error } so the dialog
 	 *  shows them inline (the picked file stays selected for a retry). */
@@ -149,7 +148,7 @@ export default function AdminVideos() {
 								{(p) => (
 									<option value={p.id}>
 										{p.company}
-										{p.videoUrl ? " (replaces current)" : ""}
+										{p.video ? " (replaces current)" : ""}
 									</option>
 								)}
 							</For>
@@ -171,44 +170,44 @@ export default function AdminVideos() {
 			</div>
 
 			<Suspense fallback={<p class="muted">Loading…</p>}>
-				<Show
-					when={vids().length}
-					fallback={<p class="muted">No videos linked yet — link one above or set a Video URL on a prospect's card.</p>}
-				>
-					<div style={{ display: "grid", gap: "16px", "max-width": "640px" }}>
-						<For each={vids()}>
-							{(p) => (
-								<div class="board-card">
-									<div style={{ display: "flex", "align-items": "baseline", gap: "6px" }}>
-										<span style={{ "font-weight": "600", "font-size": "13px" }}>{p.company}</span>
-										<span class="badge" style={{ color: "var(--text-subtle)", "margin-left": "auto" }}>{stageLabel(p.stage)}</span>
-									</div>
-									<Show when={p.videoDescription}>
-										<p class="muted" style={{ "font-size": "12px", margin: "4px 0" }}>{p.videoDescription}</p>
-									</Show>
-									<div style={{ "font-size": "12px", margin: "5px 0" }}>
-										<a href={p.videoUrl!} target="_blank" rel="noreferrer">video ↗</a>{" "}
-										<button
-											type="button"
-											class="btn btn-sm"
-											onClick={() => navigator.clipboard.writeText(`${location.origin}/v/${p.id}`)}
-										>
-											copy email link
-										</button>{" "}
-										<a href={`/v/${p.id}?test=1`} target="_blank" rel="noreferrer">test ↗</a>
-									</div>
-									<Show
-										when={videoSummary(p)}
-										fallback={<div class="muted" style={{ "font-size": "12px" }}>not opened yet</div>}
-									>
-										<div style={{ color: "var(--orange)", "font-size": "12px" }}>{videoSummary(p)}</div>
-									</Show>
+			<Show
+				when={(videoRows()?.length ?? 0) > 0}
+				fallback={<p class="muted">No videos yet — link one above or add a Video URL on a prospect's card.</p>}
+			>
+				<div style={{ display: "grid", gap: "16px", "max-width": "640px" }}>
+					<For each={videoRows() ?? []}>
+						{({ video: v, company, stage }) => (
+							<div class="board-card">
+								<div style={{ display: "flex", "align-items": "baseline", gap: "6px" }}>
+									<span style={{ "font-weight": "600", "font-size": "13px" }}>{company ?? v.title}</span>
+									<span class="badge" style={{ color: "var(--text-subtle)", "margin-left": "auto" }}>{stageLabel(stage ?? v.status)}</span>
 								</div>
-							)}
-						</For>
-					</div>
-				</Show>
-			</Suspense>
+								<Show when={v.description}>
+									<p class="muted" style={{ "font-size": "12px", margin: "4px 0" }}>{v.description}</p>
+								</Show>
+								<div style={{ "font-size": "12px", margin: "5px 0" }}>
+									<a href={v.url} target="_blank" rel="noreferrer">video ↗</a>{" "}
+									<button
+										type="button"
+										class="btn btn-sm"
+										onClick={() => navigator.clipboard.writeText(`${location.origin}/v/${v.id}`)}
+									>
+										copy email link
+									</button>{" "}
+									<a href={`/v/${v.id}?test=1`} target="_blank" rel="noreferrer">test ↗</a>
+								</div>
+								<Show
+									when={videoSummary(v)}
+									fallback={<div class="muted" style={{ "font-size": "12px" }}>not opened yet</div>}
+								>
+									<div style={{ color: "var(--orange)", "font-size": "12px" }}>{videoSummary(v)}</div>
+								</Show>
+							</div>
+						)}
+					</For>
+				</div>
+			</Show>
+		</Suspense>
 		</Layout>
 	);
 }
