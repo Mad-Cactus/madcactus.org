@@ -16,7 +16,8 @@ import {
 	outreachProspects,
 	projects,
 } from "~/db/schema";
-import { computeEmotionalWeight, loopDedupKey, planLoopForThread, slugify, type ThreadSummary } from "./core";
+import { computeEmotionalWeight, factHash, loopDedupKey, planLoopForThread, slugify, type ThreadSummary } from "./core";
+import { campaignStats } from "~/lib/campaign-stats";
 
 /**
  * Person pages from every corpus that names humans: meeting transcript
@@ -133,6 +134,64 @@ export async function syncProspects(): Promise<{ created: number; loopsOpened: n
 		}
 	}
 	return { created, loopsOpened, loopsClosed };
+}
+
+/**
+ * Campaigns → brain: one entity page per campaign plus ONE rolling stats
+ * fact, computed from the same Gmail-grounded numbers as the campaign_stats
+ * MCP tool. The fact is UPDATED IN PLACE (context 'campaign-stats') — a
+ * cycle never duplicates it; validFrom moves when the numbers move, so the
+ * fact history carries the correlation between copy edits and replies.
+ */
+export async function syncCampaigns(): Promise<{ pages: number; factsUpdated: number }> {
+	let pages = 0;
+	let factsUpdated = 0;
+	for (const stats of await campaignStats()) {
+		const slug = `campaign-${slugify(stats.name)}`;
+		const existing = await db.select({ id: brainPages.id }).from(brainPages).where(eq(brainPages.slug, slug)).limit(1);
+		if (existing.length === 0) {
+			await db.insert(brainPages).values({
+				slug,
+				type: "entity",
+				entityKind: "topic",
+				title: `Campaign: ${stats.name}`,
+			});
+			pages++;
+		}
+		const touchLine = Object.keys(stats.repliesByStep).length
+			? ` Replies by touch: ${Object.entries(stats.repliesByStep)
+					.sort((a, b) => Number(a[0]) - Number(b[0]))
+					.map(([step, n]) => `${step}→${n}`)
+					.join(", ")}.`
+			: "";
+		const pct = Math.round(stats.replyRate * 100);
+		const fact = `${stats.name}: ${stats.companiesTouched} companies, ${stats.emailsSent} sends, ${stats.companiesReplied} replies (${pct}% of companies).${touchLine}${stats.bestTouch !== null ? ` Best performing touch: ${stats.bestTouch}.` : ""}`;
+		const [current] = await db
+			.select({ id: brainFacts.id, fact: brainFacts.fact })
+			.from(brainFacts)
+			.where(and(eq(brainFacts.entitySlug, slug), eq(brainFacts.context, "campaign-stats"), isNull(brainFacts.expiredAt)))
+			.limit(1);
+		if (!current) {
+			await db.insert(brainFacts).values({
+				entitySlug: slug,
+				fact,
+				kind: "fact",
+				surface: "email",
+				context: "campaign-stats",
+				sourceTable: "campaigns",
+				sourceId: stats.id,
+				factHash: factHash(fact),
+			});
+			factsUpdated++;
+		} else if (current.fact !== fact) {
+			await db
+					.update(brainFacts)
+					.set({ fact, factHash: factHash(fact), validFrom: new Date() })
+					.where(eq(brainFacts.id, current.id));
+			factsUpdated++;
+		}
+	}
+	return { pages, factsUpdated };
 }
 
 export async function syncEntities(): Promise<{ created: number }> {

@@ -10,9 +10,16 @@ import {
 	addCampaignCompanyAction,
 	updateCampaignCompanyAction,
 	deleteCampaignCompanyAction,
+	setCampaignTemplatesAction,
+	type CampaignTemplatesResult,
 } from "~/lib/admin-queries";
-import { stageLabel, type CampaignCompany, type OutreachStage } from "~/db/schema";
+import { stageLabel, type CampaignCompany, type CampaignTouch, type OutreachStage } from "~/db/schema";
+import type { CompanySendStats } from "~/lib/campaign-stats";
+import { fillTemplate, templateSlots } from "~/lib/campaign-fill";
 import { fmtDate } from "~/lib/video-summary";
+
+/** getCampaignsQuery row: company + its Gmail-grounded send/reply state. */
+type CampaignCompanyWithStats = CampaignCompany & { sendStats: CompanySendStats | null };
 
 /** datetime-local submits wall clock; pin it to an instant (ISO+Z). */
 function withInstantIso(fd: FormData): FormData {
@@ -29,7 +36,170 @@ function toInputValue(d: Date | null): string {
 	return `${x.getFullYear()}-${p(x.getMonth() + 1)}-${p(x.getDate())}T${p(x.getHours())}:${p(x.getMinutes())}`;
 }
 
-function CampaignRow(props: { company: CampaignCompany }) {
+/** Preview values for a touch: the selected company's stored facts when
+ *  available, sample copy otherwise. Unfilled slots stay visible as
+ *  {{slot}} — the preview shows what is still missing, never fakes it. */
+/** Preview values for a touch: the selected company's stored facts when
+ *  available, sample copy otherwise. Unfilled slots stay visible as
+ *  {{slot}} — the preview shows what is still missing, never fakes it. */
+function previewValues(company: { companyName: string; contactEmail: string | null; nextEmailNote: string | null } | null): Record<string, string> {
+	const samples: Record<string, string> = {
+		first_name: "Sam",
+		company: "Acme Logistics",
+		watch_sentence: "customs shipment records, carrier safety files, and diesel prices",
+		finding_1: "14 inbound steel shipments last quarter (up from 9)",
+		finding_2: "carrier insurance lapsed twice this year",
+		finding_3: "$4.1M in tariff exposure at current rates",
+		link: "https://madcactus.org/l/demo",
+		owner_role: "your head of operations",
+	};
+	if (!company) return samples;
+	const local = (company.contactEmail ?? "").split("@")[0] ?? "";
+	const first = local.split(/[._-]/)[0] ?? "";
+	const url = (company.nextEmailNote ?? "").match(/https?:\/\/\S+/)?.[0];
+	return {
+		...samples,
+		company: company.companyName,
+		...(first ? { first_name: first[0].toUpperCase() + first.slice(1) } : {}),
+		...(url ? { link: url } : {}),
+	};
+}
+
+function TemplatesPanel(props: {
+	campaign: { id: string; templates: CampaignTouch[]; companies: CampaignCompanyWithStats[] };
+}) {
+	const save = useAction(setCampaignTemplatesAction);
+	const [touches, setTouches] = createSignal<CampaignTouch[]>(
+		props.campaign.templates.length > 0 ? [...props.campaign.templates] : [{ step: 1, subject: "", body: "" }],
+	);
+	const [previewFor, setPreviewFor] = createSignal<number | null>(null);
+	const [previewCompany, setPreviewCompany] = createSignal<string>("");
+	const [error, setError] = createSignal("");
+	const [violations, setViolations] = createSignal<{ step: number; message: string }[]>([]);
+	const [message, setMessage] = createSignal("");
+
+	const selectedCompany = () =>
+		props.campaign.companies.find((c) => c.id === previewCompany()) ?? null;
+
+	const setTouch = (i: number, patch: Partial<CampaignTouch>) =>
+		setTouches((ts) => ts.map((t, j) => (j === i ? { ...t, ...patch } : t)));
+
+	async function handleSave(e: Event) {
+		e.preventDefault();
+		setError("");
+		setViolations([]);
+		setMessage("");
+		const fd = new FormData(e.target as HTMLFormElement);
+		const r = (await save(fd)) as CampaignTemplatesResult;
+		if ("error" in r) {
+			setError(r.error);
+			setViolations(r.violations ?? []);
+		} else setMessage(r.success);
+	}
+
+	return (
+		<form onSubmit={handleSave} style={{ "margin-top": "16px" }}>
+			<input type="hidden" name="campaign_id" value={props.campaign.id} />
+			<input type="hidden" name="touch_count" value={touches().length} />
+			<div style={{ display: "flex", "align-items": "baseline", gap: "10px" }}>
+				<h3 style={{ margin: "0", "font-size": "14px", "font-weight": "600" }}>Templates — the frozen copy, on this campaign</h3>
+				<Show when={props.campaign.companies.length}>
+					<label class="muted" style={{ "font-size": "12px", "margin-left": "auto" }}>
+						preview fill:{" "}
+						<select value={previewCompany()} onChange={(e) => setPreviewCompany(e.currentTarget.value)}>
+							<option value="">sample company</option>
+							<For each={props.campaign.companies}>
+								{(c) => <option value={c.id}>{c.companyName}</option>}
+							</For>
+						</select>
+					</label>
+				</Show>
+			</div>
+			<For each={touches()}>
+				{(t, i) => (
+					<div style={{ "border": "1px solid rgba(127,127,127,0.2)", "border-radius": "8px", "padding": "12px", "margin-top": "10px" }}>
+						<input type="hidden" name={`touch_${i()}_step`} value={t.step} />
+						<div style={{ display: "flex", gap: "8px", "align-items": "center" }}>
+							<span class="muted" style={{ "font-size": "12px", "min-width": "64px" }}>touch {t.step}</span>
+							<input
+								type="text"
+								name={`touch_${i()}_subject`}
+								placeholder="Subject"
+								value={t.subject}
+								onInput={(e) => setTouch(i(), { subject: e.currentTarget.value })}
+								style={{ flex: "1", "font-weight": "600" }}
+							/>
+							<button
+								type="button"
+								class="btn btn-sm"
+								onClick={() => setPreviewFor(previewFor() === i() ? null : i())}
+							>
+								{previewFor() === i() ? "Hide preview" : "Preview"}
+							</button>
+							<Show when={touches().length > 1}>
+								<button
+									type="button"
+									class="btn btn-sm"
+									onClick={() => setTouches((ts) => ts.filter((_, j) => j !== i()))}
+								>
+									✕
+								</button>
+							</Show>
+						</div>
+						<textarea
+							name={`touch_${i()}_body`}
+							placeholder={"Email body — {{slots}} for the per-company fill"}
+							value={t.body}
+							onInput={(e) => setTouch(i(), { body: e.currentTarget.value })}
+							rows={t.body.split("\n").length + 2}
+							style={{ width: "100%", "margin-top": "8px", "font-family": "var(--font-mono, monospace)", "font-size": "12px" }}
+						/>
+						<Show when={t.body.trim()}>
+							<span class="muted" style={{ "font-size": "11px" }}>slots: {templateSlots(t.body).join(", ") || "none"}</span>
+						</Show>
+						<Show when={previewFor() === i()}>
+							<div style={{ "margin-top": "8px" }}>
+								<div class="muted" style={{ "font-size": "11px" }}>
+									Subject: {fillTemplate(t.subject, previewValues(selectedCompany()))}
+								</div>
+								<pre style={{ "white-space": "pre-wrap", "font-size": "12px", "margin": "6px 0 0", "background": "rgba(127,127,127,0.08)", "padding": "10px", "border-radius": "6px" }}>
+									{fillTemplate(t.body, previewValues(selectedCompany()))}
+								</pre>
+								<div class="muted" style={{ "font-size": "11px", "margin-top": "4px" }}>
+									Leftover {"{{slots}}"} fill the morning of the send, with verified facts.
+								</div>
+							</div>
+						</Show>
+						<For each={violations().filter((v) => v.step === t.step)}>
+							{(v) => (
+								<div class="login-error" style={{ "font-size": "12px", "margin-top": "6px" }}>voice lint: {v.message}</div>
+							)}
+						</For>
+					</div>
+				)}
+			</For>
+			<div style={{ display: "flex", gap: "8px", "margin-top": "10px", "align-items": "center" }}>
+				<button
+					type="button"
+					class="btn btn-sm"
+					onClick={() => setTouches((ts) => [...ts, { step: ts.length + 1, subject: "", body: "" }])}
+				>
+					Add touch
+				</button>
+				<button type="submit" class="btn btn-primary btn-sm">Save templates</button>
+				<span class="muted" style={{ "font-size": "12px" }}>Saved copy is voice-linted — violations reject the whole save.</span>
+			</div>
+			<Show when={error()}>
+				<p class="login-error" style={{ "font-size": "12px", margin: "8px 0 0" }}>{error()}</p>
+			</Show>
+			<Show when={message()}>
+				<p class="muted" style={{ "font-size": "12px", margin: "8px 0 0" }}>{message()}</p>
+			</Show>
+		</form>
+	);
+}
+
+function CampaignRow(props: { company: CampaignCompanyWithStats }) {
 	const update = useAction(updateCampaignCompanyAction);
 	const remove = useAction(deleteCampaignCompanyAction);
 	const [error, setError] = createSignal("");
@@ -78,11 +248,38 @@ function CampaignRow(props: { company: CampaignCompany }) {
 					✕
 				</button>
 			</form>
-			<Show when={props.company.nextSendAt}>
-				<span class="muted" style={{ "font-size": "12px" }}>
-					next send: {fmtDate(props.company.nextSendAt)}
-				</span>
-			</Show>
+			<div style={{ display: "flex", gap: "10px", "flex-wrap": "wrap", "align-items": "baseline" }}>
+				<Show when={props.company.nextSendAt}>
+					<span class="muted" style={{ "font-size": "12px" }}>
+						next send: {fmtDate(props.company.nextSendAt)}
+					</span>
+				</Show>
+				<Show
+					when={props.company.sendStats && props.company.sendStats.sends > 0}
+					fallback={
+						<Show when={props.company.sendStats}>
+							<span class="muted" style={{ "font-size": "12px" }}>no linked sends yet</span>
+						</Show>
+					}
+				>
+					<span class="muted" style={{ "font-size": "12px" }}>
+						{props.company.sendStats!.sends} sent (first {props.company.sendStats!.firstSentAt ? fmtDate(new Date(props.company.sendStats!.firstSentAt)) : "?"})
+					</span>
+					<Show
+						when={props.company.sendStats!.replied}
+						fallback={<span class="muted" style={{ "font-size": "12px" }}>no reply</span>}
+					>
+						<span style={{ "font-size": "12px", color: "var(--green, #2e7d32)" }}>
+							✓ replied{props.company.sendStats!.replyCount > 1 ? ` ×${props.company.sendStats!.replyCount}` : ""}
+						</span>
+						<Show when={props.company.sendStats!.lastReplySnippet}>
+							<span class="muted" style={{ "font-size": "12px", "max-width": "420px", overflow: "hidden", "text-overflow": "ellipsis", "white-space": "nowrap" }}>
+								"{props.company.sendStats!.lastReplySnippet}"
+							</span>
+						</Show>
+					</Show>
+				</Show>
+			</div>
 			<Show when={error()}>
 				<span class="login-error" style={{ "font-size": "12px" }}>{error()}</span>
 			</Show>
@@ -90,38 +287,51 @@ function CampaignRow(props: { company: CampaignCompany }) {
 	);
 }
 
-function Campaign(props: { campaign: { id: string; name: string; description: string | null; companies: CampaignCompany[]; prospects: { id: string; company: string; stage: string }[] } }) {
+function Campaign(props: {
+	campaign: {
+		id: string;
+		name: string;
+		description: string | null;
+		templates: CampaignTouch[];
+		companies: CampaignCompanyWithStats[];
+		prospects: { id: string; company: string; stage: string }[];
+	};
+}) {
 	const addCampaignCompany = useAction(addCampaignCompanyAction);
 	const removeCampaign = useAction(deleteCampaignAction);
 	const [error, setError] = createSignal("");
 	const [message, setMessage] = createSignal("");
 	const c = () => props.campaign;
 	return (
-		<div class="card" style={{ padding: "20px", "margin-bottom": "16px" }}>
-			<div style={{ display: "flex", "align-items": "baseline", gap: "10px" }}>
-				<h2 style={{ margin: "0", "font-family": "var(--font-serif)", "font-weight": "400", "font-size": "20px" }}>{c().name}</h2>
+		<details class="card" style={{ padding: "20px", "margin-bottom": "16px" }} open>
+			<summary style={{ cursor: "pointer", display: "flex", "align-items": "baseline", gap: "10px" }}>
+				<h2 style={{ margin: "0", "font-family": "var(--font-serif)", "font-weight": "400", "font-size": "20px", display: "inline" }}>{c().name}</h2>
 				<span class="muted" style={{ "font-size": "12px" }}>
-					{c().companies.length} target{c().companies.length === 1 ? "" : "s"} · {c().prospects.length} on board
+					{c().companies.length} target{c().companies.length === 1 ? "" : "s"} · {c().templates.length} touch{c().templates.length === 1 ? "" : "es"} · {c().prospects.length} on board
 				</span>
 				<button
 					type="button"
 					class="btn btn-sm"
 					style={{ "margin-left": "auto" }}
-					onClick={async () => {
+					onClick={(e) => {
+						e.preventDefault();
 						if (!confirm(`Delete campaign "${c().name}"? Its target list goes with it; board prospects keep their stages.`)) return;
 						const fd = new FormData();
 						fd.set("id", c().id);
-						await removeCampaign(fd);
+						void removeCampaign(fd);
 					}}
 				>
 					Delete campaign
 				</button>
-			</div>
+			</summary>
 			<Show when={c().description}>
 				<p class="muted" style={{ "font-size": "13px", "margin": "6px 0 0" }}>{c().description}</p>
 			</Show>
 
-			<div style={{ "margin-top": "12px" }}>
+			<TemplatesPanel campaign={{ id: c().id, templates: c().templates, companies: c().companies }} />
+
+			<div style={{ "margin-top": "16px" }}>
+				<h3 style={{ margin: "0 0 4px", "font-size": "14px", "font-weight": "600" }}>Companies</h3>
 				<For each={c().companies}>
 					{(company) => <CampaignRow company={company} />}
 				</For>
@@ -175,7 +385,7 @@ function Campaign(props: { campaign: { id: string; name: string; description: st
 					</div>
 				</details>
 			</Show>
-		</div>
+		</details>
 	);
 }
 
