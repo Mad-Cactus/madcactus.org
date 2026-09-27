@@ -15,6 +15,7 @@ import { brainCtaAppendix } from "~/lib/publish-core";
 import { randomKey, shortLinkBase } from "~/lib/short-links";
 import { trackText, listTextVersions, getTextVersionDiff } from "~/lib/crdt-text-db";
 import { UUID_RE } from "~/lib/uuid";
+import { syncDocMentions } from "~/lib/entity-links";
 
 // ── Queries ────────────────────────────────────────────────────────
 
@@ -51,10 +52,11 @@ export async function createDoc(
 				.set({ loroSnapshot: tracked.loroSnapshot, version: tracked.version })
 				.where(eq(docs.id, row.id))
 				.returning();
-			return updated;
 		}
 	}
-	return row;
+	// mentions → entity_links backlinks (one funnel: creation counts as a save)
+	await syncDocMentions(row.id, markdown).catch(() => {});
+	return getDoc(row.id) as Promise<Doc>;
 }
 
 export async function listDocs(): Promise<Doc[]> {
@@ -100,6 +102,11 @@ export async function saveDocMarkdown(
 			...(chatUuid ? { chatUuid } : {}),
 		})
 		.where(eq(docs.id, id));
+	// mentions → entity_links backlinks. THE single server-side funnel for doc
+	// saves: editor autosave (PUT /api/docs/:id), ⌘S, and agent write_doc all
+	// land here, so backlinks exist without any agent effort. Never blocks the
+	// save on a link-sync failure.
+	await syncDocMentions(id, markdown).catch(() => {});
 	return tracked.version;
 }
 

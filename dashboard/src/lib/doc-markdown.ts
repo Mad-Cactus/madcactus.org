@@ -13,6 +13,7 @@ import {
 	TEXT_FORMAT_TRANSFORMERS,
 	TEXT_MATCH_TRANSFORMERS,
 	type ElementTransformer,
+	type TextMatchTransformer,
 } from "@lexical/markdown";
 import { HeadingNode, QuoteNode } from "@lexical/rich-text";
 import { ListNode, ListItemNode, $isListItemNode } from "@lexical/list";
@@ -84,6 +85,108 @@ export class PageBreakNode extends DecoratorNode<null> {
 }
 const $createPageBreakNode = () => new PageBreakNode();
 export const $isPageBreakNode = (node: LexicalNode | null | undefined): node is PageBreakNode => node instanceof PageBreakNode;
+
+// Component mention: `@[kind:id]` in the markdown becomes this inline chip —
+// a REFERENCE, not a copy. Label/status display live from the component
+// registry (refreshed on doc open + edits via /api/components/card); the
+// markdown only ever stores kind:id, so renames/status changes propagate to
+// every mention. kind/id round-trip exactly; the label is display-only.
+export type SerializedMentionNode = SerializedElementNode & {
+	kind: string;
+	id: string;
+	label: string;
+	status: string | null;
+	missing: boolean;
+};
+
+export class MentionNode extends DecoratorNode<null> {
+	__kind: string;
+	__id: string;
+	__label: string;
+	__status: string | null;
+	__missing: boolean;
+
+	static getType(): string {
+		return "mention";
+	}
+	static clone(node: MentionNode): MentionNode {
+		return new MentionNode(node.__kind, node.__id, node.__label, node.__status, node.__missing, node.__key);
+	}
+	static importJSON(json: SerializedMentionNode): MentionNode {
+		return $createMentionNode(json.kind, json.id, json.label, json.status, json.missing);
+	}
+	constructor(kind: string, id: string, label?: string, status: string | null = null, missing = false, key?: string) {
+		super(key);
+		this.__kind = kind;
+		this.__id = id;
+		this.__label = label ?? `${kind}:${id}`;
+		this.__status = status;
+		this.__missing = missing;
+	}
+	createDOM(_config: EditorConfig): HTMLElement {
+		const span = document.createElement("span");
+		span.className = this.__missing ? "doc-mention doc-mention-deleted" : "doc-mention";
+		span.setAttribute("data-lexical-decorator", "true");
+		span.setAttribute("contenteditable", "false");
+		span.setAttribute("data-kind", this.__kind);
+		span.setAttribute("data-id", this.__id);
+		if (this.__status) span.setAttribute("data-status", this.__status);
+		span.textContent = `@${this.__label}`;
+		return span;
+	}
+	updateDOM(): false {
+		return false;
+	}
+	decorate(): null {
+		return null;
+	}
+	isInline(): boolean {
+		return true;
+	}
+	// one Backspace deletes the whole chip; arrows select it first
+	isIsolated(): boolean {
+		return true;
+	}
+	isKeyboardSelectable(): boolean {
+		return true;
+	}
+	getTextContent(): string {
+		return `@${this.__label}`;
+	}
+	exportJSON(): SerializedMentionNode {
+		return {
+			children: [],
+			direction: null,
+			format: "",
+			indent: 0,
+			type: "mention",
+			version: 1,
+			kind: this.__kind,
+			id: this.__id,
+			label: this.__label,
+			status: this.__status,
+			missing: this.__missing,
+		};
+	}
+}
+const $createMentionNode = (kind: string, id: string, label?: string, status: string | null = null, missing = false) =>
+	new MentionNode(kind, id, label, status, missing);
+export const $isMentionNode = (node: LexicalNode | null | undefined): node is MentionNode => node instanceof MentionNode;
+
+export const MENTION_SYNTAX_RE = /@\[([a-z0-9-]+):([a-z0-9-]+)\]/i;
+
+const MENTION: TextMatchTransformer = {
+	type: "text-match",
+	dependencies: [MentionNode],
+	export: (node) => ($isMentionNode(node) ? `@[${node.__kind}:${node.__id}]` : null),
+	importRegExp: /@\[([a-z0-9-]+):([a-z0-9-]+)\]/,
+	regExp: MENTION_SYNTAX_RE,
+	replace: (textNode, match) => {
+		// match[0] is the full @[kind:id]; label stays unknown until a card
+		// fetch resolves it (chip renders kind:id until then)
+		textNode.replace($createMentionNode(match[1], match[2]));
+	},
+};
 
 /** True when a collapsed selection sits at the very start of an empty list
  *  item (no text, or whitespace/line-breaks only) — the state where Backspace
@@ -252,6 +355,7 @@ export const DOC_NODES = [
 	TableRowNode,
 	TableCellNode,
 	PageBreakNode,
+	MentionNode,
 ];
 
 
@@ -265,6 +369,7 @@ export const DOC_TRANSFORMERS = [
 	TABLE,
 	PAGEBREAK,
 	BLANK,
+	MENTION,
 	...MULTILINE_ELEMENT_TRANSFORMERS,
 	...TEXT_FORMAT_TRANSFORMERS,
 	...TEXT_MATCH_TRANSFORMERS,

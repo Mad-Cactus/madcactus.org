@@ -7,8 +7,8 @@
 // mirroring macro's selection toolbar.
 // Node registry + markdown transformers (GFM tables, page breaks) live in
 // ~/lib/doc-markdown so they stay testable headless.
-import { onCleanup, onMount, createEffect, createSignal, Show } from "solid-js";
-import { DOC_NODES, DOC_TRANSFORMERS, $isAtEmptyListItemStart } from "~/lib/doc-markdown";
+import { onCleanup, onMount, createEffect, createSignal, Show, For } from "solid-js";
+import { DOC_NODES, DOC_TRANSFORMERS, $isAtEmptyListItemStart, MentionNode, $isMentionNode } from "~/lib/doc-markdown";
 import { TableCellNode, TableRowNode, TableNode, $isTableNode, $createTableNode, $isTableCellNode, $isTableRowNode } from "@lexical/table";
 import type { LexicalNode } from "lexical";
 import { $convertFromMarkdownString, $convertToMarkdownString, registerMarkdownShortcuts } from "@lexical/markdown";
@@ -27,6 +27,9 @@ import {
 	COMMAND_PRIORITY_HIGH,
 	COMMAND_PRIORITY_LOW,
 	COMMAND_PRIORITY_EDITOR,
+	$getNodeByKey,
+	$isElementNode,
+	$isTextNode,
 	type RangeSelection,
 	type TextFormatType,
 	$getSelection,
@@ -53,6 +56,20 @@ type ToolbarApi = {
 	bulletList: () => void;
 	link: () => void;
 };
+
+/** minimal card shape the picker/hover UI needs (from /api/components/card) */
+type MentionCard = {
+	kind: string;
+	id: string;
+	title: string;
+	subtitle: string | null;
+	statusLabel: string | null;
+	adminUrl: string | null;
+	publicUrl: string | null;
+	updatedAt: string | null;
+	deleted: boolean;
+};
+type ComponentSearchHit = { kind: string; id: string; title: string; subtitle: string | null; status: string | null; statusLabel: string | null };
 
 /** What the pager (DocEditor.runLayout) can ask the editor to do. */
 export type DocEditorApi = {
@@ -85,6 +102,38 @@ export default function LexicalDocEditor(props: {
 	const [tbShown, setTbShown] = createSignal(false);
 	const [tbPos, setTbPos] = createSignal({ x: 0, y: 0 });
 	const [tbFmt, setTbFmt] = createSignal({ bold: false, italic: false, strike: false, code: false, h2: false, quote: false });
+	// ── @-mention picker + hover cards (registry-backed) ─────────────
+	const [picker, setPicker] = createSignal<{
+		triggerId: number;
+		nodeKey: string;
+		/** offset of the "@" inside its text node */
+		at: number;
+		/** caret offset inside the same text node (query end) */
+		caret: number;
+		q: string;
+		x: number;
+		y: number;
+	} | null>(null);
+	const [pickerHits, setPickerHits] = createSignal<ComponentSearchHit[]>([]);
+	const [pickerIdx, setPickerIdx] = createSignal(0);
+	const [hover, setHover] = createSignal<{ x: number; y: number; card: MentionCard | null } | null>(null);
+	const cardCache = new Map<string, Promise<MentionCard | null>>();
+	const cardFor = (kind: string, id: string): Promise<MentionCard | null> => {
+		const key = `${kind}:${id}`;
+		if (!cardCache.has(key)) {
+			cardCache.set(
+				key,
+				fetch(`/api/components/card?kind=${encodeURIComponent(kind)}&id=${encodeURIComponent(id)}`)
+					.then((r) => (r.ok ? r.json() : { card: null }))
+					.then((d) => (d.card as MentionCard | null) ?? null)
+					.catch(() => null),
+			);
+		}
+		return cardCache.get(key)!;
+	};
+	let triggerSeq = 0;
+	// set inside onMount (needs the editor closure); the dropdown calls this
+	let insertMentionFn: ((hit: ComponentSearchHit) => void) | undefined;
 
 	onMount(() => {
 		const ed = createEditor({
@@ -245,11 +294,189 @@ export default function LexicalDocEditor(props: {
 			});
 		});
 
+		// ── @-mention picker ─────────────────────────────────────────
+		// typing "@query" before the caret opens a registry-backed typeahead;
+		// Enter inserts a MentionNode chip. Detection runs on every update
+		// (cheap text-node read); the fetch is debounced + race-guarded.
+		const closePicker = () => {
+			setPicker(null);
+			setPickerHits([]);
+		};
+		const detectPicker = () => {
+			if (props.readOnly) return;
+			let next: Parameters<typeof setPicker>[0] = null;
+			ed.read(() => {
+				const s = $getSelection();
+				if (!$isRangeSelection(s) || !s.isCollapsed()) return;
+				const n = s.anchor.getNode();
+				if (!$isTextNode(n)) return;
+				const textBefore = n.getTextContent().slice(0, s.anchor.offset);
+				const m = /(^|[^\w@])@([\w:.-]*)$/.exec(textBefore);
+				if (!m) return;
+				const dom = window.getSelection();
+				const r = dom && dom.rangeCount > 0 ? dom.getRangeAt(0).getBoundingClientRect() : null;
+				next = {
+					triggerId: triggerSeq,
+					nodeKey: n.getKey(),
+					at: s.anchor.offset - m[2].length - 1,
+					caret: s.anchor.offset,
+					q: m[2],
+					x: Math.max(180, Math.min(r?.left ?? 200, window.innerWidth - 200)),
+					y: Math.min((r?.bottom ?? 200) + 6, window.innerHeight - 40),
+				};
+			});
+			if (next) setPicker(next);
+			else closePicker();
+		};
+		let pickerFetchTimer: ReturnType<typeof setTimeout> | undefined;
+		createEffect(() => {
+			const p = picker();
+			if (!p) return;
+			clearTimeout(pickerFetchTimer);
+			pickerFetchTimer = setTimeout(async () => {
+				if (!p.q) return;
+				try {
+					const r = await fetch(`/api/components/search?q=${encodeURIComponent(p.q)}`);
+					if (!r.ok) return;
+					const d = (await r.json()) as { hits?: ComponentSearchHit[] };
+					// stale-guard: only the still-open trigger may apply results
+					if (picker()?.triggerId === p.triggerId) {
+						setPickerHits(d.hits ?? []);
+						setPickerIdx(0);
+					}
+				} catch {
+					/* offline/search error — picker just stays empty */
+				}
+			}, 180);
+		});
+		/** insert a chip, splicing the "@query" trigger text out of its node */
+		const insertMention = (hit: ComponentSearchHit) => {
+			const p = picker();
+			if (!p) return;
+			closePicker();
+			ed.update(() => {
+				const node = $getNodeByKey(p.nodeKey);
+				if (!$isTextNode(node)) return;
+				const text = node.getTextContent();
+				// the caret may have moved since open — splice by remembered offsets
+				const before = text.slice(0, Math.min(p.at, text.length));
+				const after = text.slice(Math.max(p.caret, p.at));
+				const mention = new MentionNode(hit.kind, hit.id, hit.title, hit.statusLabel, false);
+				const parts: LexicalNode[] = [];
+				if (before) parts.push($createTextNode(before));
+				parts.push(mention);
+				if (after) parts.push($createTextNode(after));
+				node.replace(parts[0], true);
+				let cursor = parts[0];
+				for (const part of parts.slice(1)) {
+					cursor.insertAfter(part);
+					cursor = part;
+				}
+				const last = parts[parts.length - 1];
+				if ($isTextNode(last)) last.selectEnd();
+				else mention.selectNext();
+			});
+		};
+		insertMentionFn = insertMention;
+		const offPickerKeys = ed.registerCommand(
+			KEY_DOWN_COMMAND,
+			(event) => {
+				const p = picker();
+				if (!p) return false;
+				const hits = pickerHits();
+				if (event.key === "Escape") {
+					event.preventDefault();
+					closePicker();
+					return true;
+				}
+				if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+					event.preventDefault();
+					setPickerIdx((i) => (hits.length ? (i + (event.key === "ArrowDown" ? 1 : hits.length - 1)) % hits.length : 0));
+					return true;
+				}
+				if ((event.key === "Enter" || event.key === "Tab") && hits.length) {
+					event.preventDefault();
+					insertMention(hits[Math.min(pickerIdx(), hits.length - 1)]);
+					return true;
+				}
+				return false;
+			},
+			COMMAND_PRIORITY_HIGH,
+		);
+
+		// live chip labels: unresolved mentions fetch their card and re-render
+		// with the registry's current title/status (markdown never changes —
+		// export stores only kind:id)
+		const refreshMentions = () => {
+			const stale: { key: string; kind: string; id: string }[] = [];
+			ed.read(() => {
+				const walk = (n: LexicalNode) => {
+					if ($isMentionNode(n)) stale.push({ key: n.getKey(), kind: n.__kind, id: n.__id });
+					else if ($isElementNode(n)) n.getChildren().forEach(walk);
+				};
+				walk($getRoot());
+			});
+			if (!stale.length) return;
+			Promise.all(stale.map(async (s) => ({ ...s, card: await cardFor(s.kind, s.id) }))).then((items) => {
+				ed.update(() => {
+					for (const it of items) {
+						const node = $getNodeByKey(it.key);
+						if (!$isMentionNode(node)) continue;
+						const label = it.card?.title ?? `${it.kind}:${it.id}`;
+						const status = it.card?.statusLabel ?? null;
+						const missing = !it.card || it.card.deleted;
+						if (node.__label !== label || node.__status !== status || node.__missing !== missing) {
+							node.replace(new MentionNode(it.kind, it.id, label, status, missing), true);
+						}
+					}
+				});
+			});
+		};
+		let mentionTimer: ReturnType<typeof setTimeout> | undefined;
+		const scheduleMentionRefresh = () => {
+			clearTimeout(mentionTimer);
+			mentionTimer = setTimeout(refreshMentions, 500);
+		};
+
+		// hover cards: delegated mouseover on chips — fetch once per ref (cache),
+		// popover shows title/status/subtitle/updated + admin link
+		let hoverTimer: ReturnType<typeof setTimeout> | undefined;
+		let hoverHideTimer: ReturnType<typeof setTimeout> | undefined;
+		const showPopoverFor = (chip: HTMLElement) => {
+			const kind = chip.getAttribute("data-kind") ?? "";
+			const id = chip.getAttribute("data-id") ?? "";
+			if (!kind || !id) return;
+			const r = chip.getBoundingClientRect();
+			setHover({ x: Math.max(180, Math.min(r.left, window.innerWidth - 200)), y: r.bottom + 6, card: null });
+			cardFor(kind, id).then((card) => {
+				// still hovering the same chip? then land the card
+				const cur = hover();
+				if (cur) setHover({ ...cur, card });
+			});
+		};
+		const onHostOver = (e: MouseEvent) => {
+			const chip = (e.target as HTMLElement).closest?.(".doc-mention") as HTMLElement | null;
+			clearTimeout(hoverHideTimer);
+			if (!chip) return;
+			clearTimeout(hoverTimer);
+			hoverTimer = setTimeout(() => showPopoverFor(chip), 250);
+		};
+		const onHostOut = (e: MouseEvent) => {
+			const chip = (e.target as HTMLElement).closest?.(".doc-mention") as HTMLElement | null;
+			if (!chip) return;
+			clearTimeout(hoverTimer);
+			hoverHideTimer = setTimeout(() => setHover(null), 150);
+		};
+		host.addEventListener("mouseover", onHostOver);
+		host.addEventListener("mouseout", onHostOut);
+
 		// Autosave ~1.2s after typing stops.
 		let timer: ReturnType<typeof setTimeout> | undefined;
 		const offUpdate = ed.registerUpdateListener(() => {
 			syncToolbar();
 			scheduleLintPaint();
+			detectPicker();
+			scheduleMentionRefresh();
 			props.onLayoutDirty?.();
 			clearTimeout(timer);
 			timer = setTimeout(() => props.onMarkdownChange(currentMd()), 1200);
@@ -293,7 +520,11 @@ export default function LexicalDocEditor(props: {
 			},
 			COMMAND_PRIORITY_LOW,
 		);
-		const hideOnBlur = () => setTbShown(false);
+		const hideOnBlur = () => {
+			setTbShown(false);
+			closePicker();
+			setHover(null);
+		};
 		host.addEventListener("blur", hideOnBlur);
 		host.addEventListener("scroll", hideOnBlur, true);
 
@@ -519,14 +750,21 @@ export default function LexicalDocEditor(props: {
 		onCleanup(() => {
 			clearTimeout(timer);
 			clearTimeout(lintTimer);
+			clearTimeout(mentionTimer);
+			clearTimeout(pickerFetchTimer);
+			clearTimeout(hoverTimer);
+			clearTimeout(hoverHideTimer);
 			ro.disconnect();
 			window.removeEventListener("resize", onWinResize);
 			offUpdate();
 			offKeys();
 			offSel();
 			offBeforeInput();
+			offPickerKeys();
 			host.removeEventListener("blur", hideOnBlur);
 			host.removeEventListener("scroll", hideOnBlur, true);
+			host.removeEventListener("mouseover", onHostOver);
+			host.removeEventListener("mouseout", onHostOut);
 			ed.setRootElement(null);
 		});
 	});
@@ -550,7 +788,7 @@ export default function LexicalDocEditor(props: {
 				data-gramm_editor="false"
 			/>
 			</div>
-			<Show when={!props.readOnly}>
+				<Show when={!props.readOnly}>
 				<div
 					class="doc-toolbar"
 					style={{ display: tbShown() ? "flex" : "none", top: `${tbPos().y}px`, left: `${tbPos().x}px` }}
@@ -582,6 +820,58 @@ export default function LexicalDocEditor(props: {
 						↗
 					</button>
 				</div>
+			</Show>
+			{/* @-mention typeahead — registry-backed (kind label · title · status) */}
+			<Show when={picker() && pickerHits().length}>
+				<div class="mention-picker" style={{ top: `${picker()!.y}px`, left: `${picker()!.x}px` }}>
+					<For each={pickerHits()}>
+						{(hit, i) => (
+							<button
+								type="button"
+								classList={{ selected: i() === pickerIdx() }}
+								onMouseDown={(e) => {
+									e.preventDefault(); // keep editor focus/selection
+									insertMentionFn?.(hit);
+							}}
+							>
+								<span class="mention-picker-kind">{hit.kind}</span>
+								<span class="mention-picker-title">{hit.title}</span>
+								<Show when={hit.statusLabel}>
+									<span class="mention-picker-status">{hit.statusLabel}</span>
+								</Show>
+							</button>
+						)}
+					</For>
+				</div>
+			</Show>
+			{/* hover card — live from /api/components/card */}
+			<Show when={hover()}>
+				{(h) => (
+					<div class="mention-popover" style={{ top: `${h().y}px`, left: `${h().x}px` }}>
+						<Show when={h().card} fallback={<div class="mention-popover-loading">…</div>}>
+							{(card) => (
+								<>
+									<div class="mention-popover-head">
+										<span class="mention-popover-kind">{card().kind}</span>
+										<Show when={card().deleted} fallback={<Show when={card().statusLabel}><span class="mention-popover-status">{card()!.statusLabel}</span></Show>}>
+											<span class="mention-popover-status mention-popover-deleted">deleted</span>
+										</Show>
+									</div>
+									<div class="mention-popover-title">{card().deleted ? `${card().kind}:${card().id.slice(0, 8)}…` : card().title}</div>
+									<Show when={card().subtitle}>
+										<div class="mention-popover-subtitle">{card()!.subtitle}</div>
+									</Show>
+									<div class="mention-popover-meta">
+										<Show when={card().updatedAt}>{new Date(card()!.updatedAt!).toLocaleDateString()}</Show>
+										<Show when={card().adminUrl}>
+											<a href={card()!.adminUrl!} target="_blank" rel="noreferrer">open ↗</a>
+										</Show>
+									</div>
+								</>
+							)}
+						</Show>
+					</div>
+				)}
 			</Show>
 		</>
 	);
