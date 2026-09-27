@@ -98,6 +98,9 @@ if [[ "${ROWCOUNT// /}" -gt 0 ]]; then
 		if ! grep -qx "$v" <<<"$APPLIED"; then
 			echo "→ migration: $(basename "$f")"
 			sql -v ON_ERROR_STOP=1 -f - <"$f" || { echo "migration failed: $f"; exit 1; }
+			# psql doesn't record the version — without this, every run re-applies the
+			# same pending files and dies on the first non-idempotent statement.
+			sql -c "insert into supabase_migrations.schema_migrations (version) values ('$v') on conflict do nothing" >/dev/null
 		fi
 	done
 	echo "→ schema = prod snapshot + pending migrations"

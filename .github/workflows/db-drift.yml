@@ -48,18 +48,24 @@ jobs:
           # Failure = red: an unverifiable check must not pass. The old version
           # swallowed connection errors and grepped raw JSON, so a dead check
           # reported "Prod is up to date" while a migration sat unapplied.
-          out=$(supabase migration list --output-format json </dev/null)
+          # Push-event runs race the Supabase auto-apply (it lags merge by
+          # minutes) — poll up to 5 min before calling it broken.
           # Only migrations already on main count: a PR's own new migration is
           # EXPECTED to be pending (auto-apply runs after merge). main-ahead-of-
           # prod = auto-apply broken = red.
           git fetch --quiet --depth=1 origin main
           main_tree=$(git ls-tree -r --name-only origin/main -- supabase/migrations/ | grep '\.sql$')
-          pending_versions=$(echo "$out" | jq -r '.migrations[] | select(.local != "" and .remote == "") | .local')
-          pending=""
-          for v in $pending_versions; do
-            if echo "$main_tree" | grep -q "/${v}_"; then
-              pending="$pending $v"
-            fi
+          for i in $(seq 1 10); do
+            out=$(supabase migration list --output-format json </dev/null)
+            pending=""
+            for v in $(echo "$out" | jq -r '.migrations[] | select(.local != "" and .remote == "") | .local'); do
+              if echo "$main_tree" | grep -q "/${v}_"; then
+                pending="$pending $v"
+              fi
+            done
+            [ -z "$pending" ] && break
+            echo "main migrations still pending remotely (attempt $i/10):$pending — waiting for Supabase auto-apply"
+            sleep 30
           done
           if [ -n "$pending" ]; then
             echo "::error::Migrations on main not applied to prod (auto-apply broken?):$pending"
