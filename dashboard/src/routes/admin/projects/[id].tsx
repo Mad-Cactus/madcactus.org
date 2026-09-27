@@ -1,6 +1,7 @@
 import { Title } from "@solidjs/meta";
 import { A, useNavigate, useParams, createAsync, useAction } from "@solidjs/router";
 import { For, Show, Suspense, createSignal } from "solid-js";
+import CreateDialog from "~/components/CreateDialog";
 import Layout from "~/components/Layout";
 import ProjectDocuments from "~/components/ProjectDocuments";
 import ConfirmButton from "~/components/ConfirmButton";
@@ -11,7 +12,7 @@ import {
 	getProjectQuery,
 	getUserQuery,
 } from "~/lib/queries";
-import { getDeliverablesQuery, deleteDeliverableAction } from "~/lib/admin-queries";
+import { createDeliverableAction, getDeliverablesQuery, deleteDeliverableAction } from "~/lib/admin-queries";
 import type { DeliverableStatus } from "~/db/schema";
 
 const STATUS_OPTIONS: DeliverableStatus[] = [
@@ -40,11 +41,11 @@ export default function ProjectDetail() {
 	const createEntry = useAction(createTimeEntryAction);
 	const deleteEntry = useAction(deleteTimeEntryAction);
 	const deleteDeliverable = useAction(deleteDeliverableAction);
+	const createDeliverable = useAction(createDeliverableAction);
 	const [error, setError] = createSignal("");
 	// Guard + in-flight indicator: a second click while the action runs must
 	// not submit a duplicate entry.
 	const [logging, setLogging] = createSignal(false);
-	const [showDeliverableForm, setShowDeliverableForm] = createSignal(false);
 	const [updateDeliverableId, setUpdateDeliverableId] = createSignal<string | null>(null);
 
 	const today = new Date().toISOString().slice(0, 10);
@@ -94,28 +95,26 @@ export default function ProjectDetail() {
 							{/* Deliverables — client-visible */}
 							<div style={{ display: "flex", "justify-content": "space-between", "align-items": "center", "margin-bottom": "16px" }}>
 								<div class="section-heading" style={{ margin: "0" }}>Deliverables</div>
-								<button class="btn btn-sm" onClick={() => setShowDeliverableForm(!showDeliverableForm())}>
-									{showDeliverableForm() ? "Cancel" : "Add Deliverable"}
-								</button>
+								<CreateDialog
+									label="Add Deliverable"
+									title="Add Deliverable"
+									submitLabel="Create Deliverable"
+									triggerClass="btn btn-sm btn-primary"
+									onSubmit={(fd) => {
+										fd.set("project_id", p().id);
+										return createDeliverable(fd) as Promise<{ error?: string; success?: string }>;
+									}}
+								>
+									<div class="form-group">
+										<label for="delv_title">Title</label>
+										<input type="text" id="delv_title" name="title" required placeholder="Discovery & Requirements" />
+									</div>
+									<div class="form-group">
+										<label for="delv_desc">Description</label>
+										<textarea id="delv_desc" name="description" rows={2} placeholder="What does this deliverable include?" />
+									</div>
+								</CreateDialog>
 							</div>
-
-							<Show when={showDeliverableForm()}>
-								<div class="card" style={{ "margin-bottom": "16px" }}>
-									<form method="post" action="/admin/projects/create-deliverable">
-										<input type="hidden" name="project_id" value={p().id} />
-										<input type="hidden" name="_referer" value={`/admin/projects/${params.id}`} />
-										<div class="form-group">
-											<label for="delv_title">Title</label>
-											<input type="text" id="delv_title" name="title" required placeholder="Discovery & Requirements" />
-										</div>
-										<div class="form-group">
-											<label for="delv_desc">Description</label>
-											<textarea id="delv_desc" name="description" rows={2} placeholder="What does this deliverable include?" />
-										</div>
-										<button type="submit" class="btn btn-primary">Create Deliverable</button>
-									</form>
-								</div>
-							</Show>
 
 							<Suspense fallback={<p class="muted">Loading…</p>}>
 								<Show when={deliverables()} fallback={<p class="muted">Loading…</p>}>

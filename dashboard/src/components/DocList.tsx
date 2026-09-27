@@ -1,5 +1,6 @@
-import { A, createAsync, useAction } from "@solidjs/router";
+import { A, createAsync, useAction, useNavigate } from "@solidjs/router";
 import { For, Show, Suspense, createSignal } from "solid-js";
+import CreateDialog from "~/components/CreateDialog";
 import { getDocsQuery, createDocAction, getIssueStatsQuery, addIssueLearningAction } from "~/lib/docs-queries";
 
 /** Shared list for the three doc tabs — same table, filtered by kind. */
@@ -12,40 +13,37 @@ export default function DocList(props: {
 	const docs = createAsync(() => getDocsQuery(), { deferStream: true });
 	const stats = createAsync(() => getIssueStatsQuery(), { deferStream: true });
 	const create = useAction(createDocAction);
-	const [creating, setCreating] = createSignal(false);
+	const navigate = useNavigate();
 	const [genre, setGenre] = createSignal("");
 
 	return (
 		<>
 			<div style={{ display: "flex", "align-items": "baseline", gap: "16px" }}>
 				<h1 class="page-title">{props.title}</h1>
-				<button type="button" class="btn btn-primary btn-sm" onClick={() => setCreating((c) => !c)}>
-					{creating() ? "Cancel" : "New"}
-				</button>
-			</div>
-			<p class="page-subtitle">{props.subtitle}</p>
-
-			<Show when={creating()}>
-				<form
-					style={{ display: "flex", gap: "8px", "align-items": "center", "margin-bottom": "14px" }}
-					onSubmit={(e) => {
-						e.preventDefault();
-						const fd = new FormData(e.currentTarget);
-						create(fd);
+				<CreateDialog
+					label="New"
+					title={props.title === "Docs" ? "New doc" : `New ${props.title.replace(/s$/, "").toLowerCase()}`}
+					submitLabel="Create"
+					triggerClass="btn btn-primary btn-sm"
+					onSubmit={async (fd) => {
+						const res = (await create(fd)) as { error?: string; success?: string; id?: string; kind?: string | null };
+						if (!res.error && res.id) {
+							const base = res.kind === "post" ? "/admin/posts" : res.kind === "newsletter" ? "/admin/newsletters" : "/admin/docs";
+							navigate(`${base}/${res.id}`);
+						}
+						return res;
 					}}
 				>
-					<input name="title" placeholder={props.createPlaceholder} style={{ width: "260px" }} autofocus />
-					{/* genre is freeform (the voice engine learns new ones) — plain input
-					    plus tap-to-fill chips. The native <datalist> popup rendered
-					    detached from the input on macOS, so it's gone. */}
-					<div>
-						<input
-							name="genre"
-							placeholder="genre (optional)"
-							style={{ width: "200px" }}
-							value={genre()}
-							onInput={(e) => setGenre(e.currentTarget.value)}
-						/>
+					<div class="form-group">
+						<label for="doc_title">Title</label>
+						<input id="doc_title" name="title" placeholder={props.createPlaceholder} autofocus />
+					</div>
+					<div class="form-group">
+						<label for="doc_genre">Genre (optional)</label>
+						{/* genre is freeform (the voice engine learns new ones) — plain input
+						    plus tap-to-fill chips. The native <datalist> popup rendered
+						    detached from the input on macOS, so it's gone. */}
+						<input id="doc_genre" name="genre" value={genre()} onInput={(e) => setGenre(e.currentTarget.value)} />
 						<div style={{ display: "flex", gap: "6px", "margin-top": "6px" }}>
 							<For each={["marketing", "informational", "casual"]}>
 								{(g) => (
@@ -62,9 +60,9 @@ export default function DocList(props: {
 						</div>
 					</div>
 					<input type="hidden" name="kind" value={props.kind ?? ""} />
-					<button type="submit" class="btn btn-sm">Create</button>
-				</form>
-			</Show>
+				</CreateDialog>
+			</div>
+			<p class="page-subtitle">{props.subtitle}</p>
 
 			<Suspense fallback={<div class="muted">Loading…</div>}>
 				<Show

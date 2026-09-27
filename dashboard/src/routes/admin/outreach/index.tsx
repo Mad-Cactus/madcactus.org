@@ -1,6 +1,7 @@
 import { Title } from "@solidjs/meta";
 import { createAsync, useAction, useNavigate } from "@solidjs/router";
 import { For, Show, Suspense, createSignal, createMemo } from "solid-js";
+import CreateDialog from "~/components/CreateDialog";
 import Layout from "~/components/Layout";
 import { getUserQuery } from "~/lib/queries";
 import {
@@ -828,57 +829,65 @@ export default function AdminOutreach() {
 	const user = createAsync(() => getUserQuery(), { deferStream: true });
 	const createProspect = useAction(createOutreachAction);
 
-	const [error, setError] = createSignal("");
-	const [message, setMessage] = createSignal("");
-
-	async function handleCreate(e: Event) {
-		e.preventDefault();
-		setError("");
-		setMessage("");
-		const res = (await createProspect(withInstantIso(new FormData(e.target as HTMLFormElement)))) as { error?: string; success?: string };
-		if (res.error) {
-			setError(res.error);
-			return;
-		}
-		setMessage(res.success ?? "Added.");
-		(e.target as HTMLFormElement).reset();
-	}
-
 	return (
 		<Layout user={user()}>
 			<Title>Outreach — Mad Cactus</Title>
-			<h1 class="page-title">Outreach Pipeline</h1>
-			<p class="page-subtitle">Drag cards between stages. Manual follow-ups for company-brain outreach — no email is sent from here.</p>
-
-			<details style={{ "margin-bottom": "24px" }}>
-				<summary style={{ cursor: "pointer", "font-weight": "600" }}>Add prospect</summary>
-				<form onSubmit={handleCreate} style={{ display: "grid", gap: "8px", "max-width": "640px", "margin-top": "12px" }}>
-					<div style={{ display: "flex", gap: "8px", "flex-wrap": "wrap" }}>
-						<input type="text" name="company" placeholder="Company *" required />
-						<input type="text" name="contact_name" placeholder="Contact name" />
-						<input type="email" name="email" placeholder="Email" spellcheck={false} />
+			<div style={{ display: "flex", "justify-content": "space-between", "align-items": "center", "gap": "16px", "margin-bottom": "32px" }}>
+				<div>
+					<h1 class="page-title">Outreach Pipeline</h1>
+					<p class="page-subtitle" style={{ "margin-bottom": "0" }}>
+						Drag cards between stages. Manual follow-ups for company-brain outreach — no email is sent from here.
+					</p>
+				</div>
+				<CreateDialog
+					label="Add prospect"
+					title="Add prospect"
+					submitLabel="Add"
+					onSubmit={(fd) => createProspect(withInstantIso(fd)) as Promise<{ error?: string; success?: string }>}
+				>
+					<div class="form-row">
+						<div class="form-group">
+							<label for="prospect_company">Company *</label>
+							<input type="text" id="prospect_company" name="company" required />
+						</div>
+						<div class="form-group">
+							<label for="prospect_contact">Contact name</label>
+							<input type="text" id="prospect_contact" name="contact_name" />
+						</div>
 					</div>
-					<div style={{ display: "flex", gap: "8px", "flex-wrap": "wrap" }}>
-						<input type="url" name="brain_url" placeholder="Brain URL (https://…)" spellcheck={false} />
-						<input type="text" name="brain_activity_key" placeholder="Brain activity key" spellcheck={false} />
-						<input type="url" name="video_url" placeholder="Video URL" spellcheck={false} />
+					<div class="form-group">
+						<label for="prospect_email">Email</label>
+						<input type="email" id="prospect_email" name="email" spellcheck={false} />
 					</div>
-					<div style={{ display: "flex", gap: "8px", "flex-wrap": "wrap" }}>
-						<select name="stage">
-							<For each={OUTREACH_STAGES}>{(s) => <option value={s}>{stageLabel(s)}</option>}</For>
-						</select>
-						<input type="datetime-local" name="next_action_at" placeholder="First next action" />
-						<button type="submit" class="btn btn-primary">Add</button>
+					<div class="form-row">
+						<div class="form-group">
+							<label for="prospect_brain">Brain URL</label>
+							<input type="url" id="prospect_brain" name="brain_url" placeholder="https://…" spellcheck={false} />
+						</div>
+						<div class="form-group">
+							<label for="prospect_brain_key">Brain activity key</label>
+							<input type="text" id="prospect_brain_key" name="brain_activity_key" spellcheck={false} />
+						</div>
 					</div>
-					<span class="muted" style={{ "font-size": "12px" }}>First next action defaults to 5 days from now.</span>
-				</form>
-			</details>
-			<Show when={error()}>
-				<p class="login-error">{error()}</p>
-			</Show>
-			<Show when={message()}>
-				<p class="muted">{message()}</p>
-			</Show>
+					<div class="form-row">
+						<div class="form-group">
+							<label for="prospect_video">Video URL</label>
+							<input type="url" id="prospect_video" name="video_url" spellcheck={false} />
+						</div>
+						<div class="form-group">
+							<label for="prospect_stage">Stage</label>
+							<select id="prospect_stage" name="stage">
+								<For each={OUTREACH_STAGES}>{(s) => <option value={s}>{stageLabel(s)}</option>}</For>
+							</select>
+						</div>
+					</div>
+					<div class="form-group">
+						<label for="prospect_next">First next action</label>
+						<input type="datetime-local" id="prospect_next" name="next_action_at" />
+						<span class="muted" style={{ "font-size": "12px" }}>Defaults to 5 days from now.</span>
+					</div>
+				</CreateDialog>
+			</div>
 
 			<Board />
 		</Layout>

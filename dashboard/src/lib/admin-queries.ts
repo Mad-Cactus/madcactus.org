@@ -398,8 +398,8 @@ export const createDeliverableAction = action(async (formData: FormData) => {
 		description: String(formData.get("description") || ""),
 		sortOrder: nextOrder,
 	});
-	const ref = formData.get("_referer");
-	throw redirect(ref ? String(ref) : "/admin/projects");
+	await revalidate(getDeliverablesQuery.key);
+	return { success: "Deliverable created." };
 }, "createDeliverable");
 
 export const updateDeliverableStatusAction = action(
