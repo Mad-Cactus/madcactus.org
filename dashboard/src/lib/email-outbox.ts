@@ -208,6 +208,8 @@ export async function createEmailDraft(input: {
 	cc?: string;
 	bcc?: string;
 	context?: string;
+	campaignCompanyId?: string;
+	campaignStep?: number;
 }): Promise<{ outboxId: string }> {
 	"use server";
 	const [outbox] = await db
@@ -220,6 +222,8 @@ export async function createEmailDraft(input: {
 			subject: input.subject,
 			body: input.body,
 			chatUuid: input.chatUuid,
+			campaignCompanyId: input.campaignCompanyId,
+			campaignStep: input.campaignStep,
 		})
 		.returning();
 	// v1 of the draft's tracked history = the agent's original body
@@ -245,6 +249,8 @@ export async function updateEmailDraft(input: {
 	body: string;
 	cc?: string;
 	bcc?: string;
+	campaignCompanyId?: string;
+	campaignStep?: number;
 }): Promise<{ outboxId: string; updated: true; version: number | null } | { error: string }> {
 	"use server";
 	const [row] = await db.select().from(emailOutbox).where(eq(emailOutbox.id, input.outboxId));
@@ -257,6 +263,7 @@ export async function updateEmailDraft(input: {
 			subject: input.subject,
 			...(input.cc !== undefined ? { ccEmail: input.cc } : {}),
 			...(input.bcc !== undefined ? { bccEmail: input.bcc } : {}),
+			...(input.campaignCompanyId !== undefined ? { campaignCompanyId: input.campaignCompanyId, campaignStep: input.campaignStep } : {}),
 		})
 		.where(eq(emailOutbox.id, input.outboxId));
 	const version = await saveDraftBody(input.outboxId, input.body, "agent");

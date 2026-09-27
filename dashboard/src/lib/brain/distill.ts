@@ -23,7 +23,7 @@ import {
 	voicePatterns,
 } from "~/db/schema";
 import { chunkText, factHash, slugify } from "./core";
-import { syncEntities, syncPersons, syncProspects, detectLoops, backfillTimeline, recomputeWeight } from "./ingest";
+import { syncEntities, syncPersons, syncProspects, syncCampaigns, detectLoops, backfillTimeline, recomputeWeight } from "./ingest";
 import { embedPending } from "./embed";
 import { addVoicePatterns, clearVoiceLintCache } from "~/lib/voice-lint-db";
 import type { PatternCandidate } from "~/lib/voice-lint";
@@ -769,6 +769,7 @@ export async function runCycle(
 	out.entities = await syncEntities();
 	out.persons = await syncPersons();
 	out.prospects = await syncProspects();
+	out.campaigns = await syncCampaigns();
 	out.loops = await detectLoops();
 	out.timeline = await backfillTimeline();
 	if (!opts.skipLlm) {

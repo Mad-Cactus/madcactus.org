@@ -28,11 +28,14 @@ import type {
 	DeliverableStatus,
 	OutreachStage,
 	OutreachProspect,
+	CampaignTouch,
 } from "~/db/schema";
 import { generateApiKey, hashKey, keyPrefix } from "~/lib/crypto";
 import { normalizeBrainTools } from "~/lib/brain-activity";
 import { contactSuggestionsFor, latestThreadFor } from "~/lib/outreach-email";
 import { triggerSyncIfStale } from "~/lib/email-queries";
+import { campaignStats } from "~/lib/campaign-stats";
+import { lintVoiceText } from "~/lib/voice-lint-db";
 
 // ── Auth guard ────────────────────────────────────────────────────
 
@@ -954,12 +957,54 @@ export const getCampaignsQuery = query(async () => {
 			campaignId: outreachProspects.campaignId,
 		})
 		.from(outreachProspects);
+	// Gmail-grounded send/reply state per company — same computation as the
+	// campaign_stats MCP tool and the brain's campaign facts
+	const stats = await campaignStats();
+	const statsByCompany = new Map(stats.flatMap((s) => s.companies.map((c) => [c.id, c] as const)));
 	return rows.map((c) => ({
 		...c,
-		companies: cos.filter((x) => x.campaignId === c.id),
+		companies: cos
+			.filter((x) => x.campaignId === c.id)
+			.map((x) => ({ ...x, sendStats: statsByCompany.get(x.id) ?? null })),
 		prospects: linked.filter((p) => p.campaignId === c.id),
 	}));
 }, "admin-campaigns");
+
+export type CampaignTemplatesResult =
+	| { success: string }
+	| { error: string; violations?: { step: number; message: string }[] };
+
+/** Same write path as the MCP set_campaign_templates tool: every body is
+ *  voice-linted (surface=email) before persisting; any violation rejects the
+ *  whole save — no partial template state, nothing off-voice lands. */
+export const setCampaignTemplatesAction = action(async (formData: FormData): Promise<CampaignTemplatesResult> => {
+	"use server";
+	await requireAdmin();
+	const campaignId = String(formData.get("campaign_id") || "");
+	if (!campaignId) return { error: "Campaign id is required." };
+	const count = Number(formData.get("touch_count") || 0);
+	const touches: CampaignTouch[] = [];
+	for (let i = 0; i < count; i++) {
+		const step = Number(formData.get(`touch_${i}_step`) || 0);
+		const subject = String(formData.get(`touch_${i}_subject`) || "").trim();
+		const body = String(formData.get(`touch_${i}_body`) || "");
+		if (!subject && !body.trim()) continue; // blank block = removed touch
+		if (!Number.isInteger(step) || step < 1) return { error: `Touch ${i + 1}: step must be a positive whole number.` };
+		if (!subject || !body.trim()) return { error: `Touch ${step}: subject and body are required.` };
+		touches.push({ step, subject, body });
+	}
+	const violations: { step: number; message: string }[] = [];
+	for (const t of touches) {
+		const lint = await lintVoiceText(t.body, { surface: "email" });
+		for (const v of lint.violations) violations.push({ step: t.step, message: v.rule });
+	}
+	if (violations.length > 0) {
+		return { error: "Rejected — voice lint flagged this copy. Fix the flagged lines and save again.", violations };
+	}
+	await db.update(campaigns).set({ templates: touches }).where(eq(campaigns.id, campaignId));
+	await revalidate(getCampaignsQuery.key);
+	return { success: `Templates saved — ${touches.length} touch${touches.length === 1 ? "" : "es"}.` };
+}, "setCampaignTemplates");
 
 export const createCampaignAction = action(async (formData: FormData) => {
 	"use server";
