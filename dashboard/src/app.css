@@ -1413,6 +1413,42 @@ textarea.doc-title { resize: none; overflow: hidden; display: block; height: aut
 	pointer-events: auto;
 }
 
+/* ── Create dialog — shared button → modal → toast pattern (components/CreateDialog.tsx) ── */
+.modal {
+	border: 1px solid var(--gold-border);
+	border-left: 3px solid var(--gold);
+	background: var(--bg-card);
+	color: var(--text);
+	padding: 0;
+	width: min(560px, calc(100vw - 48px));
+	max-height: calc(100vh - 64px);
+	overflow-y: auto;
+}
+
+.modal::backdrop {
+	background: rgba(10, 10, 10, 0.4);
+}
+
+.modal-title {
+	font-family: var(--font-serif);
+	font-weight: 400;
+	font-size: 22px;
+	margin: 0;
+	padding: 20px 24px 0;
+}
+
+.modal-body {
+	padding: 16px 24px 24px;
+}
+
+.modal-footer {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+	padding: 14px 24px;
+	border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
 /* ── Toasts — global queue in src/lib/toast.ts, rendered by components/Toaster.tsx ── */
 .toaster {
 	position: fixed;

@@ -1,6 +1,7 @@
 import { Title } from "@solidjs/meta";
 import { A, createAsync, useAction, useParams, revalidate } from "@solidjs/router";
 import { For, Show, Suspense, createSignal } from "solid-js";
+import CreateDialog from "~/components/CreateDialog";
 import Layout from "~/components/Layout";
 import ProjectDocuments from "~/components/ProjectDocuments";
 import ConfirmButton from "~/components/ConfirmButton";
@@ -55,12 +56,9 @@ export default function CompanyDetail() {
 	const addInvoice = useAction(createInvoiceAction);
 	const saveAliases = useAction(updateCompanyAliasesAction);
 
-	const [showMemberForm, setShowMemberForm] = createSignal(false);
-	const [showLinkForm, setShowLinkForm] = createSignal(false);
 	const [showInvForm, setShowInvForm] = createSignal<string | null>(null);
 	const [error, setError] = createSignal("");
 	const [success, setSuccess] = createSignal("");
-	const [submitting, setSubmitting] = createSignal(false);
 
 	const referer = () => `/admin/companies/${companyId()}`;
 	const today = new Date().toISOString().slice(0, 10);
@@ -70,32 +68,6 @@ export default function CompanyDetail() {
 		(allMembers() ?? []).filter(
 			(m) => !(companyMembers() ?? []).some((cm) => cm.id === m.id),
 		);
-
-	async function handleCreateMember(e: Event) {
-		e.preventDefault();
-		setError("");
-		setSuccess("");
-		setSubmitting(true);
-		try {
-			const fd = new FormData(e.target as HTMLFormElement);
-			fd.set("company_id", companyId());
-			const result = await createMember(fd);
-			if (result?.error) {
-				setError(result.error);
-				return;
-			}
-			if (result?.success) {
-				setSuccess(result.success);
-				setShowMemberForm(false);
-				(e.target as HTMLFormElement).reset();
-				await revalidate(getCompanyMembersQuery.key);
-			}
-		} catch (err) {
-			setError(err instanceof Error ? err.message : "Something went wrong.");
-		} finally {
-			setSubmitting(false);
-		}
-	}
 
 	async function handleResendInvite(memberId: string, email: string) {
 		setError("");
@@ -109,13 +81,6 @@ export default function CompanyDetail() {
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Failed to resend invite.");
 		}
-	}
-
-	async function handleLink(e: Event) {
-		e.preventDefault();
-		const fd = new FormData(e.target as HTMLFormElement);
-		fd.set("company_id", companyId());
-		await linkMember(fd);
 	}
 
 	async function handleInvoice(e: Event, projectId: string) {
@@ -170,37 +135,40 @@ export default function CompanyDetail() {
 							<div style={{ display: "flex", "justify-content": "space-between", "align-items": "center", "margin-bottom": "16px" }}>
 								<div class="section-heading" style={{ margin: "0" }}>Members</div>
 								<div style={{ display: "flex", gap: "8px" }}>
-									<button class="btn btn-sm" onClick={() => setShowLinkForm(!showLinkForm())}>
-										Link Existing
-									</button>
-									<button class="btn btn-sm btn-primary" onClick={() => setShowMemberForm(!showMemberForm())}>
-										Add Member
-									</button>
-								</div>
-							</div>
-
-							<Show when={showLinkForm()}>
-								<div class="card" style={{ "margin-bottom": "16px" }}>
-									<form onSubmit={handleLink}>
-										<div class="form-row">
-											<div class="form-group">
-												<label for="member_id">Select Member</label>
-												<select id="member_id" name="member_id" required>
-													<option value="" disabled selected>Choose…</option>
-													<For each={unlinkedMembers()}>
-														{(m) => <option value={m.id}>{m.name} ({m.email})</option>}
-													</For>
-												</select>
-											</div>
+									<CreateDialog
+										label="Link Existing"
+										title="Link an existing member"
+										submitLabel="Link"
+										triggerClass="btn btn-sm"
+										successMessage="Member linked."
+										onSubmit={async (fd) => {
+											fd.set("company_id", companyId());
+											await linkMember(fd);
+											await revalidate(getCompanyMembersQuery.key);
+										}}
+									>
+										<div class="form-group">
+											<label for="member_id">Select Member</label>
+											<select id="member_id" name="member_id" required>
+												<option value="" disabled selected>Choose…</option>
+												<For each={unlinkedMembers()}>
+													{(m) => <option value={m.id}>{m.name} ({m.email})</option>}
+												</For>
+											</select>
 										</div>
-										<button type="submit" class="btn btn-primary">Link</button>
-									</form>
-								</div>
-							</Show>
-
-							<Show when={showMemberForm()}>
-								<div class="card" style={{ "margin-bottom": "16px" }}>
-									<form onSubmit={handleCreateMember}>
+									</CreateDialog>
+									<CreateDialog
+										label="Add Member"
+										title="Add a member"
+										submitLabel="Create + Link"
+										triggerClass="btn btn-sm btn-primary"
+										onSubmit={async (fd) => {
+											fd.set("company_id", companyId());
+											const result = (await createMember(fd)) as { error?: string; success?: string } | undefined;
+											if (!result?.error) await revalidate(getCompanyMembersQuery.key);
+											return result;
+										}}
+									>
 										<div class="form-row">
 											<div class="form-group">
 												<label for="m_name">Name</label>
@@ -211,12 +179,11 @@ export default function CompanyDetail() {
 												<input type="email" id="m_email" name="email" required placeholder="john@company.com" spellcheck={false} />
 											</div>
 										</div>
-										<p class="muted" style={{ "font-size": "12px", "margin-bottom": "12px" }}>An invite email will be sent so they can set their own password.</p>
-										<Show when={error()}><p class="login-error">{error()}</p></Show>
-										<button type="submit" class="btn btn-primary" disabled={submitting()}>{submitting() ? "Sending…" : "Create + Link"}</button>
-									</form>
+										<p class="muted" style={{ "font-size": "12px" }}>An invite email will be sent so they can set their own password.</p>
+									</CreateDialog>
 								</div>
-							</Show>
+							</div>
+
 
 						<Show when={success()}>
 							<p style={{ color: "#16a34a", "font-size": "13px", "margin-bottom": "12px" }}>{success()}</p>

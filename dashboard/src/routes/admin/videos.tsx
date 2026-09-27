@@ -1,12 +1,12 @@
 import { Title } from "@solidjs/meta";
 import { createAsync, useAction } from "@solidjs/router";
 import { For, Show, Suspense, createSignal } from "solid-js";
+import CreateDialog from "~/components/CreateDialog";
 import Layout from "~/components/Layout";
 import { getUserQuery } from "~/lib/queries";
 import { getOutreachQuery, setOutreachVideoAction } from "~/lib/admin-queries";
 import { stageLabel } from "~/db/schema";
 import { videoSummary } from "~/lib/video-summary";
-import { toast } from "~/lib/toast";
 
 // Mirrors the server's free-plan cap (dashboard/src/routes/api/upload-video.ts).
 const MAX_BYTES = 50 * 1024 * 1024;
@@ -74,9 +74,9 @@ export default function AdminVideos() {
 
 	const vids = () => (outreach()?.all ?? []).filter((p) => p.videoUrl);
 
-	async function handleLink(e: Event) {
-		e.preventDefault();
-		const form = e.target as HTMLFormElement;
+	/** Returns the action result; errors come back as { error } so the dialog
+	 *  shows them inline (the picked file stays selected for a retry). */
+	async function handleLink(form: HTMLFormElement): Promise<{ error?: string; success?: string }> {
 		const file = (form.elements.namedItem("video_file") as HTMLInputElement).files?.[0];
 		if (file) {
 			let uploadFile = file;
@@ -88,15 +88,18 @@ export default function AdminVideos() {
 					else {
 						// Still ≥49MB at crf 32 — a raw upload can't clear the 50MB cap
 						// either, so don't waste 12s on a guaranteed 413.
-						toast(`"${file.name}" is too long/dense to fit under 50MB even at low quality — export a shorter clip from Cap, or run scripts/compress-video.sh locally.`, "error");
-						return;
+						return {
+							error:
+								`"${file.name}" is too long/dense to fit under 50MB even at low quality — export a shorter clip from Cap, or run scripts/compress-video.sh locally.`,
+						};
 					}
 				} catch (err) {
 					// Raw upload can't pass the cap from here — surface why instead of
 					// silently 413-ing (the HAR showed load failing in ~100ms).
 					ffmpegP = null; // a rejected load must not poison the next attempt
-					toast(`Browser compression failed (${err instanceof Error ? err.message : "unknown error"}) — run scripts/compress-video.sh on this file instead.`, "error");
-					return;
+					return {
+						error: `Browser compression failed (${err instanceof Error ? err.message : "unknown error"}) — run scripts/compress-video.sh on this file instead.`,
+					};
 				}
 			}
 			// Stream the file to storage first; the action gets the public URL.
@@ -108,9 +111,8 @@ export default function AdminVideos() {
 			});
 			const data = (await up.json().catch(() => ({}))) as { url?: string; error?: string };
 			if (!up.ok || !data.url) {
-				toast(data.error ?? "Upload failed.", "error");
 				setBusy("");
-				return;
+				return { error: data.error ?? "Upload failed." };
 			}
 			(form.elements.namedItem("video_url") as HTMLInputElement).value = data.url;
 			setBusy("");
@@ -120,43 +122,53 @@ export default function AdminVideos() {
 		setBusy("Saving…");
 		const res = (await saveVideo(fd)) as { error?: string; success?: string };
 		setBusy("");
-		if (res.error) {
-			toast(res.error, "error");
-			return;
-		}
-		toast(res.success ?? "Video saved.", "success");
-		form.reset();
+		return res;
 	}
 
 	return (
 		<Layout user={user()}>
 			<Title>Videos — Mad Cactus</Title>
-			<h1 class="page-title">Outreach Videos</h1>
-			<p class="page-subtitle">
-				Videos linked to prospects. Copy the email link for sends (tracked); use test to preview without polluting metrics.
-			</p>
-
-			<details style={{ "margin-bottom": "24px" }}>
-				<summary style={{ cursor: "pointer", "font-weight": "600" }}>Link a video to a prospect</summary>
-				<form onSubmit={handleLink} style={{ display: "grid", gap: "8px", "max-width": "640px", "margin-top": "12px" }}>
-					<select name="id" required>
-						<For each={outreach()?.all ?? []}>
-							{(p) => (
-								<option value={p.id}>
-									{p.company}
-									{p.videoUrl ? " (replaces current)" : ""}
-								</option>
-							)}
-						</For>
-					</select>
-					<input type="file" name="video_file" accept="video/mp4,video/quicktime,video/webm" />
-					<input type="url" name="video_url" placeholder="Video URL — cap.so link, mp4 URL, or pick a file above" spellcheck={false} />
-					<input type="text" name="video_description" placeholder="Description — what it shows / why it exists" />
-					<button type="submit" class="btn btn-primary" disabled={!!busy()}>
-						{busy() || "Save video"}
-					</button>
-				</form>
-			</details>
+			<div style={{ display: "flex", "justify-content": "space-between", "align-items": "center", "gap": "16px", "margin-bottom": "32px" }}>
+				<div>
+					<h1 class="page-title">Outreach Videos</h1>
+					<p class="page-subtitle" style={{ "margin-bottom": "0" }}>
+						Videos linked to prospects. Copy the email link for sends (tracked); use test to preview without polluting metrics.
+					</p>
+				</div>
+				<CreateDialog
+					label="Link a video"
+					title="Link a video to a prospect"
+					submitLabel="Save video"
+					submitText={() => busy() || "Save video"}
+					onSubmit={(_fd, form) => handleLink(form)}
+				>
+					<div class="form-group">
+						<label for="video_prospect">Prospect</label>
+						<select id="video_prospect" name="id" required>
+							<For each={outreach()?.all ?? []}>
+								{(p) => (
+									<option value={p.id}>
+										{p.company}
+										{p.videoUrl ? " (replaces current)" : ""}
+									</option>
+								)}
+							</For>
+						</select>
+					</div>
+					<div class="form-group">
+						<label for="video_file">Video file</label>
+						<input type="file" id="video_file" name="video_file" accept="video/mp4,video/quicktime,video/webm" />
+					</div>
+					<div class="form-group">
+						<label for="video_url">Video URL</label>
+						<input type="url" id="video_url" name="video_url" placeholder="cap.so link, mp4 URL, or pick a file above" spellcheck={false} />
+					</div>
+					<div class="form-group">
+						<label for="video_description">Description</label>
+						<input type="text" id="video_description" name="video_description" placeholder="What it shows / why it exists" />
+					</div>
+				</CreateDialog>
+			</div>
 
 			<Suspense fallback={<p class="muted">Loading…</p>}>
 				<Show

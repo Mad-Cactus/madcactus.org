@@ -1,6 +1,7 @@
 import { Title } from "@solidjs/meta";
 import { createAsync, useAction } from "@solidjs/router";
 import { For, Show, Suspense, createSignal } from "solid-js";
+import CreateDialog from "~/components/CreateDialog";
 import Layout from "~/components/Layout";
 import { getUserQuery } from "~/lib/queries";
 import {
@@ -299,8 +300,6 @@ function Campaign(props: {
 }) {
 	const addCampaignCompany = useAction(addCampaignCompanyAction);
 	const removeCampaign = useAction(deleteCampaignAction);
-	const [error, setError] = createSignal("");
-	const [message, setMessage] = createSignal("");
 	const c = () => props.campaign;
 	return (
 		<details class="card" style={{ padding: "20px", "margin-bottom": "16px" }} open>
@@ -340,34 +339,37 @@ function Campaign(props: {
 				</Show>
 			</div>
 
-			<form
-				onSubmit={async (e) => {
-					e.preventDefault();
-					setError("");
-					setMessage("");
-					const fd = new FormData(e.target as HTMLFormElement);
-					fd.set("campaign_id", c().id);
-					const r = (await addCampaignCompany(withInstantIso(fd))) as { error?: string; success?: string };
-					if (r.error) setError(r.error);
-					else {
-						setMessage(r.success ?? "Added.");
-						(e.target as HTMLFormElement).reset();
-					}
-				}}
-				style={{ display: "flex", gap: "8px", "flex-wrap": "wrap", "margin-top": "14px", "align-items": "center" }}
-			>
-				<input type="text" name="company_name" placeholder="Company *" required />
-				<input type="email" name="contact_email" placeholder="Contact email" style={{ width: "200px" }} spellcheck={false} />
-				<input type="datetime-local" name="next_send_at" />
-				<input type="text" name="next_email_note" placeholder="What the first/next email should say" style={{ flex: "1", "min-width": "180px" }} />
-				<button type="submit" class="btn btn-primary btn-sm">Add company</button>
-			</form>
-			<Show when={error()}>
-				<p class="login-error" style={{ "font-size": "12px" }}>{error()}</p>
-			</Show>
-			<Show when={message()}>
-				<p class="muted" style={{ "font-size": "12px" }}>{message()}</p>
-			</Show>
+			<div style={{ display: "flex", "align-items": "center", "gap": "8px", "margin-top": "14px" }}>
+				<CreateDialog
+					label="Add company"
+					title={`Add company to ${c().name}`}
+					submitLabel="Add"
+					triggerClass="btn btn-primary btn-sm"
+					onSubmit={(fd) => {
+						fd.set("campaign_id", c().id);
+						return addCampaignCompany(withInstantIso(fd)) as Promise<{ error?: string; success?: string }>;
+					}}
+				>
+					<div class="form-group">
+						<label for="company_name">Company *</label>
+						<input type="text" id="company_name" name="company_name" required />
+					</div>
+					<div class="form-row">
+						<div class="form-group">
+							<label for="contact_email">Contact email</label>
+							<input type="email" id="contact_email" name="contact_email" spellcheck={false} />
+						</div>
+						<div class="form-group">
+							<label for="next_send_at">Next send</label>
+							<input type="datetime-local" id="next_send_at" name="next_send_at" />
+						</div>
+					</div>
+					<div class="form-group">
+						<label for="next_email_note">What the first/next email should say</label>
+						<input type="text" id="next_email_note" name="next_email_note" />
+					</div>
+				</CreateDialog>
+			</div>
 
 			<Show when={c().prospects.length}>
 				<details style={{ "margin-top": "14px" }}>
@@ -394,44 +396,32 @@ export default function AdminCampaigns() {
 	const campaigns = createAsync(() => getCampaignsQuery(), { deferStream: true });
 	const createCampaign = useAction(createCampaignAction);
 
-	const [error, setError] = createSignal("");
-	const [message, setMessage] = createSignal("");
-
-	async function handleCreate(e: Event) {
-		e.preventDefault();
-		setError("");
-		setMessage("");
-		const res = (await createCampaign(new FormData(e.target as HTMLFormElement))) as { error?: string; success?: string };
-		if (res.error) setError(res.error);
-		else {
-			setMessage(res.success ?? "Created.");
-			(e.target as HTMLFormElement).reset();
-		}
-	}
-
 	return (
 		<Layout user={user()}>
 			<Title>Campaigns — Mad Cactus</Title>
-			<h1 class="page-title">Outreach Campaigns</h1>
-			<p class="page-subtitle">
-				Email sequences and their target lists — who's in each campaign, when the next email goes out, and what it should say.
-				The board on Outreach tracks people; this tracks the campaign.
-			</p>
-
-			<details style={{ "margin-bottom": "24px" }}>
-				<summary style={{ cursor: "pointer", "font-weight": "600" }}>New campaign</summary>
-				<form onSubmit={handleCreate} style={{ display: "grid", gap: "8px", "max-width": "640px", "margin-top": "12px" }}>
-					<input type="text" name="name" placeholder="Campaign name *" required />
-					<input type="text" name="description" placeholder="What this campaign is for" />
-					<button type="submit" class="btn btn-primary" style={{ "justify-self": "start" }}>Create</button>
-				</form>
-			</details>
-			<Show when={error()}>
-				<p class="login-error">{error()}</p>
-			</Show>
-			<Show when={message()}>
-				<p class="muted">{message()}</p>
-			</Show>
+			<div style={{ display: "flex", "justify-content": "space-between", "align-items": "center", "gap": "16px", "margin-bottom": "32px" }}>
+				<div>
+					<h1 class="page-title">Outreach Campaigns</h1>
+					<p class="page-subtitle" style={{ "margin-bottom": "0" }}>
+						Email sequences and their target lists — who's in each campaign, when the next email goes out, and what it should say.
+						The board on Outreach tracks people; this tracks the campaign.
+					</p>
+				</div>
+				<CreateDialog
+					label="New campaign"
+					title="New campaign"
+					onSubmit={(fd) => createCampaign(fd) as Promise<{ error?: string; success?: string }>}
+				>
+					<div class="form-group">
+						<label for="campaign_name">Campaign name *</label>
+						<input type="text" id="campaign_name" name="name" required />
+					</div>
+					<div class="form-group">
+						<label for="campaign_description">What this campaign is for</label>
+						<input type="text" id="campaign_description" name="description" />
+					</div>
+				</CreateDialog>
+			</div>
 
 			<Suspense fallback={<p class="muted">Loading…</p>}>
 				<Show when={campaigns()?.length} fallback={<p class="muted">No campaigns yet — create one above.</p>}>

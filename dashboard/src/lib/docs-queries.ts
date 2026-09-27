@@ -1,4 +1,4 @@
-import { query, action, redirect } from "@solidjs/router";
+import { query, action, redirect, revalidate } from "@solidjs/router";
 import { db } from "~/db";
 import { brainFacts, brainRequests, docs, newsletterEvents, shortLinks } from "~/db/schema";
 import { getAuthedClient } from "~/lib/session";
@@ -87,8 +87,9 @@ export const createDocAction = action(async (formData: FormData) => {
 		.values({ title, kind, ...(genre ? { genre } : {}) })
 		.returning();
 	if (kind === "newsletter") await seedNewsletterAppendix(row.id);
-	const base = kind === "post" ? "/admin/posts" : kind === "newsletter" ? "/admin/newsletters" : "/admin/docs";
-	throw redirect(`${base}/${row.id}`);
+	await revalidate(getDocsQuery.key);
+	// client (DocList) toasts + navigates to the new doc
+	return { success: `Created "${title}".`, id: row.id, kind };
 }, "createDoc");
 
 // Per-issue reality checks for the newsletters list: short-link clicks (per
