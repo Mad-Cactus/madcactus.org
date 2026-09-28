@@ -147,10 +147,13 @@ function TemplatesPanel(props: {
 								</button>
 							</Show>
 						</div>
+						{/* SSR writes value as an attribute, which browsers ignore on textarea —
+						   the ref sets the property after hydration so saved bodies actually show */}
 						<textarea
 							name={`touch_${i()}_body`}
 							placeholder={"Email body — {{slots}} for the per-company fill"}
 							value={t.body}
+							ref={(el) => (el.value = t.body)}
 							onInput={(e) => setTouch(i(), { body: e.currentTarget.value })}
 							rows={t.body.split("\n").length + 2}
 							style={{ width: "100%", "margin-top": "8px", "font-family": "var(--font-mono, monospace)", "font-size": "12px" }}
