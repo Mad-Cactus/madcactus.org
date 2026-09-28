@@ -1,4 +1,6 @@
-CREATE TABLE "videos" (
+-- IF NOT EXISTS reconciliation: videos already exists on prod (applied via
+-- db:push, before this migration was journaled). Harmless on fresh replays.
+CREATE TABLE IF NOT EXISTS "videos" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"title" text NOT NULL,
 	"description" text,
@@ -18,5 +20,7 @@ CREATE TABLE "videos" (
 	CONSTRAINT "video_status_check" CHECK ("videos"."status" in ('unwatched', 'watching', 'watched', 'completed'))
 );
 --> statement-breakpoint
-ALTER TABLE "videos" ADD CONSTRAINT "videos_prospect_id_outreach_prospects_id_fk" FOREIGN KEY ("prospect_id") REFERENCES "public"."outreach_prospects"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-CREATE INDEX "idx_videos_prospect" ON "videos" USING btree ("prospect_id");
+DO $$ BEGIN
+	ALTER TABLE "videos" ADD CONSTRAINT "videos_prospect_id_outreach_prospects_id_fk" FOREIGN KEY ("prospect_id") REFERENCES "public"."outreach_prospects"("id") ON DELETE set null ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_videos_prospect" ON "videos" USING btree ("prospect_id");
