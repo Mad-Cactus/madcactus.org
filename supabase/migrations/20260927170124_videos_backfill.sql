@@ -6,32 +6,38 @@
 -- a replayed run re-inserts the same PK (ON CONFLICT DO NOTHING) instead of
 -- duplicating. Legacy /v/<prospect-uuid> email links keep working because
 -- the watch route falls back to prospect lookup.
-INSERT INTO "videos" (
-	"id", "title", "description", "url", "status", "view_count",
-	"first_viewed_at", "last_viewed_at", "watch_seconds", "max_position",
-	"duration_seconds", "completed", "prospect_id", "created_at", "updated_at"
-)
-SELECT
-	p."id",
-	coalesce(nullif(p."video_description", ''), 'Outreach video — ' || p."company"),
-	p."video_description",
-	p."video_url",
-	CASE
-		WHEN p."video_completed" THEN 'completed'
-		WHEN p."video_watch_seconds" > 0 OR p."video_max_position" > 0 THEN 'watched'
-		WHEN p."video_first_viewed_at" IS NOT NULL THEN 'watching'
-		ELSE 'unwatched'
-	END,
-	p."video_view_count",
-	p."video_first_viewed_at",
-	p."video_last_viewed_at",
-	p."video_watch_seconds",
-	p."video_max_position",
-	p."video_duration_seconds",
-	p."video_completed",
-	p."id",
-	p."created_at",
-	coalesce(p."updated_at", p."created_at")
-FROM "outreach_prospects" p
-WHERE p."video_url" IS NOT NULL
-ON CONFLICT ("id") DO NOTHING;
+-- prod reconciliation: db:push already dropped the video_* columns there, so
+-- the backfill has nothing to read — skip instead of failing.
+DO $$ BEGIN
+	IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'outreach_prospects' AND column_name = 'video_url') THEN
+		INSERT INTO "videos" (
+			"id", "title", "description", "url", "status", "view_count",
+			"first_viewed_at", "last_viewed_at", "watch_seconds", "max_position",
+			"duration_seconds", "completed", "prospect_id", "created_at", "updated_at"
+		)
+		SELECT
+			p."id",
+			coalesce(nullif(p."video_description", ''), 'Outreach video — ' || p."company"),
+			p."video_description",
+			p."video_url",
+			CASE
+				WHEN p."video_completed" THEN 'completed'
+				WHEN p."video_watch_seconds" > 0 OR p."video_max_position" > 0 THEN 'watched'
+				WHEN p."video_first_viewed_at" IS NOT NULL THEN 'watching'
+				ELSE 'unwatched'
+			END,
+			p."video_view_count",
+			p."video_first_viewed_at",
+			p."video_last_viewed_at",
+			p."video_watch_seconds",
+			p."video_max_position",
+			p."video_duration_seconds",
+			p."video_completed",
+			p."id",
+			p."created_at",
+			coalesce(p."updated_at", p."created_at")
+		FROM "outreach_prospects" p
+		WHERE p."video_url" IS NOT NULL
+		ON CONFLICT ("id") DO NOTHING;
+	END IF;
+END $$;
