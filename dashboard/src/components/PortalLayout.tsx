@@ -1,5 +1,6 @@
 import { A } from "@solidjs/router";
 import { For, ParentComponent, Show, createEffect } from "solid-js";
+import Toaster from "~/components/Toaster";
 
 const links = [
 	{ href: "/portal", label: "Overview" },
@@ -57,6 +58,7 @@ const PortalLayout: ParentComponent<{ user?: { id?: string; name?: string; email
 				</div>
 			</aside>
 			<main class="content">{props.children}</main>
+			<Toaster />
 		</div>
 	);
 };

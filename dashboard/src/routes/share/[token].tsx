@@ -2,6 +2,7 @@ import { Title } from "@solidjs/meta";
 import { useParams } from "@solidjs/router";
 import { createResource, For, Match, Switch } from "solid-js";
 import { getDocByShareToken } from "~/lib/docs-share";
+import { mentionTitles } from "~/lib/mention-render-server";
 
 // ponytail: 20-line markdown→HTML for headings/bold/italic/code/lists/links —
 // enough for share previews. If shared docs need full GFM, swap in marked.
@@ -35,7 +36,12 @@ function mdToHtml(md: string): string {
 
 export default function SharedDoc() {
 	const params = useParams();
-	const [doc] = createResource(async () => getDocByShareToken(params.token ?? ""));
+	const [doc] = createResource(async () => {
+		const d = await getDocByShareToken(params.token ?? "");
+		// shared previews degrade mentions to plain @Title text (this page's
+		// tiny md→html escaper would eat raw anchor HTML)
+		return d ? { ...d, markdown: await mentionTitles(d.markdown) } : null;
+	});
 
 	return (
 		<main style={{ "max-width": "720px", margin: "48px auto", padding: "0 24px", "font-family": "Georgia, 'Times New Roman', serif" }}>

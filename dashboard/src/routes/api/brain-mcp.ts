@@ -1,16 +1,19 @@
 import type { APIEvent } from "@solidjs/start/server";
-import { eq, and, desc, inArray, sql, ilike } from "drizzle-orm";
+import { eq, and, desc, inArray, sql, ilike, lte, isNotNull } from "drizzle-orm";
 import { hashKey } from "~/lib/crypto";
 import { db } from "~/db";
-import { apiKeys, companies, outreachProspects, OUTREACH_STAGES } from "~/db/schema";
+import { apiKeys, companies, outreachProspects, OUTREACH_STAGES, campaigns, campaignCompanies, videos } from "~/db/schema";
 import { brainQuery, entityFacts } from "~/lib/brain/search";
 import { brainJobs, docs, shortLinks } from "~/db/schema";
-import { agentWrite, createDoc, getDoc, getDocVersionDiff, listDocVersions, listDocs } from "~/lib/docs";
-import { getVoiceLessons, hasRecentLessonReview, lintGateError, lintVoiceText, listKnownGenres, recordLessonReview } from "~/lib/voice-lint-db";
-import type { VoiceScope } from "~/lib/voice-lint";
+import { agentWrite, createDoc, getDoc, getDocVersionDiff, listDocVersions, listDocs, renameDoc, setDocAppendix } from "~/lib/docs";
+import { getVoiceLessons, hasRecentLessonReview, lintGateError, lintVoiceText, listKnownGenres, recordLessonReview, topLessonsForText } from "~/lib/voice-lint-db";
+import { docSurface, type VoiceScope } from "~/lib/voice-lint";
 import { searchWorkspace, recentActivity } from "~/lib/brain/workspace-search";
 import { randomKey, shortLinkBase, TARGET_RE } from "~/lib/short-links";
 import { maybeRunCycle } from "~/lib/brain/distill";
+import { listComponentTypes, getComponent, resolveCard, searchAll, linksFor, loadRow } from "~/registry/registry";
+import { linkComponents, listLinks, UnknownKindError } from "~/lib/entity-links";
+import { createVideo, setProspectVideo } from "~/lib/videos";
 
 
 /**
@@ -25,6 +28,17 @@ import { maybeRunCycle } from "~/lib/brain/distill";
  */
 
 const PROTOCOL_VERSION = "2025-06-18";
+
+// ── Follow-up cadences: days from each send to the next ────────────
+// rung-1 (findings ladder): day-0 → +5d → +12d → done (deltas 5, 7)
+// rung-2 (post-Loom):       day-0 → +4d → +8d  → done (deltas 4, 4)
+// After the last step next_send_at goes null — sequence complete.
+const CADENCES: Record<string, number[]> = {
+	"rung-1": [5, 7],
+	"rung-2": [4, 4],
+};
+// board stages that kill a sequence — replied or gone
+const DEAD_STAGES = new Set(["replied", "meeting", "won", "shutdown"]);
 
 function json(body: unknown, status = 200) {
 	return new Response(JSON.stringify(body), {
@@ -87,21 +101,29 @@ async function gateGenre(
 	};
 }
 
-/** Lessons gate: every doc write requires BOTH a fresh get_voice_lessons
- *  pull from the same chat (review row ≤1h old) AND an explicit
- *  lessons_reviewed=true affirmation. Server-enforced — an agent cannot land
- *  text without the lessons having been fetched into its context this hour. */
-async function gateLessons(
+/** Lessons-for-text gate (the "auto-no"): an agent's first attempt at a write
+ *  bounces with the voice lessons ranked for exactly that text — the lessons
+ *  arrive when they matter, next to the draft, not as a pre-read blob. Sign-off
+ *  is lessons_applied=true on the resubmit. Pulling get_voice_lessons this hour
+ *  (lessons_reviewed + chat_uuid) also passes — both paths put lessons in
+ *  context before text lands. */
+async function gateLessonsForText(
 	toolArgs: Record<string, unknown>,
-): Promise<{ ok: false; blocked: "lessons_not_reviewed"; error: string } | { ok: true }> {
+	text: string,
+	scope: VoiceScope,
+): Promise<
+	| { ok: true }
+	| { ok: false; blocked: "lessons_for_text"; lessons: Awaited<ReturnType<typeof topLessonsForText>>; error: string }
+> {
 	const chatUuid = toolArgs.chat_uuid ? String(toolArgs.chat_uuid).trim() : "";
+	if (toolArgs.lessons_applied === true) return { ok: true };
 	if (toolArgs.lessons_reviewed === true && chatUuid && (await hasRecentLessonReview(chatUuid))) return { ok: true };
 	return {
 		ok: false as const,
-		blocked: "lessons_not_reviewed" as const,
-		error: !chatUuid
-			? `blocked: pass chat_uuid (your session id) on this call, and call get_voice_lessons with chat_uuid set — read the lessons, then retry with lessons_reviewed=true.`
-			: `blocked: call get_voice_lessons with chat_uuid="${chatUuid}" (surface/genre matching this write), read the lessons, then retry with lessons_reviewed=true.`,
+		blocked: "lessons_for_text" as const,
+		lessons: await topLessonsForText(text, scope),
+		error:
+			"blocked (auto-no): these are Collin's voice lessons ranked for YOUR text — apply the relevant ones, rewrite what they change, then resubmit with lessons_applied=true. Lint rejections also carry the lesson behind each violated rule.",
 	};
 }
 
@@ -195,7 +217,7 @@ const TOOLS = [
 	{
 		name: "set_outreach_brain",
 		description:
-			'Create or update an outreach prospect\'s brain wiring. Matches by company (case-insensitive; creates the prospect if unknown). Set brain_url (e.g. https://<name>.madcactus.org) and brain_activity_key (the brain\'s ACTIVITY_KEY) so the dashboard can pull /activity. Set video_url to the CAP share link once the outreach video is recorded (the dashboard then serves the tracked /v/:id email link). Omit brain_activity_key / video_url to leave them unchanged. Omit stage to leave it unchanged; stages: ' + OUTREACH_STAGES.join(" → ") + ".",
+			'Create or update an outreach prospect\'s brain wiring. Matches by company (case-insensitive; creates the prospect if unknown). Set brain_url (e.g. https://<name>.madcactus.org) and brain_activity_key (the brain\'s ACTIVITY_KEY) so the dashboard can pull /activity. Set video_url to the CAP share link once the outreach video is recorded (the dashboard then serves the tracked /v/:id email link). Omit brain_activity_key / video_url to leave them unchanged. Omit stage to leave it unchanged; stages: ' + OUTREACH_STAGES.join(" → ") + ". The ICP fit fields are research facts (region, revenue_band, tech_team). ai_interest fills ONLY from observed behavior (gate fired → high; click without return → some; sequence ended silent → none) — never guess it. icpApproved is UI-only: the human approves fit.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -208,21 +230,146 @@ const TOOLS = [
 				contact_name: { type: "string" },
 				email: { type: "string" },
 				notes: { type: "string" },
+				region: { type: "string", description: "ICP fit: e.g. Indiana / Midwest" },
+				revenue_band: { type: "string", description: "ICP fit: e.g. $30-70M" },
+				tech_team: { type: "string", enum: ["unknown", "none", "small", "large"] },
+				ai_interest: { type: "string", enum: ["unknown", "none", "some", "high"], description: "behavior only: gate fired → high; click no return → some; silent → none" },
+				source_note: { type: "string", description: "where the row came from + which finding elicited any response" },
 			},
 			required: ["company"],
+		},
+	},
+	// ── Campaigns (email sequences) ──
+	{
+		name: "create_campaign",
+		description: "Create an outreach campaign (a named email-sequence container). Companies attach with add_campaign_company.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				name: { type: "string" },
+				description: { type: "string" },
+			},
+			required: ["name"],
+		},
+	},
+	{
+		name: "add_campaign_company",
+		description:
+			"Add or update a company in a campaign's target list. Resolves the campaign by campaign_id, or lazily creates it by campaign_name. Upserts on (campaign, company). sequence_step starts at 1; set next_send_at to when the first email should go and next_email_note to what it should say (the finding).",
+		inputSchema: {
+			type: "object",
+			properties: {
+				campaign_id: { type: "string" },
+				campaign_name: { type: "string", description: "resolved case-insensitively; created if unknown" },
+				company_name: { type: "string" },
+				contact_email: { type: "string" },
+				next_send_at: { type: "string", description: "ISO timestamp; empty string clears it" },
+				next_email_note: { type: "string", description: "what the next email should say — the finding for this touch" },
+			},
+			required: ["company_name"],
+		},
+	},
+	{
+		name: "list_campaigns",
+		description:
+			"Campaigns with their frozen templates (subject+body per touch, on the campaign — never a doc) and their target companies (step, next_send_at, note) with each company's linked CRM board stage.",
+		inputSchema: { type: "object", properties: {} },
+	},
+	{
+		name: "set_campaign_templates",
+		description:
+			"Set a campaign's full email sequence — the frozen copy lives ON the campaign. touches: [{step, subject, body}] with {{slots}} for the per-company fill (first_name, company, watch_sentence, finding_1..3, link, owner_role). EVERY body is voice-linted (surface=email) before persisting; any avoid-violation rejects the whole call with per-touch violations — nothing is saved partially. Replaces the campaign's templates wholesale.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				campaign_id: { type: "string" },
+				campaign_name: { type: "string", description: "resolved case-insensitively" },
+				touches: {
+					type: "array",
+					items: {
+						type: "object",
+						properties: {
+							step: { type: "number", description: "1-based sequence position" },
+							subject: { type: "string" },
+							body: { type: "string" },
+						},
+							required: ["step", "subject", "body"],
+					},
+				},
+			},
+			required: ["touches"],
+		},
+	},
+	{
+		name: "campaign_stats",
+		description:
+			"Gmail-grounded per-campaign stats: for each company — sends, first/last sent, replied, reply count, last reply snippet — plus totals (companies touched, emails sent, companies replied, reply rate) and per-touch reply counts. Replies are counted from synced inbound messages from the exact contact after the first linked send; no stage flags. Omit campaign args for all campaigns.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				campaign_id: { type: "string" },
+				campaign_name: { type: "string", description: "resolved case-insensitively" },
+			},
+		},
+	},
+	{
+		name: "get_due_follow_ups",
+		description:
+			"Campaign companies whose next_send_at is now or past — the daily send queue. Excludes companies whose board stage is replied/meeting/won/shutdown. Each row: campaign, company, contact email, step, note.",
+		inputSchema: { type: "object", properties: {} },
+	},
+	{
+		name: "mark_campaign_email_sent",
+		description:
+			'Record that this company\'s step-N email went out and schedule the next. Advances sequence_step; next_send_at = sent_at + cadence delta. cadence "rung-1" (findings ladder): day-0 → +5d → +12d, done after step 3. cadence "rung-2" (post-Loom): day-0 → +4d → +8d, done after step 3. After the last step next_send_at goes null — sequence complete (then newsletter_subscribe applies). Optionally set next_email_note for the next touch.',
+		inputSchema: {
+			type: "object",
+			properties: {
+				id: { type: "string", description: "campaign_companies id" },
+				campaign_name: { type: "string" },
+				company_name: { type: "string" },
+				cadence: { type: "string", enum: ["rung-1", "rung-2"], description: "default rung-1" },
+				sent_at: { type: "string", description: "ISO timestamp, default now" },
+				next_email_note: { type: "string", description: "omit to leave unchanged" },
+			},
+		},
+	},
+	{
+		name: "stop_campaign_company",
+		description:
+			"Kill a company's sequence: next_send_at → null, note prefixed STOPPED:<reason>. Use on reply, bounce, or gate-fired escalation.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				id: { type: "string" },
+				campaign_name: { type: "string" },
+				company_name: { type: "string" },
+				reason: { type: "string" },
+			},
+		},
+	},
+	{
+		name: "newsletter_subscribe",
+		description:
+			"Add an email to The Cactus Dispatch (Resend contact, Cactus segment) — the nurture handoff when a rung-1 sequence completes. The shutdown email discloses the add; Resend's unsubscribe is honored.",
+		inputSchema: {
+			type: "object",
+			properties: { email: { type: "string" } },
+			required: ["email"],
 		},
 	},
 	// ── Voice ──
 	{
 		name: "get_voice_lessons",
 		description:
-			"Collin's voice lessons derived from his real edits. REQUIRED before any doc write: pass chat_uuid (your session id) — doc writes (write_doc/create_doc/create_post/create_newsletter) are REJECTED unless this was called with the same chat_uuid within the last hour AND the write carries lessons_reviewed=true. Also pass surface (email|docs|post|newsletter) and genre to get the rules that apply to exactly what you're writing plus the global ones. known_genres lists the genre vocabulary — REUSE an existing genre instead of inventing near-duplicates.",
+			"Collin's voice lessons derived from his real edits. REQUIRED before any doc write: pass chat_uuid (your session id) — doc writes (write_doc/create_doc/create_post/create_newsletter) are REJECTED unless this was called with the same chat_uuid within the last hour AND the write carries lessons_reviewed=true. Also pass surface (email|docs|post|newsletter) and genre to get the rules that apply to exactly what you're writing plus the global ones. Returns the top 10 by confidence — the write-time auto-no returns lessons ranked for your specific text instead. known_genres lists the genre vocabulary — REUSE an existing genre instead of inventing near-duplicates.",
 		inputSchema: {
 			type: "object",
 			properties: {
 				limit: { type: "number", description: "max lessons returned, default 25" },
 				surface: { type: "string", enum: ["email", "docs", "post", "newsletter"], description: "what you are writing — scopes the lessons" },
 				genre: { type: "string", description: "freeform subtype within the surface, e.g. marketing|informational|casual — match an existing genre spelling" },
+				topic: { type: "string", enum: ["subject", "cta"], description: "fetch only subject- or CTA-learnings — REQUIRED before drafting a newsletter subject or CTA copy" },
 				chat_uuid: { type: "string", description: "Your session id — records the lessons review that doc writes gate on. Pass it every time." },
 			},
 		},
@@ -241,11 +388,25 @@ const TOOLS = [
 			required: ["text"],
 		},
 	},
+	{
+		name: "lint_voice_check",
+		description:
+			"One-off voice check for ANY text — no doc, no write, no gates. Returns the avoid-violations (with rule + fix example) AND the top 10 voice lessons ranked for exactly this text. The loop: call this, fix what the violations and lessons flag, call again, and only use the text elsewhere once it comes back clean. Same judgment a write-time auto-no gives, available standalone. Requires surface (email|docs|post|newsletter) so the right rules apply.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				text: { type: "string" },
+				surface: { type: "string", enum: ["email", "docs", "post", "newsletter"], description: "what the text is — scopes rules and lessons" },
+				genre: { type: "string", description: "freeform subtype, match an existing genre spelling" },
+			},
+			required: ["text", "surface"],
+		},
+	},
 	// ── Docs ──
 	{
 		name: "create_doc",
 		description:
-			"Create a plain internal markdown doc (kind=null — NOT a post/newsletter; use create_post/create_newsletter for those) and return its id. doc ids are UUIDs — use this when list_docs has no fitting doc before write_doc. The body is voice-linted BEFORE creation: any avoid-violation REJECTS the call — fix the flagged text and resubmit (no override; if a rule is wrong, tell Collin to disable it). Also requires get_voice_lessons with your chat_uuid (within 1h) and lessons_reviewed=true.",
+			"Create a plain internal markdown doc (kind=null — NOT a post/newsletter; use create_post/create_newsletter for those) and return its id. doc ids are UUIDs — use this when list_docs has no fitting doc before write_doc. The body is voice-linted BEFORE creation: any avoid-violation REJECTS the call — fix the flagged text and resubmit (no override; if a rule is wrong, tell Collin to disable it). First write attempt auto-no's: the call bounces with the top voice lessons ranked for YOUR text — apply them, then resubmit with lessons_applied=true. Alternatively pass lessons_reviewed=true after get_voice_lessons with your chat_uuid (within 1h).",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -253,7 +414,8 @@ const TOOLS = [
 				markdown: { type: "string", description: "Optional initial body — must pass voice lint (zero avoid-violations) or the call is rejected." },
 				genre: { type: "string", description: "Freeform subtype (marketing|informational|…) — scopes the voice rules. MUST be an existing genre from get_voice_lessons known_genres; new ones need confirm_new_genre=true." },
 				confirm_new_genre: { type: "boolean", description: "Set true only when no existing genre fits — mints this genre into the vocabulary." },
-				lessons_reviewed: { type: "boolean", description: "true = you called get_voice_lessons with this chat_uuid, read the lessons, and this text follows them. Required." },
+				lessons_applied: { type: "boolean", description: "true = you read the lessons returned by the auto-no (or get_voice_lessons) and this text applies them. Required on resubmit." },
+lessons_reviewed: { type: "boolean", description: "true = you called get_voice_lessons with this chat_uuid, read the lessons, and this text follows them. Required." },
 				chat_uuid: { type: "string", description: "Your session id — must match the chat_uuid used for get_voice_lessons." },
 			},
 			required: ["title", "lessons_reviewed", "chat_uuid"],
@@ -262,7 +424,7 @@ const TOOLS = [
 	{
 		name: "create_post",
 		description:
-			"Create a LinkedIn post draft (kind=post). Read get_voice_lessons with surface=post and your chat_uuid first. HARD GATES: the call is REJECTED if the body has any avoid-violation (fix and resubmit — no override) or if get_voice_lessons wasn't called with the same chat_uuid within 1h + lessons_reviewed=true. Collin previews, edits, and schedules it in the dashboard; you never schedule or publish. Drafts only.",
+			"Create a LinkedIn post draft (kind=post). Read get_voice_lessons with surface=post and your chat_uuid first. HARD GATES: the call is REJECTED if the body has any avoid-violation (fix and resubmit — no override). First write attempt auto-no's: the call bounces with the top voice lessons ranked for YOUR text — apply them, then resubmit with lessons_applied=true. Collin previews, edits, and schedules it in the dashboard; you never schedule or publish. Drafts only.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -270,7 +432,8 @@ const TOOLS = [
 				markdown: { type: "string", description: "Post body — plain markdown, no headings; it renders as LinkedIn text. Must pass voice lint (zero avoid-violations)." },
 				genre: { type: "string", description: "Freeform subtype, e.g. marketing|casual|story — MUST reuse an existing genre from get_voice_lessons known_genres; new ones need confirm_new_genre=true." },
 				confirm_new_genre: { type: "boolean", description: "Set true only when no existing genre fits — mints this genre into the vocabulary." },
-				lessons_reviewed: { type: "boolean", description: "true = you called get_voice_lessons with this chat_uuid, read the lessons, and this text follows them. Required." },
+				lessons_applied: { type: "boolean", description: "true = you read the lessons returned by the auto-no (or get_voice_lessons) and this text applies them. Required on resubmit." },
+lessons_reviewed: { type: "boolean", description: "true = you called get_voice_lessons with this chat_uuid, read the lessons, and this text follows them. Required." },
 				chat_uuid: { type: "string", description: "Your session id — must match the chat_uuid used for get_voice_lessons." },
 			},
 			required: ["title", "markdown", "lessons_reviewed", "chat_uuid"],
@@ -279,18 +442,46 @@ const TOOLS = [
 	{
 		name: "create_newsletter",
 		description:
-			"Create a Cactus Dispatch newsletter issue draft (kind=newsletter). Read get_voice_lessons with surface=newsletter and your chat_uuid first. HARD GATES: the call is REJECTED if the body has any avoid-violation (fix and resubmit — no override) or if get_voice_lessons wasn't called with the same chat_uuid within 1h + lessons_reviewed=true. Collin previews (email + web), edits, and schedules it; you never send. Drafts only.",
-			inputSchema: {
+			"Create a Cactus Dispatch newsletter issue draft (kind=newsletter). The doc title IS the email subject — set a real subject as the title (or refine it after with set_newsletter_subject). Read get_voice_lessons with surface=newsletter and your chat_uuid first — fetch topic=subject AND topic=cta lessons too (subject and CTA have their own learnings). HARD GATES: the call is REJECTED if the body has any avoid-violation (fix and resubmit — no override). First write attempt auto-no's: the call bounces with the top voice lessons ranked for YOUR text — apply them, then resubmit with lessons_applied=true. Channel CTA copy goes through set_channel_appendix (never in the body markdown). Collin previews (email + web), edits, and schedules it; you never send. Drafts only.",
+		inputSchema: {
 			type: "object",
 			properties: {
-				title: { type: "string" },
-				markdown: { type: "string", description: "Issue body — first H1 becomes the email subject. Must pass voice lint (zero avoid-violations)." },
+				title: { type: "string", description: "The email subject / issue headline — doubles as the subject line" },
+				markdown: { type: "string", description: "Issue body prose — no Subject: line, no CTA block (use set_channel_appendix). Must pass voice lint (zero avoid-violations)." },
 				genre: { type: "string", description: "Freeform subtype, e.g. marketing|informational — MUST reuse an existing genre from get_voice_lessons known_genres; new ones need confirm_new_genre=true." },
 				confirm_new_genre: { type: "boolean", description: "Set true only when no existing genre fits — mints this genre into the vocabulary." },
-				lessons_reviewed: { type: "boolean", description: "true = you called get_voice_lessons with this chat_uuid, read the lessons, and this text follows them. Required." },
+				lessons_applied: { type: "boolean", description: "true = you read the lessons returned by the auto-no (or get_voice_lessons) and this text applies them. Required on resubmit." },
+lessons_reviewed: { type: "boolean", description: "true = you called get_voice_lessons with this chat_uuid, read the lessons, and this text follows them. Required." },
 				chat_uuid: { type: "string", description: "Your session id — must match the chat_uuid used for get_voice_lessons." },
 			},
 			required: ["title", "markdown", "lessons_reviewed", "chat_uuid"],
+		},
+	},
+	{
+		name: "set_newsletter_subject",
+		description:
+			'Set the subject line of a newsletter issue (kind=newsletter). The doc title IS the subject — this renames the doc, and the same text becomes the email subject and the web headline. Never put the subject in the body markdown. Runs Collin\'s voice lint on the subject and returns warnings (advisory — the subject lands regardless); fix flagged wording before or after, Collin reviews in the dashboard.',
+		inputSchema: {
+			type: "object",
+			properties: {
+				doc_id: { type: "string" },
+				subject: { type: "string", description: "The email subject line / issue title" },
+			},
+			required: ["doc_id", "subject"],
+		},
+	},
+	{
+		name: "set_channel_appendix",
+		description:
+			'Set the AFTER-THE-BODY copy (CTA block) of a newsletter issue for one channel — channel: "email" or "web". This is the ONLY place channel-specific copy goes; never write channel CTAs into the body markdown. New issues already carry the default /brain CTA here — overwrite it only when Collin asks for different copy. Runs Collin\'s voice lint (surface=newsletter) and returns warnings (advisory — the copy lands regardless).',
+		inputSchema: {
+			type: "object",
+			properties: {
+				doc_id: { type: "string" },
+				channel: { type: "string", enum: ["email", "web"] },
+				content: { type: "string", description: "markdown rendered after the issue body" },
+			},
+			required: ["doc_id", "channel", "content"],
 		},
 	},
 	{
@@ -315,14 +506,15 @@ const TOOLS = [
 	{
 		name: "write_doc",
 		description:
-			"Write into a markdown doc as an attributed agent edit. mode: append (default) adds a section; replace rewrites the body. HARD GATES: the write is REJECTED (nothing lands) if the text has any avoid-violation — fix and resubmit; no override exists, if a rule is wrong tell Collin to disable it — and it requires get_voice_lessons called with the same chat_uuid within 1h plus lessons_reviewed=true. On success the write lands as an agent version and re-opens the doc for human review (status=draft). Pass genre to tag/retag the doc (marketing|informational|casual…) so its edits teach and lint under the right scope — reuse an existing genre from get_voice_lessons known_genres.",
+			"Write into a markdown doc as an attributed agent edit. mode: append (default) adds a section; replace rewrites the body. HARD GATES: the write is REJECTED (nothing lands) if the text has any avoid-violation — fix and resubmit; no override exists, if a rule is wrong tell Collin to disable it — First write attempt auto-no's: the call bounces with the top voice lessons ranked for YOUR text — apply them, then resubmit with lessons_applied=true. On success the write lands as an agent version and re-opens the doc for human review (status=draft). Pass genre to tag/retag the doc (marketing|informational|casual…) so its edits teach and lint under the right scope — reuse an existing genre from get_voice_lessons known_genres.",
 		inputSchema: {
 			type: "object",
 			properties: {
 				doc_id: { type: "string" },
 				content: { type: "string", description: "Must pass voice lint (zero avoid-violations scoped to the doc's kind+genre) or the write is rejected." },
 				chat_uuid: { type: "string", description: "Your session id — must match the chat_uuid used for get_voice_lessons." },
-				lessons_reviewed: { type: "boolean", description: "true = you called get_voice_lessons with this chat_uuid, read the lessons, and this text follows them. Required." },
+				lessons_applied: { type: "boolean", description: "true = you read the lessons returned by the auto-no (or get_voice_lessons) and this text applies them. Required on resubmit." },
+lessons_reviewed: { type: "boolean", description: "true = you called get_voice_lessons with this chat_uuid, read the lessons, and this text follows them. Required." },
 				mode: { type: "string", enum: ["append", "replace"] },
 				genre: { type: "string", description: "Tag/retag the doc — scopes which voice rules lint it and which lessons its edits teach. MUST reuse an existing genre; new ones need confirm_new_genre=true." },
 				confirm_new_genre: { type: "boolean", description: "Set true only when no existing genre fits — mints this genre into the vocabulary." },
@@ -395,7 +587,7 @@ const TOOLS = [
 	{
 		name: "create_email_draft",
 		description:
-			"Create an email for Collin to review in the dashboard outbox. Read get_voice_lessons FIRST and check your text with lint_voice_text; the response includes voice-lint violations — fix every avoid-violation and resubmit. The human sends; you never send. Pass chat_uuid = your session id for provenance.",
+			"Create an email for Collin to review in the dashboard Drafts tab. Read get_voice_lessons FIRST and pre-check with lint_voice_text (surface=email). HARD GATE: any avoid-violation REJECTS the call before anything is saved — fix the flagged text and resubmit; nothing lands until it's clean. First write attempt auto-no's: the call bounces with the top voice lessons ranked for YOUR text — apply them, then resubmit with lessons_applied=true. To revise a draft you already created, pass its draft_id (same fields) instead of creating a new one. The human sends by default; pass send_at (ISO) to schedule auto-send via the outbox ticker — the voice gate applies either way. Pass chat_uuid = your session id for provenance.",
 		inputSchema: {
 			type: "object",
 			properties: {
@@ -404,13 +596,142 @@ const TOOLS = [
 				bcc: { type: "string", description: "comma-separated Bcc addresses" },
 				subject: { type: "string" },
 				body: { type: "string" },
-				chat_uuid: { type: "string" },
+				draft_id: { type: "string", description: "outbox id from a previous create_email_draft — updates that draft in place instead of creating a new one" },
+				lessons_applied: { type: "boolean", description: "true = you read the lessons returned by the auto-no (or get_voice_lessons) and this text applies them. Required on resubmit." },
+chat_uuid: { type: "string" },
 				thread_id: { type: "string", description: "set for replies" },
+				send_at: { type: "string", description: "ISO timestamp — schedules the draft for auto-send via the outbox ticker; omit for a plain draft" },
+				campaign_company_id: { type: "string", description: "campaign_companies id — links this send to its campaign company for Gmail-grounded stats (list_campaigns has ids)" },
+				campaign_step: { type: "number", description: "which touch of the campaign sequence this email is (1-based)" },
 			},
 			required: ["to", "subject", "body"],
 		},
 	},
+	// ── Components (registry-driven generic tools) ──
+	{
+		name: "list_component_types",
+		description:
+			"THE MAP OF THE BUSINESS. Every first-class component (company, contact, project, doc, email-thread, email-draft, campaign, prospect, video, meeting, short-link, invoice, deliverable) with a teaching description of what it IS. Call this before hand-rolling any tool or query — components are addressable as {kind, id} everywhere: get_component, search_components, link_components, @[kind:id] mentions in docs.",
+		inputSchema: { type: "object", properties: {} },
+	},
+	{
+		name: "get_component",
+		description:
+			"Card + row + links for one component (kind, id from list_component_types/search_components). Links include BOTH directions of entity_links AND declared FK ownership (project→company, video→prospect, …) — backlinks are complete without any agent effort.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				kind: { type: "string", description: "component kind — list_component_types" },
+				id: { type: "string", description: "row id (uuid, or slug for short-link)" },
+			},
+			required: ["kind", "id"],
+		},
+	},
+	{
+		name: "search_components",
+		description:
+			"Search every registered component at once (titles, subtitles, searchable columns). Returns kind+id+title hits — feed ids into get_component. workspace-search stays for raw brain retrieval; this is the component-level finder.",
+		inputSchema: {
+			type: "object",
+			properties: { q: { type: "string" } },
+			required: ["q"],
+		},
+	},
+	{
+		name: "link_components",
+		description:
+			"Cross-reference two components (from → to). Ownership NEVER goes here — real FKs own rows; this records references/mentions (e.g. video relates-to prospect, doc mentions company). Idempotent.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				from_kind: { type: "string" },
+				from_id: { type: "string" },
+				to_kind: { type: "string" },
+				to_id: { type: "string" },
+				link_type: { type: "string", description: "default 'references'" },
+				context: { type: "string", description: "why this link exists" },
+			},
+			required: ["from_kind", "from_id", "to_kind", "to_id"],
+		},
+	},
+	{
+		name: "list_links",
+		description: "All links for one component with resolved cards — entity_links both directions plus declared FK owners/children.",
+		inputSchema: {
+			type: "object",
+			properties: { kind: { type: "string" }, id: { type: "string" } },
+			required: ["kind", "id"],
+		},
+	},
+	{
+		name: "create_video",
+		description:
+			"Record an outreach video (CAP share link or mp4 URL) as a first-class video component. Pass prospect (company name, fuzzy — created if unknown) to own it; the tracked email link is /v/<video-id>. Watch telemetry lands on the video row automatically.",
+		inputSchema: {
+			type: "object",
+			properties: {
+				url: { type: "string", description: "CAP share URL or direct .mp4 URL" },
+				title: { type: "string", description: "what the video is; defaults to 'Outreach video — <company>'" },
+				description: { type: "string", description: "what it shows / why it exists" },
+				prospect: { type: "string", description: "prospect company name (matched case-insensitively; created if unknown)" },
+				prospect_id: { type: "string", description: "outreach_prospects id, alternative to prospect" },
+			},
+			required: ["url"],
+		},
+	},
 ] as const;
+
+/** Resolve a campaign row by id, or case-insensitive name. */
+async function resolveCampaign(
+	toolArgs: Record<string, unknown>,
+): Promise<{ id: string; name: string } | { error: string }> {
+	if (toolArgs.campaign_id) {
+		const [row] = await db
+			.select({ id: campaigns.id, name: campaigns.name })
+			.from(campaigns)
+			.where(eq(campaigns.id, String(toolArgs.campaign_id)))
+			.limit(1);
+		return row ?? { error: "campaign not found — check campaign_id (list_campaigns has ids)" };
+	}
+	if (toolArgs.campaign_name) {
+		const [row] = await db
+			.select({ id: campaigns.id, name: campaigns.name })
+			.from(campaigns)
+			.where(ilike(campaigns.name, String(toolArgs.campaign_name)))
+			.limit(1);
+		return row ?? { error: `campaign "${String(toolArgs.campaign_name)}" not found` };
+	}
+	return { error: "pass campaign_id or campaign_name" };
+}
+
+/** Resolve a campaign_companies row by id, or campaign name + company name. */
+async function resolveCampaignCompany(
+	toolArgs: Record<string, unknown>,
+): Promise<{ id: string; sequenceStep: number } | { error: string }> {
+	if (toolArgs.id) {
+		const [row] = await db
+			.select({ id: campaignCompanies.id, sequenceStep: campaignCompanies.sequenceStep })
+			.from(campaignCompanies)
+			.where(eq(campaignCompanies.id, String(toolArgs.id)))
+			.limit(1);
+		return row ?? { error: "campaign company not found — check id" };
+	}
+	if (toolArgs.campaign_name && toolArgs.company_name) {
+		const [camp] = await db
+			.select({ id: campaigns.id })
+			.from(campaigns)
+			.where(ilike(campaigns.name, String(toolArgs.campaign_name)))
+			.limit(1);
+		if (!camp) return { error: `campaign "${String(toolArgs.campaign_name)}" not found` };
+		const [row] = await db
+			.select({ id: campaignCompanies.id, sequenceStep: campaignCompanies.sequenceStep })
+			.from(campaignCompanies)
+			.where(and(eq(campaignCompanies.campaignId, camp.id), ilike(campaignCompanies.companyName, String(toolArgs.company_name))))
+			.limit(1);
+		return row ?? { error: "campaign company not found — check campaign_name + company_name" };
+	}
+	return { error: "pass id, or campaign_name + company_name" };
+}
 
 // ── HTTP handler ───────────────────────────────────────────────────
 
@@ -490,7 +811,7 @@ export async function POST(event: APIEvent) {
 						break;
 					}
 					case "run_brain_cycle": {
-						const { startCycle } = await import("~/routes/api/brain/cycle");
+						const { startCycle } = await import("~/lib/brain/cycle-runner");
 						result = await startCycle({ slack: true });
 						break;
 					}
@@ -516,22 +837,35 @@ export async function POST(event: APIEvent) {
 						result = { clients: rows };
 						break;
 					}
-					case "list_outreach":
-						result = await db
+					case "list_outreach": {
+						const rows = await db
 							.select({
 								id: outreachProspects.id,
 								company: outreachProspects.company,
 								stage: outreachProspects.stage,
 								contactName: outreachProspects.contactName,
 								email: outreachProspects.email,
-								videoUrl: outreachProspects.videoUrl,
-								videoDescription: outreachProspects.videoDescription,
 								brainUrl: outreachProspects.brainUrl,
 								brainActivityKey: outreachProspects.brainActivityKey,
 							})
 							.from(outreachProspects)
 							.orderBy(outreachProspects.company);
+						// videos own the link now — latest video per prospect rides along
+						const vids = await db.select().from(videos).orderBy(desc(videos.createdAt));
+						const latestVideo = new Map<string, (typeof vids)[number]>();
+						for (const v of vids) if (v.prospectId && !latestVideo.has(v.prospectId)) latestVideo.set(v.prospectId, v);
+						result = rows.map((p) => {
+							const v = latestVideo.get(p.id);
+							return {
+								...p,
+								videoId: v?.id ?? null,
+								videoUrl: v?.url ?? null,
+								videoDescription: v?.description ?? null,
+								videoStatus: v?.status ?? null,
+							};
+						});
 						break;
+					}
 					case "set_outreach_brain": {
 						const company = String(toolArgs.company ?? "").trim();
 						if (!company) {
@@ -562,12 +896,15 @@ export async function POST(event: APIEvent) {
 								.set({
 									...(brainUrl !== null ? { brainUrl } : {}),
 									...(activityKey ? { brainActivityKey: activityKey } : {}),
-									...(toolArgs.video_url !== undefined ? { videoUrl } : {}),
-									...(toolArgs.video_description !== undefined ? { videoDescription } : {}),
 									...(stage ? { stage } : {}),
 									...(toolArgs.contact_name ? { contactName: String(toolArgs.contact_name) } : {}),
 									...(toolArgs.email ? { email: String(toolArgs.email) } : {}),
 									...(toolArgs.notes ? { notes: String(toolArgs.notes) } : {}),
+									...(toolArgs.region !== undefined ? { region: String(toolArgs.region) } : {}),
+									...(toolArgs.revenue_band !== undefined ? { revenueBand: String(toolArgs.revenue_band) } : {}),
+									...(toolArgs.tech_team !== undefined ? { techTeam: String(toolArgs.tech_team) } : {}),
+									...(toolArgs.ai_interest !== undefined ? { aiInterest: String(toolArgs.ai_interest) } : {}),
+									...(toolArgs.source_note !== undefined ? { sourceNote: String(toolArgs.source_note) } : {}),
 								})
 								.where(eq(outreachProspects.id, existing.id));
 							result = { id: existing.id, company, updated: true };
@@ -578,25 +915,252 @@ export async function POST(event: APIEvent) {
 									company,
 									brainUrl,
 									brainActivityKey: activityKey || null,
-									videoUrl,
-									videoDescription,
 									...(stage ? { stage } : {}),
 									contactName: toolArgs.contact_name ? String(toolArgs.contact_name) : null,
 									email: toolArgs.email ? String(toolArgs.email) : null,
 									notes: toolArgs.notes ? String(toolArgs.notes) : null,
+									...(toolArgs.region !== undefined ? { region: String(toolArgs.region) } : {}),
+									...(toolArgs.revenue_band !== undefined ? { revenueBand: String(toolArgs.revenue_band) } : {}),
+									...(toolArgs.tech_team !== undefined ? { techTeam: String(toolArgs.tech_team) } : {}),
+									...(toolArgs.ai_interest !== undefined ? { aiInterest: String(toolArgs.ai_interest) } : {}),
+									...(toolArgs.source_note !== undefined ? { sourceNote: String(toolArgs.source_note) } : {}),
 								})
 								.returning({ id: outreachProspects.id });
+							if (videoUrl) {
+								await setProspectVideo(created.id, {
+									url: videoUrl,
+									...(videoDescription !== null ? { description: videoDescription } : {}),
+								});
+							}
 							result = { id: created.id, company, created: true };
 						}
 						break;
 					}
+					case "create_campaign": {
+						const name = String(toolArgs.name ?? "").trim();
+						if (!name) {
+							result = { error: "name is required" };
+							break;
+						}
+						const [row] = await db
+							.insert(campaigns)
+							.values({ name, description: toolArgs.description ? String(toolArgs.description) : null })
+							.returning({ id: campaigns.id, name: campaigns.name });
+						result = row;
+						break;
+					}
+					case "add_campaign_company": {
+						const companyName = String(toolArgs.company_name ?? "").trim();
+						if (!companyName) {
+							result = { error: "company_name is required" };
+							break;
+						}
+						let campaignId = toolArgs.campaign_id ? String(toolArgs.campaign_id) : null;
+						if (!campaignId && toolArgs.campaign_name) {
+							const cname = String(toolArgs.campaign_name).trim();
+							const [existing] = await db.select({ id: campaigns.id }).from(campaigns).where(ilike(campaigns.name, cname)).limit(1);
+							if (existing) campaignId = existing.id;
+							else {
+								const [createdCamp] = await db.insert(campaigns).values({ name: cname }).returning({ id: campaigns.id });
+								campaignId = createdCamp.id;
+							}
+						}
+						if (!campaignId) {
+							result = { error: "campaign_id or campaign_name is required" };
+							break;
+						}
+						const nextSendAt = toolArgs.next_send_at !== undefined ? new Date(String(toolArgs.next_send_at)) : undefined;
+						if (nextSendAt && Number.isNaN(nextSendAt.getTime())) {
+							result = { error: "invalid next_send_at" };
+							break;
+						}
+						const [row] = await db
+							.insert(campaignCompanies)
+							.values({
+								campaignId,
+								companyName,
+								contactEmail: toolArgs.contact_email !== undefined ? String(toolArgs.contact_email) || null : null,
+								sequenceStep: 1,
+								nextSendAt: nextSendAt ?? null,
+								nextEmailNote: toolArgs.next_email_note !== undefined ? String(toolArgs.next_email_note) : null,
+							})
+							.onConflictDoUpdate({
+								target: [campaignCompanies.campaignId, campaignCompanies.companyName],
+								set: {
+									...(toolArgs.contact_email !== undefined ? { contactEmail: String(toolArgs.contact_email) || null } : {}),
+								...(nextSendAt !== undefined ? { nextSendAt: nextSendAt ?? null } : {}),
+								...(toolArgs.next_email_note !== undefined ? { nextEmailNote: String(toolArgs.next_email_note) } : {}),
+								},
+							})
+							.returning({ id: campaignCompanies.id, sequenceStep: campaignCompanies.sequenceStep, nextSendAt: campaignCompanies.nextSendAt });
+						result = row;
+						break;
+					}
+					case "list_campaigns": {
+						const campRows = await db.select().from(campaigns).orderBy(campaigns.createdAt);
+						const compRows = await db.select().from(campaignCompanies).orderBy(campaignCompanies.companyName);
+						const prospectRows = await db.select({ company: outreachProspects.company, stage: outreachProspects.stage }).from(outreachProspects);
+						const stageByCompany = new Map(prospectRows.map((p) => [p.company.toLowerCase(), p.stage] as const));
+						result = {
+							campaigns: campRows.map((c) => ({
+								...c,
+								companies: compRows
+									.filter((x) => x.campaignId === c.id)
+									.map((x) => ({ ...x, prospectStage: stageByCompany.get(x.companyName.toLowerCase()) ?? null })),
+							})),
+						};
+						break;
+					}
+					case "set_campaign_templates": {
+						const camp = await resolveCampaign(toolArgs);
+						if ("error" in camp) {
+							result = camp;
+							break;
+						}
+						const rawTouches = Array.isArray(toolArgs.touches) ? toolArgs.touches : [];
+						const touches: { step: number; subject: string; body: string }[] = [];
+						for (const t of rawTouches) {
+							const step = Number((t as Record<string, unknown>).step);
+							const subject = String((t as Record<string, unknown>).subject ?? "").trim();
+							const body = String((t as Record<string, unknown>).body ?? "");
+							if (!Number.isInteger(step) || step < 1) {
+								result = { error: `touch ${touches.length + 1}: step must be a positive integer` };
+								break;
+							}
+							if (!subject || !body.trim()) {
+								result = { error: `touch ${step}: subject and body are required` };
+								break;
+							}
+							touches.push({ step, subject, body });
+					}
+						if (result) break;
+						// voice-lint every body BEFORE persisting: any violation rejects the
+						// whole call — no partial template state
+						const violations: { step: number; violations: Awaited<ReturnType<typeof lintVoiceText>>["violations"] }[] = [];
+						for (const t of touches) {
+							const lint = await lintVoiceText(t.body, { surface: "email" });
+							if (lint.avoidCount > 0) violations.push({ step: t.step, violations: lint.violations });
+						}
+						if (violations.length > 0) {
+							result = { error: `write REJECTED: ${violations.length} touch(es) have avoid-violations. Rewrite the flagged text and resubmit.`, violations };
+							break;
+						}
+						const [updated] = await db
+							.update(campaigns)
+							.set({ templates: touches })
+							.where(eq(campaigns.id, camp.id))
+							.returning({ id: campaigns.id, name: campaigns.name });
+						result = { ...updated, touches: touches.length, saved: true };
+						break;
+					}
+					case "campaign_stats": {
+						let campaignId: string | undefined;
+						if (toolArgs.campaign_id || toolArgs.campaign_name) {
+							const camp = await resolveCampaign(toolArgs);
+							if ("error" in camp) {
+								result = camp;
+								break;
+							}
+							campaignId = camp.id;
+						}
+						const { campaignStats } = await import("~/lib/campaign-stats");
+						result = { campaigns: await campaignStats(campaignId) };
+						break;
+					}
+					case "get_due_follow_ups": {
+						const rows = await db
+							.select({
+								id: campaignCompanies.id,
+								campaignId: campaignCompanies.campaignId,
+								companyName: campaignCompanies.companyName,
+								contactEmail: campaignCompanies.contactEmail,
+								sequenceStep: campaignCompanies.sequenceStep,
+								nextSendAt: campaignCompanies.nextSendAt,
+								nextEmailNote: campaignCompanies.nextEmailNote,
+								prospectStage: outreachProspects.stage,
+							})
+							.from(campaignCompanies)
+							.leftJoin(outreachProspects, ilike(outreachProspects.company, campaignCompanies.companyName))
+							.where(and(isNotNull(campaignCompanies.nextSendAt), lte(campaignCompanies.nextSendAt, new Date())))
+							.orderBy(campaignCompanies.nextSendAt);
+						result = { due: rows.filter((r) => !r.prospectStage || !DEAD_STAGES.has(r.prospectStage)) };
+						break;
+					}
+					case "mark_campaign_email_sent": {
+						const cadence = CADENCES[String(toolArgs.cadence ?? "rung-1")] ?? CADENCES["rung-1"];
+						const sentAt = toolArgs.sent_at ? new Date(String(toolArgs.sent_at)) : new Date();
+						if (Number.isNaN(sentAt.getTime())) {
+							result = { error: "invalid sent_at" };
+							break;
+						}
+						const row = await resolveCampaignCompany(toolArgs);
+						if ("error" in row) {
+							result = row;
+							break;
+						}
+						const deltaDays = cadence[row.sequenceStep - 1]; // step just sent is 1-based
+						const nextSendAt = deltaDays === undefined ? null : new Date(sentAt.getTime() + deltaDays * 86_400_000);
+						const [updated] = await db
+							.update(campaignCompanies)
+							.set({
+								sequenceStep: row.sequenceStep + 1,
+								nextSendAt,
+								...(toolArgs.next_email_note !== undefined ? { nextEmailNote: String(toolArgs.next_email_note) } : {}),
+							})
+							.where(eq(campaignCompanies.id, row.id))
+							.returning({ id: campaignCompanies.id, sequenceStep: campaignCompanies.sequenceStep, nextSendAt: campaignCompanies.nextSendAt });
+						result = { ...updated, sequenceDone: nextSendAt === null };
+						break;
+					}
+					case "stop_campaign_company": {
+						const reason = String(toolArgs.reason ?? "stopped").trim();
+						const row = await resolveCampaignCompany(toolArgs);
+						if ("error" in row) {
+							result = row;
+							break;
+						}
+						const [updated] = await db
+							.update(campaignCompanies)
+							.set({ nextSendAt: null, nextEmailNote: `STOPPED: ${reason}` })
+							.where(eq(campaignCompanies.id, row.id))
+							.returning({ id: campaignCompanies.id, nextSendAt: campaignCompanies.nextSendAt, note: campaignCompanies.nextEmailNote });
+						result = updated;
+						break;
+					}
+					case "newsletter_subscribe": {
+						const email = String(toolArgs.email ?? "").trim().toLowerCase();
+						if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+							result = { error: "valid email required" };
+							break;
+						}
+						const key = process.env.RESEND_API_KEY;
+						if (!key) {
+							result = { error: "RESEND_API_KEY not configured" };
+							break;
+						}
+						const { Resend } = await import("resend");
+						const resend = new Resend(key);
+						const segmentId = process.env.RESEND_SEGMENT_ID;
+						const { error } = await resend.contacts.create({
+								email,
+								unsubscribed: false,
+								...(segmentId ? { segments: [{ id: segmentId }] } : {}),
+							});
+						if (error) {
+								result = { error: `resend contacts.create failed: ${error.message}` };
+							break;
+						}
+						result = { ok: true, email, note: "added to the Cactus Dispatch segment — Resend unsubscribe is honored" };
+						break;
+					}
 				case "get_voice_lessons": {
 					const scope = toolScope(toolArgs);
+					const topic = toolArgs.topic === "subject" || toolArgs.topic === "cta" ? toolArgs.topic : undefined;
 					// the lessons gate marker: a doc write from this chat is only accepted
 					// within 1h of this call (and with lessons_reviewed=true on the write)
 					if (toolArgs.chat_uuid) await recordLessonReview(String(toolArgs.chat_uuid));
 					result = {
-						lessons: await getVoiceLessons(toolArgs.limit ? Number(toolArgs.limit) : undefined, scope),
+						lessons: await getVoiceLessons(toolArgs.limit ? Number(toolArgs.limit) : undefined, scope, topic),
 						known_genres: await listKnownGenres(),
 					};
 					break;
@@ -606,18 +1170,32 @@ export async function POST(event: APIEvent) {
 					result = await lintVoiceText(String(toolArgs.text ?? ""), scope);
 					break;
 				}
+				case "lint_voice_check": {
+					const scope = toolScope(toolArgs);
+					if (!scope) {
+						result = { error: "surface is required (email|docs|post|newsletter) — rules and lessons are scoped per surface." };
+						break;
+					}
+					const text = String(toolArgs.text ?? "");
+					result = {
+						lint: await lintVoiceText(text, scope),
+						top_lessons: (await topLessonsForText(text, scope)).slice(0, 10),
+						known_genres: await listKnownGenres(),
+					};
+					break;
+				}
 				case "create_doc": {
 					const gate = await gateGenre(toolArgs);
 					if ("error" in gate) {
 						result = gate;
 						break;
 					}
-					const lessons = await gateLessons(toolArgs);
+					const docMarkdown = toolArgs.markdown ? String(toolArgs.markdown) : "";
+					const lessons = await gateLessonsForText(toolArgs, docMarkdown, { surface: "docs", genre: gate.genre ?? null });
 					if (!lessons.ok) {
 						result = lessons;
 						break;
 					}
-					const docMarkdown = toolArgs.markdown ? String(toolArgs.markdown) : "";
 					const docLint = await lintVoiceText(docMarkdown, { surface: "docs", genre: gate.genre ?? null });
 					if (docLint.avoidCount > 0) {
 						result = lintGateError(docLint);
@@ -638,13 +1216,13 @@ export async function POST(event: APIEvent) {
 						result = gate;
 						break;
 					}
-					const lessons = await gateLessons(toolArgs);
+					const kind = toolName === "create_post" ? ("post" as const) : ("newsletter" as const);
+					const markdown = String(toolArgs.markdown ?? "");
+					const lessons = await gateLessonsForText(toolArgs, markdown, { surface: kind, genre: gate.genre ?? null });
 					if (!lessons.ok) {
 						result = lessons;
 						break;
 					}
-					const kind = toolName === "create_post" ? ("post" as const) : ("newsletter" as const);
-					const markdown = String(toolArgs.markdown ?? "");
 					// hard gate: reject BEFORE the doc exists — no advisory landing
 					const lint = await lintVoiceText(markdown, { surface: kind, genre: gate.genre ?? null });
 					if (lint.avoidCount > 0) {
@@ -688,7 +1266,16 @@ export async function POST(event: APIEvent) {
 							result = gate;
 							break;
 						}
-						const lessons = await gateLessons(toolArgs);
+						const content = String(toolArgs.content ?? "");
+						const [targetDoc] = await db
+							.select({ kind: docs.kind, genre: docs.genre })
+							.from(docs)
+							.where(eq(docs.id, String(toolArgs.doc_id ?? "")))
+							.limit(1);
+						const lessons = await gateLessonsForText(toolArgs, content, {
+							surface: targetDoc ? docSurface(targetDoc.kind) : "docs",
+							genre: gate.genre ?? targetDoc?.genre ?? null,
+						});
 						if (!lessons.ok) {
 							result = lessons;
 							break;
@@ -704,6 +1291,53 @@ export async function POST(event: APIEvent) {
 						});
 					}
 						break;
+					case "set_newsletter_subject": {
+						const d = await getDoc(String(toolArgs.doc_id ?? ""));
+						if (!d) {
+							result = { error: "not found" };
+							break;
+						}
+						if (d.kind !== "newsletter") {
+							result = { error: `doc ${d.id} is not a newsletter (kind=${d.kind}) — the subject only exists for issues` };
+							break;
+						}
+						const subject = String(toolArgs.subject ?? "").trim();
+						if (!subject) {
+							result = { error: "subject is required" };
+							break;
+						}
+						// the title IS the subject — rename is the whole write. Subject lint
+						// is advisory: a subject is a fragment, not body prose, so warnings
+						// never block the rename.
+						const warnings = (await lintVoiceText(subject, { surface: "newsletter" })).violations;
+						await renameDoc(d.id, subject);
+						result = { id: d.id, subject, lint_warnings: warnings };
+						break;
+					}
+					case "set_channel_appendix": {
+						const d = await getDoc(String(toolArgs.doc_id ?? ""));
+						if (!d) {
+							result = { error: "not found" };
+							break;
+						}
+						if (d.kind !== "newsletter") {
+							result = { error: `doc ${d.id} is not a newsletter (kind=${d.kind}) — channel appendix only exists for issues` };
+							break;
+						}
+						const channel = toolArgs.channel === "email" || toolArgs.channel === "web" ? toolArgs.channel : null;
+						if (!channel) {
+							result = { error: 'channel must be "email" or "web"' };
+							break;
+						}
+						const content = String(toolArgs.content ?? "");
+						// advisory lint — channel copy lands either way, Collin reviews
+						const warnings = content.trim()
+							? (await lintVoiceText(content, { surface: "newsletter" })).violations
+							: [];
+						await setDocAppendix(d.id, channel, content);
+						result = { id: d.id, channel, lint_warnings: warnings };
+						break;
+					}
 					case "list_doc_versions":
 						result = { versions: await listDocVersions(String(toolArgs.doc_id ?? "")) };
 						break;
@@ -729,16 +1363,85 @@ export async function POST(event: APIEvent) {
 						break;
 					}
 					case "create_email_draft": {
-						const { createEmailDraft } = await import("~/lib/email-outbox");
-						result = await createEmailDraft({
+						// hard gate BEFORE insert: a lint-failing draft never lands, so retries
+						// can't pile up duplicate outbox rows (the 3-drafts bug). Revisions of
+						// an already-landed draft go through draft_id instead of a new row.
+						const { createEmailDraft, updateEmailDraft } = await import("~/lib/email-outbox");
+						const draftBody = String(toolArgs.body ?? "");
+						// send_at: schedule the landed draft for auto-send via the outbox ticker
+						const scheduleDraftResult = async (outboxId: string) => {
+							const when = new Date(String(toolArgs.send_at));
+							if (Number.isNaN(when.getTime())) {
+								result = { ...(result as object), scheduled: false, error: "invalid send_at — draft left unscheduled" };
+								return;
+							}
+							const { scheduleOutboxDraft } = await import("~/lib/email-outbox");
+							const sched = await scheduleOutboxDraft(outboxId, when);
+							result = sched.ok
+								? { ...(result as object), scheduled: true, sendAt: sched.sendAt }
+								: { ...(result as object), scheduled: false, scheduleError: "error" in sched ? sched.error : "voice_lint blocked" };
+						};
+						const lessons = await gateLessonsForText(toolArgs, draftBody, { surface: "email", genre: null });
+						if (!lessons.ok) {
+							result = lessons;
+							break;
+						}
+						const draftLint = await lintVoiceText(draftBody, { surface: "email" });
+						if (draftLint.avoidCount > 0) {
+							result = lintGateError(draftLint);
+							break;
+						}
+						// campaign linkage: validate the target row exists, then carry both
+						// fields onto the outbox row — every campaign send becomes a real
+						// outbox row joined to its campaign company
+						let campaignCompanyId: string | undefined;
+						let campaignStep: number | undefined;
+						if (toolArgs.campaign_company_id) {
+							campaignCompanyId = String(toolArgs.campaign_company_id);
+							const [cc] = await db
+								.select({ id: campaignCompanies.id })
+								.from(campaignCompanies)
+								.where(eq(campaignCompanies.id, campaignCompanyId))
+								.limit(1);
+							if (!cc) {
+								result = { error: "campaign_company_id not found — get ids from list_campaigns" };
+								break;
+							}
+							if (toolArgs.campaign_step !== undefined) {
+								campaignStep = Number(toolArgs.campaign_step);
+								if (!Number.isInteger(campaignStep) || campaignStep < 1) {
+									result = { error: "campaign_step must be a positive integer" };
+									break;
+								}
+							}
+						}
+						if (toolArgs.draft_id) {
+							const upd = await updateEmailDraft({
+								outboxId: String(toolArgs.draft_id),
+								to: String(toolArgs.to ?? ""),
+								cc: toolArgs.cc ? String(toolArgs.cc) : undefined,
+								bcc: toolArgs.bcc ? String(toolArgs.bcc) : undefined,
+								subject: String(toolArgs.subject ?? ""),
+								body: draftBody,
+								...(campaignCompanyId ? { campaignCompanyId, campaignStep } : {}),
+							});
+							result = upd;
+							if (!(upd && typeof upd === "object" && "outboxId" in upd)) break;
+							if (toolArgs.send_at) await scheduleDraftResult(String(upd.outboxId));
+							break;
+						}
+						const created = await createEmailDraft({
 							to: String(toolArgs.to ?? ""),
 							cc: toolArgs.cc ? String(toolArgs.cc) : undefined,
 							bcc: toolArgs.bcc ? String(toolArgs.bcc) : undefined,
 							subject: String(toolArgs.subject ?? ""),
-							body: String(toolArgs.body ?? ""),
+							body: draftBody,
 							chatUuid: String(toolArgs.chat_uuid ?? ""),
 							threadId: toolArgs.thread_id ? String(toolArgs.thread_id) : undefined,
+							...(campaignCompanyId ? { campaignCompanyId, campaignStep } : {}),
 						});
+						result = created;
+						if (toolArgs.send_at) await scheduleDraftResult(created.outboxId);
 						break;
 					}
 					// ── Short links ──
@@ -796,6 +1499,85 @@ export async function POST(event: APIEvent) {
 							.leftJoin(docs, eq(shortLinks.docId, docs.id))
 							.orderBy(desc(shortLinks.clicks), desc(shortLinks.createdAt));
 						break;
+					// ── Components (registry-driven generic tools) ──
+					case "list_component_types":
+						result = { components: listComponentTypes() };
+						break;
+					case "get_component": {
+						const kind = String(toolArgs.kind ?? "");
+						const id = String(toolArgs.id ?? "");
+						const def = getComponent(kind);
+						if (!def) {
+							result = { error: `unknown kind "${kind}" — call list_component_types` };
+							break;
+						}
+						const card = await resolveCard({ kind, id });
+						const links = await linksFor({ kind, id });
+						// row subset: scalars only, long strings truncated (bodies never dump)
+						const row = card.deleted ? null : Object.fromEntries(
+							Object.entries((await loadRow(def, id)) ?? {}).filter(([, v]) => ["string", "number", "boolean"].includes(typeof v))
+								.map(([k, v]) => [k, typeof v === "string" && v.length > 200 ? v.slice(0, 200) + "…" : v]),
+						);
+						result = { card, row, links };
+						break;
+					}
+					case "search_components":
+						result = { hits: await searchAll(String(toolArgs.q ?? "")) };
+						break;
+					case "link_components": {
+						try {
+							await linkComponents(
+								{ kind: String(toolArgs.from_kind ?? ""), id: String(toolArgs.from_id ?? "") },
+								{ kind: String(toolArgs.to_kind ?? ""), id: String(toolArgs.to_id ?? "") },
+								{ linkType: toolArgs.link_type ? String(toolArgs.link_type) : "references", context: toolArgs.context ? String(toolArgs.context) : null, createdBy: "agent" },
+							);
+							result = { linked: true };
+						} catch (e) {
+							result = e instanceof UnknownKindError ? { error: e.message } : { error: String(e) };
+						}
+						break;
+					}
+					case "list_links": {
+						const kind = String(toolArgs.kind ?? "");
+						if (!getComponent(kind)) {
+							result = { error: `unknown kind "${kind}" — call list_component_types` };
+							break;
+						}
+						result = await listLinks({ kind, id: String(toolArgs.id ?? "") });
+						break;
+					}
+					case "create_video": {
+						const url = String(toolArgs.url ?? "").trim();
+						if (!/^https?:\/\//i.test(url)) {
+							result = { error: "url must be an http(s) URL (CAP share link or direct mp4)" };
+							break;
+						}
+						let prospectId: string | null = null;
+						if (toolArgs.prospect_id) {
+							const [row] = await db.select({ id: outreachProspects.id }).from(outreachProspects).where(eq(outreachProspects.id, String(toolArgs.prospect_id))).limit(1);
+							prospectId = row?.id ?? null;
+							if (!prospectId) {
+								result = { error: "prospect_id not found — list_outreach has ids" };
+								break;
+							}
+						} else if (toolArgs.prospect) {
+							const cname = String(toolArgs.prospect).trim();
+							const [existing] = await db.select({ id: outreachProspects.id }).from(outreachProspects).where(ilike(outreachProspects.company, cname)).limit(1);
+							if (existing) prospectId = existing.id;
+							else {
+								const [created] = await db.insert(outreachProspects).values({ company: cname }).returning({ id: outreachProspects.id });
+								prospectId = created.id;
+							}
+						}
+						const v = await createVideo({
+							url,
+							title: toolArgs.title ? String(toolArgs.title) : undefined,
+							description: toolArgs.description ? String(toolArgs.description) : null,
+							prospectId,
+						});
+						result = { id: v.id, url: v.url, prospectId: v.prospectId, watchLink: `/v/${v.id}`, fullWatchLink: `https://madcactus.org/v/${v.id}` };
+						break;
+					}
 					default:
 						return rpcError(id, -32601, `Unknown tool: ${toolName}`);
 				}

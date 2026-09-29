@@ -7,17 +7,19 @@
 // mirroring macro's selection toolbar.
 // Node registry + markdown transformers (GFM tables, page breaks) live in
 // ~/lib/doc-markdown so they stay testable headless.
-import { onCleanup, onMount, createEffect, createSignal, Show } from "solid-js";
-import { DOC_NODES, DOC_TRANSFORMERS } from "~/lib/doc-markdown";
+import { onCleanup, onMount, createEffect, createSignal, Show, For } from "solid-js";
+import { DOC_NODES, DOC_TRANSFORMERS, $isAtEmptyListItemStart, MentionNode, $isMentionNode } from "~/lib/doc-markdown";
 import { TableCellNode, TableRowNode, TableNode, $isTableNode, $createTableNode, $isTableCellNode, $isTableRowNode } from "@lexical/table";
 import type { LexicalNode } from "lexical";
 import { $convertFromMarkdownString, $convertToMarkdownString, registerMarkdownShortcuts } from "@lexical/markdown";
 import {
 	$getNearestNodeFromDOMNode,
+	$getRoot,
 	createEditor,
 	FORMAT_TEXT_COMMAND,
 	INSERT_PARAGRAPH_COMMAND,
-	KEY_DOWN_COMMAND,
+		DELETE_CHARACTER_COMMAND,
+		KEY_DOWN_COMMAND,
 	KEY_ENTER_COMMAND,
 	KEY_TAB_COMMAND,
 	BEFORE_INPUT_COMMAND,
@@ -25,6 +27,9 @@ import {
 	COMMAND_PRIORITY_HIGH,
 	COMMAND_PRIORITY_LOW,
 	COMMAND_PRIORITY_EDITOR,
+	$getNodeByKey,
+	$isElementNode,
+	$isTextNode,
 	type RangeSelection,
 	type TextFormatType,
 	$getSelection,
@@ -39,6 +44,7 @@ import { CodeNode, CodeHighlightNode, $isCodeNode } from "@lexical/code";
 import { LinkNode, AutoLinkNode, TOGGLE_LINK_COMMAND, toggleLink } from "@lexical/link";
 import { $setBlocksType } from "@lexical/selection";
 import type { TableSplit } from "~/lib/doc-pages";
+import type { LintViolation } from "~/lib/voice-lint";
 
 // CHECK_LIST converts on Enter (triggerOnEnter), so "- [ ] item" + Enter
 // becomes a checkbox while "- " alone becomes a plain bullet on space —
@@ -51,9 +57,25 @@ type ToolbarApi = {
 	link: () => void;
 };
 
+/** minimal card shape the picker/hover UI needs (from /api/components/card) */
+type MentionCard = {
+	kind: string;
+	id: string;
+	title: string;
+	subtitle: string | null;
+	statusLabel: string | null;
+	adminUrl: string | null;
+	publicUrl: string | null;
+	updatedAt: string | null;
+	deleted: boolean;
+};
+type ComponentSearchHit = { kind: string; id: string; title: string; subtitle: string | null; status: string | null; statusLabel: string | null };
+
 /** What the pager (DocEditor.runLayout) can ask the editor to do. */
 export type DocEditorApi = {
 	root: HTMLElement;
+	/** current plain-text content (offsets match LintViolation.index) */
+	text: () => string;
 	/** split crossing tables at row boundaries (page pagination); returns true when any split */
 	splitTables: (splits: TableSplit[]) => boolean;
 };
@@ -69,12 +91,49 @@ export default function LexicalDocEditor(props: {
 	onBlur?: () => void;
 	/** live pager API: root + break/sanitize operations (see DocEditorApi) */
 	onReady?: (api: DocEditorApi) => void;
+	/** voice-lint hits against the editor's PLAIN TEXT (api.text() offsets) —
+	 *  painted as wavy-underline overlays; editor state is never touched, so
+	 *  undo history and markdown round-trips stay clean */
+	violations?: LintViolation[];
 }) {
 	let host!: HTMLDivElement;
+	let lintOverlay!: HTMLDivElement;
 	let api: ToolbarApi | undefined;
 	const [tbShown, setTbShown] = createSignal(false);
 	const [tbPos, setTbPos] = createSignal({ x: 0, y: 0 });
 	const [tbFmt, setTbFmt] = createSignal({ bold: false, italic: false, strike: false, code: false, h2: false, quote: false });
+	// ── @-mention picker + hover cards (registry-backed) ─────────────
+	const [picker, setPicker] = createSignal<{
+		triggerId: number;
+		nodeKey: string;
+		/** offset of the "@" inside its text node */
+		at: number;
+		/** caret offset inside the same text node (query end) */
+		caret: number;
+		q: string;
+		x: number;
+		y: number;
+	} | null>(null);
+	const [pickerHits, setPickerHits] = createSignal<ComponentSearchHit[]>([]);
+	const [pickerIdx, setPickerIdx] = createSignal(0);
+	const [hover, setHover] = createSignal<{ x: number; y: number; card: MentionCard | null } | null>(null);
+	const cardCache = new Map<string, Promise<MentionCard | null>>();
+	const cardFor = (kind: string, id: string): Promise<MentionCard | null> => {
+		const key = `${kind}:${id}`;
+		if (!cardCache.has(key)) {
+			cardCache.set(
+				key,
+				fetch(`/api/components/card?kind=${encodeURIComponent(kind)}&id=${encodeURIComponent(id)}`)
+					.then((r) => (r.ok ? r.json() : { card: null }))
+					.then((d) => (d.card as MentionCard | null) ?? null)
+					.catch(() => null),
+			);
+		}
+		return cardCache.get(key)!;
+	};
+	let triggerSeq = 0;
+	// set inside onMount (needs the editor closure); the dropdown calls this
+	let insertMentionFn: ((hit: ComponentSearchHit) => void) | undefined;
 
 	onMount(() => {
 		const ed = createEditor({
@@ -122,7 +181,17 @@ export default function LexicalDocEditor(props: {
 			return any;
 		};
 
-		props.onReady?.({ root: host, splitTables });
+		props.onReady?.({
+			root: host,
+			splitTables,
+			text: () => {
+				let t = "";
+				ed.read(() => {
+					t = $getRoot().getTextContent();
+				});
+				return t;
+			},
+		});
 		// the JSX host must not carry contenteditable=false — Lexical manages the
 		// attribute itself, and a stale "false" leaves the doc uneditable
 		ed.setEditable(!props.readOnly);
@@ -147,6 +216,65 @@ export default function LexicalDocEditor(props: {
 			COMMAND_PRIORITY_EDITOR,
 		);
 
+		// ── voice-lint underline overlay ──────────────────────────────────
+		// Zero editor-state mutation: DOM ranges over the host's text nodes are
+		// measured, and absolutely-positioned <mark>s are painted in a sibling
+		// overlay (host-relative rects survive window scroll). Re-painted on
+		// lint results, editor updates (debounced), and layout shifts.
+		const paintLint = () => {
+			if (!lintOverlay) return;
+			lintOverlay.replaceChildren();
+			const vs = props.violations ?? [];
+			if (!vs.length) return;
+			const hostRect = host.getBoundingClientRect();
+			const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+			const spans: { node: Text; start: number; len: number }[] = [];
+			let off = 0;
+			for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+				const t = n as Text;
+				spans.push({ node: t, start: off, len: t.data.length });
+				off += t.data.length;
+			}
+			for (const v of vs) {
+				if (v.index < 0 || v.index + v.length > off || v.length <= 0) continue;
+				const s = v.index;
+				const e = v.index + v.length;
+				for (const sp of spans) {
+					const a = Math.max(s, sp.start);
+					const b = Math.min(e, sp.start + sp.len);
+					if (a >= b) continue;
+					const r = document.createRange();
+					r.setStart(sp.node, a - sp.start);
+					r.setEnd(sp.node, b - sp.start);
+					for (const rect of Array.from(r.getClientRects())) {
+						if (rect.width < 1 || rect.height < 1) continue;
+						const m = document.createElement("mark");
+						m.className = "lint-underline-overlay";
+						m.title = v.rule;
+						m.style.left = `${rect.left - hostRect.left}px`;
+						m.style.top = `${rect.top - hostRect.top}px`;
+						m.style.width = `${rect.width}px`;
+						m.style.height = `${rect.height}px`;
+						lintOverlay.appendChild(m);
+					}
+				}
+			}
+		};
+		let lintTimer: ReturnType<typeof setTimeout> | undefined;
+		const scheduleLintPaint = () => {
+			clearTimeout(lintTimer);
+			lintTimer = setTimeout(paintLint, 400);
+		};
+		const ro = new ResizeObserver(scheduleLintPaint);
+		ro.observe(host);
+		const onWinResize = () => scheduleLintPaint();
+		window.addEventListener("resize", onWinResize);
+		// violations prop changes repaint (rAF: let the render settle first)
+		createEffect(() => {
+			void props.violations?.length;
+			requestAnimationFrame(paintLint);
+		});
+
 		const currentMd = () => {
 			let md = "";
 			ed.read(() => {
@@ -166,10 +294,189 @@ export default function LexicalDocEditor(props: {
 			});
 		});
 
+		// ── @-mention picker ─────────────────────────────────────────
+		// typing "@query" before the caret opens a registry-backed typeahead;
+		// Enter inserts a MentionNode chip. Detection runs on every update
+		// (cheap text-node read); the fetch is debounced + race-guarded.
+		const closePicker = () => {
+			setPicker(null);
+			setPickerHits([]);
+		};
+		const detectPicker = () => {
+			if (props.readOnly) return;
+			let next: Parameters<typeof setPicker>[0] = null;
+			ed.read(() => {
+				const s = $getSelection();
+				if (!$isRangeSelection(s) || !s.isCollapsed()) return;
+				const n = s.anchor.getNode();
+				if (!$isTextNode(n)) return;
+				const textBefore = n.getTextContent().slice(0, s.anchor.offset);
+				const m = /(^|[^\w@])@([\w:.-]*)$/.exec(textBefore);
+				if (!m) return;
+				const dom = window.getSelection();
+				const r = dom && dom.rangeCount > 0 ? dom.getRangeAt(0).getBoundingClientRect() : null;
+				next = {
+					triggerId: triggerSeq,
+					nodeKey: n.getKey(),
+					at: s.anchor.offset - m[2].length - 1,
+					caret: s.anchor.offset,
+					q: m[2],
+					x: Math.max(180, Math.min(r?.left ?? 200, window.innerWidth - 200)),
+					y: Math.min((r?.bottom ?? 200) + 6, window.innerHeight - 40),
+				};
+			});
+			if (next) setPicker(next);
+			else closePicker();
+		};
+		let pickerFetchTimer: ReturnType<typeof setTimeout> | undefined;
+		createEffect(() => {
+			const p = picker();
+			if (!p) return;
+			clearTimeout(pickerFetchTimer);
+			pickerFetchTimer = setTimeout(async () => {
+				if (!p.q) return;
+				try {
+					const r = await fetch(`/api/components/search?q=${encodeURIComponent(p.q)}`);
+					if (!r.ok) return;
+					const d = (await r.json()) as { hits?: ComponentSearchHit[] };
+					// stale-guard: only the still-open trigger may apply results
+					if (picker()?.triggerId === p.triggerId) {
+						setPickerHits(d.hits ?? []);
+						setPickerIdx(0);
+					}
+				} catch {
+					/* offline/search error — picker just stays empty */
+				}
+			}, 180);
+		});
+		/** insert a chip, splicing the "@query" trigger text out of its node */
+		const insertMention = (hit: ComponentSearchHit) => {
+			const p = picker();
+			if (!p) return;
+			closePicker();
+			ed.update(() => {
+				const node = $getNodeByKey(p.nodeKey);
+				if (!$isTextNode(node)) return;
+				const text = node.getTextContent();
+				// the caret may have moved since open — splice by remembered offsets
+				const before = text.slice(0, Math.min(p.at, text.length));
+				const after = text.slice(Math.max(p.caret, p.at));
+				const mention = new MentionNode(hit.kind, hit.id, hit.title, hit.statusLabel, false);
+				const parts: LexicalNode[] = [];
+				if (before) parts.push($createTextNode(before));
+				parts.push(mention);
+				if (after) parts.push($createTextNode(after));
+				node.replace(parts[0], true);
+				let cursor = parts[0];
+				for (const part of parts.slice(1)) {
+					cursor.insertAfter(part);
+					cursor = part;
+				}
+				const last = parts[parts.length - 1];
+				if ($isTextNode(last)) last.selectEnd();
+				else mention.selectNext();
+			});
+		};
+		insertMentionFn = insertMention;
+		const offPickerKeys = ed.registerCommand(
+			KEY_DOWN_COMMAND,
+			(event) => {
+				const p = picker();
+				if (!p) return false;
+				const hits = pickerHits();
+				if (event.key === "Escape") {
+					event.preventDefault();
+					closePicker();
+					return true;
+				}
+				if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+					event.preventDefault();
+					setPickerIdx((i) => (hits.length ? (i + (event.key === "ArrowDown" ? 1 : hits.length - 1)) % hits.length : 0));
+					return true;
+				}
+				if ((event.key === "Enter" || event.key === "Tab") && hits.length) {
+					event.preventDefault();
+					insertMention(hits[Math.min(pickerIdx(), hits.length - 1)]);
+					return true;
+				}
+				return false;
+			},
+			COMMAND_PRIORITY_HIGH,
+		);
+
+		// live chip labels: unresolved mentions fetch their card and re-render
+		// with the registry's current title/status (markdown never changes —
+		// export stores only kind:id)
+		const refreshMentions = () => {
+			const stale: { key: string; kind: string; id: string }[] = [];
+			ed.read(() => {
+				const walk = (n: LexicalNode) => {
+					if ($isMentionNode(n)) stale.push({ key: n.getKey(), kind: n.__kind, id: n.__id });
+					else if ($isElementNode(n)) n.getChildren().forEach(walk);
+				};
+				walk($getRoot());
+			});
+			if (!stale.length) return;
+			Promise.all(stale.map(async (s) => ({ ...s, card: await cardFor(s.kind, s.id) }))).then((items) => {
+				ed.update(() => {
+					for (const it of items) {
+						const node = $getNodeByKey(it.key);
+						if (!$isMentionNode(node)) continue;
+						const label = it.card?.title ?? `${it.kind}:${it.id}`;
+						const status = it.card?.statusLabel ?? null;
+						const missing = !it.card || it.card.deleted;
+						if (node.__label !== label || node.__status !== status || node.__missing !== missing) {
+							node.replace(new MentionNode(it.kind, it.id, label, status, missing), true);
+						}
+					}
+				});
+			});
+		};
+		let mentionTimer: ReturnType<typeof setTimeout> | undefined;
+		const scheduleMentionRefresh = () => {
+			clearTimeout(mentionTimer);
+			mentionTimer = setTimeout(refreshMentions, 500);
+		};
+
+		// hover cards: delegated mouseover on chips — fetch once per ref (cache),
+		// popover shows title/status/subtitle/updated + admin link
+		let hoverTimer: ReturnType<typeof setTimeout> | undefined;
+		let hoverHideTimer: ReturnType<typeof setTimeout> | undefined;
+		const showPopoverFor = (chip: HTMLElement) => {
+			const kind = chip.getAttribute("data-kind") ?? "";
+			const id = chip.getAttribute("data-id") ?? "";
+			if (!kind || !id) return;
+			const r = chip.getBoundingClientRect();
+			setHover({ x: Math.max(180, Math.min(r.left, window.innerWidth - 200)), y: r.bottom + 6, card: null });
+			cardFor(kind, id).then((card) => {
+				// still hovering the same chip? then land the card
+				const cur = hover();
+				if (cur) setHover({ ...cur, card });
+			});
+		};
+		const onHostOver = (e: MouseEvent) => {
+			const chip = (e.target as HTMLElement).closest?.(".doc-mention") as HTMLElement | null;
+			clearTimeout(hoverHideTimer);
+			if (!chip) return;
+			clearTimeout(hoverTimer);
+			hoverTimer = setTimeout(() => showPopoverFor(chip), 250);
+		};
+		const onHostOut = (e: MouseEvent) => {
+			const chip = (e.target as HTMLElement).closest?.(".doc-mention") as HTMLElement | null;
+			if (!chip) return;
+			clearTimeout(hoverTimer);
+			hoverHideTimer = setTimeout(() => setHover(null), 150);
+		};
+		host.addEventListener("mouseover", onHostOver);
+		host.addEventListener("mouseout", onHostOut);
+
 		// Autosave ~1.2s after typing stops.
 		let timer: ReturnType<typeof setTimeout> | undefined;
 		const offUpdate = ed.registerUpdateListener(() => {
 			syncToolbar();
+			scheduleLintPaint();
+			detectPicker();
+			scheduleMentionRefresh();
 			props.onLayoutDirty?.();
 			clearTimeout(timer);
 			timer = setTimeout(() => props.onMarkdownChange(currentMd()), 1200);
@@ -213,7 +520,11 @@ export default function LexicalDocEditor(props: {
 			},
 			COMMAND_PRIORITY_LOW,
 		);
-		const hideOnBlur = () => setTbShown(false);
+		const hideOnBlur = () => {
+			setTbShown(false);
+			closePicker();
+			setHover(null);
+		};
 		host.addEventListener("blur", hideOnBlur);
 		host.addEventListener("scroll", hideOnBlur, true);
 
@@ -327,6 +638,23 @@ export default function LexicalDocEditor(props: {
 			COMMAND_PRIORITY_EDITOR,
 		);
 
+		// Backspace on an empty list item exits the list (Google Docs behavior).
+		// Desktop Backspace never reaches BEFORE_INPUT — registerRichText's
+		// KEY_BACKSPACE handler preventDefaults keydown and dispatches
+		// DELETE_CHARACTER_COMMAND, whose stock impl merges the empty item into
+		// the previous one and stays numbered, leaving Enter as the only escape.
+		// Intercept above it (LOW > EDITOR) and reuse registerList's INSERT_PARAGRAPH
+		// exit, which replaces the empty item with a plain paragraph.
+		ed.registerCommand(
+			DELETE_CHARACTER_COMMAND,
+			(isBackward: boolean) => {
+				if (!isBackward || !$isAtEmptyListItemStart($getSelection())) return false;
+				ed.dispatchCommand(INSERT_PARAGRAPH_COMMAND, undefined);
+				return true;
+			},
+			COMMAND_PRIORITY_LOW,
+		);
+
 		// Tab / Shift+Tab move between table cells (0.45's applyTableHandlers
 		// is internal-API shaped; this covers the navigation users expect)
 		ed.registerCommand(
@@ -421,18 +749,30 @@ export default function LexicalDocEditor(props: {
 
 		onCleanup(() => {
 			clearTimeout(timer);
+			clearTimeout(lintTimer);
+			clearTimeout(mentionTimer);
+			clearTimeout(pickerFetchTimer);
+			clearTimeout(hoverTimer);
+			clearTimeout(hoverHideTimer);
+			ro.disconnect();
+			window.removeEventListener("resize", onWinResize);
 			offUpdate();
 			offKeys();
 			offSel();
 			offBeforeInput();
+			offPickerKeys();
 			host.removeEventListener("blur", hideOnBlur);
 			host.removeEventListener("scroll", hideOnBlur, true);
+			host.removeEventListener("mouseover", onHostOver);
+			host.removeEventListener("mouseout", onHostOut);
 			ed.setRootElement(null);
 		});
 	});
 
  return (
 		<>
+			<div style={{ position: "relative" }}>
+			<div ref={lintOverlay} class="lint-overlay" aria-hidden="true" />
 			<div
 				ref={host}
 				class="doc-editor"
@@ -447,7 +787,8 @@ export default function LexicalDocEditor(props: {
 				data-gramm="false"
 				data-gramm_editor="false"
 			/>
-			<Show when={!props.readOnly}>
+			</div>
+				<Show when={!props.readOnly}>
 				<div
 					class="doc-toolbar"
 					style={{ display: tbShown() ? "flex" : "none", top: `${tbPos().y}px`, left: `${tbPos().x}px` }}
@@ -479,6 +820,58 @@ export default function LexicalDocEditor(props: {
 						↗
 					</button>
 				</div>
+			</Show>
+			{/* @-mention typeahead — registry-backed (kind label · title · status) */}
+			<Show when={picker() && pickerHits().length}>
+				<div class="mention-picker" style={{ top: `${picker()!.y}px`, left: `${picker()!.x}px` }}>
+					<For each={pickerHits()}>
+						{(hit, i) => (
+							<button
+								type="button"
+								classList={{ selected: i() === pickerIdx() }}
+								onMouseDown={(e) => {
+									e.preventDefault(); // keep editor focus/selection
+									insertMentionFn?.(hit);
+							}}
+							>
+								<span class="mention-picker-kind">{hit.kind}</span>
+								<span class="mention-picker-title">{hit.title}</span>
+								<Show when={hit.statusLabel}>
+									<span class="mention-picker-status">{hit.statusLabel}</span>
+								</Show>
+							</button>
+						)}
+					</For>
+				</div>
+			</Show>
+			{/* hover card — live from /api/components/card */}
+			<Show when={hover()}>
+				{(h) => (
+					<div class="mention-popover" style={{ top: `${h().y}px`, left: `${h().x}px` }}>
+						<Show when={h().card} fallback={<div class="mention-popover-loading">…</div>}>
+							{(card) => (
+								<>
+									<div class="mention-popover-head">
+										<span class="mention-popover-kind">{card().kind}</span>
+										<Show when={card().deleted} fallback={<Show when={card().statusLabel}><span class="mention-popover-status">{card()!.statusLabel}</span></Show>}>
+											<span class="mention-popover-status mention-popover-deleted">deleted</span>
+										</Show>
+									</div>
+									<div class="mention-popover-title">{card().deleted ? `${card().kind}:${card().id.slice(0, 8)}…` : card().title}</div>
+									<Show when={card().subtitle}>
+										<div class="mention-popover-subtitle">{card()!.subtitle}</div>
+									</Show>
+									<div class="mention-popover-meta">
+										<Show when={card().updatedAt}>{new Date(card()!.updatedAt!).toLocaleDateString()}</Show>
+										<Show when={card().adminUrl}>
+											<a href={card()!.adminUrl!} target="_blank" rel="noreferrer">open ↗</a>
+										</Show>
+									</div>
+								</>
+							)}
+						</Show>
+					</div>
+				)}
 			</Show>
 		</>
 	);

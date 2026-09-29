@@ -1,5 +1,5 @@
 import { query, action, redirect, revalidate } from "@solidjs/router";
-import { eq, and, desc, inArray, isNull, ilike, gt } from "drizzle-orm";
+import { eq, and, desc, asc, inArray, isNull, isNotNull, ilike, gt, lte, notInArray } from "drizzle-orm";
 import { getTableColumns } from "drizzle-orm";
 import { getAuthedClient } from "./session";
 import { supabaseService } from "./supabase";
@@ -15,7 +15,12 @@ import {
 	deliverableUpdates,
 	apiKeys,
 	outreachProspects,
+	videos,
+	campaigns,
+	campaignCompanies,
 	emailMessages,
+	brainRequests,
+	docs,
 	OUTREACH_STAGES,
 } from "~/db/schema";
 import type {
@@ -23,11 +28,17 @@ import type {
 	InvoiceStatus,
 	DeliverableStatus,
 	OutreachStage,
+	OutreachProspect,
+	CampaignTouch,
 } from "~/db/schema";
 import { generateApiKey, hashKey, keyPrefix } from "~/lib/crypto";
 import { normalizeBrainTools } from "~/lib/brain-activity";
 import { contactSuggestionsFor, latestThreadFor } from "~/lib/outreach-email";
 import { triggerSyncIfStale } from "~/lib/email-queries";
+import { campaignStats } from "~/lib/campaign-stats";
+import { lintVoiceText } from "~/lib/voice-lint-db";
+import { setProspectVideo } from "~/lib/videos";
+import type { Video } from "~/db/schema";
 
 // ── Auth guard ────────────────────────────────────────────────────
 
@@ -390,8 +401,8 @@ export const createDeliverableAction = action(async (formData: FormData) => {
 		description: String(formData.get("description") || ""),
 		sortOrder: nextOrder,
 	});
-	const ref = formData.get("_referer");
-	throw redirect(ref ? String(ref) : "/admin/projects");
+	await revalidate(getDeliverablesQuery.key);
+	return { success: "Deliverable created." };
 }, "createDeliverable");
 
 export const updateDeliverableStatusAction = action(
@@ -736,14 +747,18 @@ export const getOutreachQuery = query(async () => {
 		.select()
 		.from(outreachProspects)
 		.orderBy(desc(outreachProspects.createdAt));
-	const all = [] as (typeof rows[number] & { emailStatus: ProspectEmailStatus | null })[];
+	// latest video per prospect (videos own the link now — one pass, newest wins)
+	const videoRows = await db.select().from(videos).orderBy(desc(videos.createdAt));
+	const videoByProspect = new Map<string, Video>();
+	for (const v of videoRows) if (v.prospectId && !videoByProspect.has(v.prospectId)) videoByProspect.set(v.prospectId, v);
+	const all = [] as (typeof rows[number] & { emailStatus: ProspectEmailStatus | null; video: Video | null })[];
 	for (const p of rows) {
 		const status = p.email ? await prospectEmailStatus(p.email) : null;
 		if (status?.repliedAt && ["proposed", "sent", "watching"].includes(p.stage)) {
 			await db.update(outreachProspects).set({ stage: "replied" }).where(eq(outreachProspects.id, p.id));
 			p.stage = "replied";
 		}
-		all.push({ ...p, emailStatus: status });
+		all.push({ ...p, emailStatus: status, video: p.id ? (videoByProspect.get(p.id) ?? null) : null });
 	}
 	const now = new Date();
 	const due = all
@@ -757,7 +772,11 @@ export const getOutreachQuery = query(async () => {
 		.sort(
 			(a, b) => a.nextActionAt!.getTime() - b.nextActionAt!.getTime(),
 		);
-	return { all, due };
+	const campaignList = await db
+		.select({ id: campaigns.id, name: campaigns.name })
+		.from(campaigns)
+		.orderBy(asc(campaigns.name));
+	return { all, due, campaigns: campaignList };
 }, "admin-outreach");
 
 export const createOutreachAction = action(async (formData: FormData) => {
@@ -766,22 +785,43 @@ export const createOutreachAction = action(async (formData: FormData) => {
 	const company = String(formData.get("company") || "").trim();
 	if (!company) return { error: "Company is required." };
 	const rawNext = String(formData.get("next_action_at") || "");
-	await db.insert(outreachProspects).values({
-		company,
-		contactName: String(formData.get("contact_name") || "").trim() || null,
-		email: String(formData.get("email") || "").trim() || null,
-		brainUrl: String(formData.get("brain_url") || "").trim() || null,
-		brainActivityKey: String(formData.get("brain_activity_key") || "").trim() || null,
-		videoUrl: String(formData.get("video_url") || "").trim() || null,
-		stage: String(formData.get("stage") || "proposed") as OutreachStage,
-		// Client converts datetime-local to ISO+Z in the browser's tz before
-		// submitting, so this parses to the intended instant regardless of
-		// the server's TZ (prod runs UTC).
-		nextActionAt: rawNext ? new Date(rawNext) : new Date(Date.now() + 5 * 86_400_000),
-	});
+	const [created] = await db
+		.insert(outreachProspects)
+		.values({
+			company,
+			contactName: String(formData.get("contact_name") || "").trim() || null,
+			email: String(formData.get("email") || "").trim() || null,
+			brainUrl: String(formData.get("brain_url") || "").trim() || null,
+			brainActivityKey: String(formData.get("brain_activity_key") || "").trim() || null,
+			stage: String(formData.get("stage") || "proposed") as OutreachStage,
+			// Client converts datetime-local to ISO+Z in the browser's tz before
+			// submitting, so this parses to the intended instant regardless of
+			// the server's TZ (prod runs UTC).
+			nextActionAt: rawNext ? new Date(rawNext) : new Date(Date.now() + 5 * 86_400_000),
+		})
+		.returning({ id: outreachProspects.id });
+	// optional video at creation — lands on the videos table
+	const videoUrl = String(formData.get("video_url") || "").trim();
+	if (videoUrl) {
+		await setProspectVideo(created.id, {
+			url: videoUrl,
+			description: String(formData.get("video_description") || "").trim() || null,
+		});
+	}
 	await revalidate(getOutreachQuery.key);
+	await revalidate(getVideosQuery.key);
 	return { success: `${company} added.` };
 }, "createOutreach");
+
+// next-action interval implied by each stage ADVANCE (plan: invite→+3d,
+// follow-up→+4d, reply→+1d). Manual date edits always win — presets only
+// apply when the advance button sends preset_next=1.
+const STAGE_NEXT_DAYS: Partial<Record<OutreachStage, number>> = {
+	sent: 3,
+	watching: 4,
+	replied: 1,
+	meeting: 1,
+};
 
 export const setOutreachStageAction = action(async (formData: FormData) => {
 	"use server";
@@ -789,13 +829,64 @@ export const setOutreachStageAction = action(async (formData: FormData) => {
 	const id = String(formData.get("id"));
 	const stage = String(formData.get("stage")) as OutreachStage;
 	if (!OUTREACH_STAGES.includes(stage)) return { error: "Unknown stage." };
+	const presetNext = String(formData.get("preset_next") || "") === "1";
+	const days = STAGE_NEXT_DAYS[stage];
 	await db
 		.update(outreachProspects)
-		.set({ stage })
+		.set({
+			stage,
+			...(presetNext && days
+				? { nextActionAt: new Date(Date.now() + days * 86_400_000) }
+				: {}),
+		})
 		.where(eq(outreachProspects.id, id));
 	await revalidate(getOutreachQuery.key);
 	return { success: `Stage → ${stage}.` };
 }, "setOutreachStage");
+
+// ICP qualification — researched by Collin (or the sourcing automation), never
+// asked of the lead. icpApproved=yes is the gate that lets the connect
+// automation send an invite.
+export const setOutreachIcpAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const id = String(formData.get("id"));
+	const one = (k: string, allowed: string[]) => {
+		const v = String(formData.get(k) || "");
+		return allowed.includes(v) ? v : undefined;
+	};
+	await db
+		.update(outreachProspects)
+		.set({
+			...(one("region", ["unknown", "Midwest", "other"]) ? { region: one("region", ["unknown", "Midwest", "other"]) } : {}),
+			...(one("revenue_band", ["unknown", "low", "mid", "high"]) ? { revenueBand: one("revenue_band", ["unknown", "low", "mid", "high"]) } : {}),
+			...(one("tech_team", ["unknown", "none", "small", "large"]) ? { techTeam: one("tech_team", ["unknown", "none", "small", "large"]) } : {}),
+			...(one("ai_interest", ["unknown", "none", "some", "high"]) ? { aiInterest: one("ai_interest", ["unknown", "none", "some", "high"]) } : {}),
+			...(formData.has("icp_approved")
+				? { icpApproved: String(formData.get("icp_approved")) === "1" }
+				: {}),
+		})
+		.where(eq(outreachProspects.id, id));
+	await revalidate(getOutreachQuery.key);
+	return { success: "ICP fields saved." };
+}, "setOutreachIcp");
+
+// Sidebar badge: prospects whose next action is due now (excludes terminal stages).
+export const getDueOutreachCountQuery = query(async () => {
+	"use server";
+	await requireAdmin();
+	const rows = await db
+		.select({ id: outreachProspects.id })
+		.from(outreachProspects)
+		.where(
+			and(
+				isNotNull(outreachProspects.nextActionAt),
+				lte(outreachProspects.nextActionAt, new Date()),
+				notInArray(outreachProspects.stage, ["won", "shutdown"]),
+			),
+		);
+	return rows.length;
+}, "due-outreach-count");
 
 // Brain URL + activity key for an existing prospect (formerly a Fly env secret).
 export const setOutreachBrainAction = action(async (formData: FormData) => {
@@ -813,22 +904,37 @@ export const setOutreachBrainAction = action(async (formData: FormData) => {
 	return { success: "Brain settings saved." };
 }, "setOutreachBrain");
 
-// Video link + description. Empty video_url clears the video. "Empty string
-// clears, absent leaves unchanged" via has(): the card edit form always
-// submits both fields; the Videos page form posts exactly these keys too.
+// Videos list for /admin/videos — the videos table joined to its prospect.
+export const getVideosQuery = query(async () => {
+	"use server";
+	await requireAdmin();
+	return db
+		.select({
+			video: videos,
+			company: outreachProspects.company,
+			stage: outreachProspects.stage,
+		})
+		.from(videos)
+		.leftJoin(outreachProspects, eq(videos.prospectId, outreachProspects.id))
+		.orderBy(desc(videos.createdAt));
+}, "admin-videos");
+
+// Video link + description for a prospect, on the videos table. Empty
+// video_url removes the video ("empty clears, absent leaves unchanged" via
+// has(): card + videos-page forms always submit both fields).
 export const setOutreachVideoAction = action(async (formData: FormData) => {
 	"use server";
 	await requireAdmin();
 	const id = String(formData.get("id"));
 	if (!id) return { error: "id is required" };
-	await db
-		.update(outreachProspects)
-		.set({
-			videoUrl: String(formData.get("video_url") || "").trim() || null,
-			videoDescription: String(formData.get("video_description") || "").trim() || null,
-		})
-		.where(eq(outreachProspects.id, id));
+	await setProspectVideo(id, {
+		url: String(formData.get("video_url") || "").trim(),
+		description: formData.has("video_description")
+			? String(formData.get("video_description") || "").trim() || null
+			: undefined,
+	});
 	await revalidate(getOutreachQuery.key);
+	await revalidate(getVideosQuery.key);
 	return { success: "Video saved." };
 }, "setOutreachVideo");
 
@@ -864,6 +970,158 @@ export const setOutreachNextActionAction = action(async (formData: FormData) => 
 	await revalidate(getOutreachQuery.key);
 	return { success: "Next action saved." };
 }, "setOutreachNextAction");
+
+// ── Outreach campaigns (sequences; the board tracks people, these track sends) ──
+
+export const getCampaignsQuery = query(async () => {
+	"use server";
+	await requireAdmin();
+	const rows = await db.select().from(campaigns).orderBy(desc(campaigns.createdAt));
+	const cos = await db
+		.select()
+		.from(campaignCompanies)
+		.orderBy(asc(campaignCompanies.sequenceStep), asc(campaignCompanies.companyName));
+	// board linkage: which prospects came from each campaign (matched by FK)
+	const linked = await db
+		.select({
+			id: outreachProspects.id,
+			company: outreachProspects.company,
+			stage: outreachProspects.stage,
+			campaignId: outreachProspects.campaignId,
+		})
+		.from(outreachProspects);
+	// Gmail-grounded send/reply state per company — same computation as the
+	// campaign_stats MCP tool and the brain's campaign facts
+	const stats = await campaignStats();
+	const statsByCompany = new Map(stats.flatMap((s) => s.companies.map((c) => [c.id, c] as const)));
+	return rows.map((c) => ({
+		...c,
+		companies: cos
+			.filter((x) => x.campaignId === c.id)
+			.map((x) => ({ ...x, sendStats: statsByCompany.get(x.id) ?? null })),
+		prospects: linked.filter((p) => p.campaignId === c.id),
+	}));
+}, "admin-campaigns");
+
+export type CampaignTemplatesResult =
+	| { success: string }
+	| { error: string; violations?: { step: number; message: string }[] };
+
+/** Same write path as the MCP set_campaign_templates tool: every body is
+ *  voice-linted (surface=email) before persisting; any violation rejects the
+ *  whole save — no partial template state, nothing off-voice lands. */
+export const setCampaignTemplatesAction = action(async (formData: FormData): Promise<CampaignTemplatesResult> => {
+	"use server";
+	await requireAdmin();
+	const campaignId = String(formData.get("campaign_id") || "");
+	if (!campaignId) return { error: "Campaign id is required." };
+	const count = Number(formData.get("touch_count") || 0);
+	const touches: CampaignTouch[] = [];
+	for (let i = 0; i < count; i++) {
+		const step = Number(formData.get(`touch_${i}_step`) || 0);
+		const subject = String(formData.get(`touch_${i}_subject`) || "").trim();
+		const body = String(formData.get(`touch_${i}_body`) || "");
+		if (!subject && !body.trim()) continue; // blank block = removed touch
+		if (!Number.isInteger(step) || step < 1) return { error: `Touch ${i + 1}: step must be a positive whole number.` };
+		if (!subject || !body.trim()) return { error: `Touch ${step}: subject and body are required.` };
+		touches.push({ step, subject, body });
+	}
+	const violations: { step: number; message: string }[] = [];
+	for (const t of touches) {
+		const lint = await lintVoiceText(t.body, { surface: "email" });
+		for (const v of lint.violations) violations.push({ step: t.step, message: v.rule });
+	}
+	if (violations.length > 0) {
+		return { error: "Rejected — voice lint flagged this copy. Fix the flagged lines and save again.", violations };
+	}
+	await db.update(campaigns).set({ templates: touches }).where(eq(campaigns.id, campaignId));
+	await revalidate(getCampaignsQuery.key);
+	return { success: `Templates saved — ${touches.length} touch${touches.length === 1 ? "" : "es"}.` };
+}, "setCampaignTemplates");
+
+export const createCampaignAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const name = String(formData.get("name") || "").trim();
+	if (!name) return { error: "Campaign name is required." };
+	const description = String(formData.get("description") || "").trim() || null;
+	await db.insert(campaigns).values({ name, description });
+	await revalidate(getCampaignsQuery.key);
+	return { success: `Campaign "${name}" created.` };
+}, "createCampaign");
+
+export const deleteCampaignAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const id = String(formData.get("id"));
+	await db.delete(campaigns).where(eq(campaigns.id, id));
+	await revalidate(getCampaignsQuery.key);
+	await revalidate(getOutreachQuery.key);
+	return { success: "Campaign deleted. Prospects keep their board stages." };
+}, "deleteCampaign");
+
+export const addCampaignCompanyAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const campaignId = String(formData.get("campaign_id"));
+	const companyName = String(formData.get("company_name") || "").trim();
+	if (!companyName) return { error: "Company name is required." };
+	const rawSend = String(formData.get("next_send_at") || "");
+	try {
+		await db.insert(campaignCompanies).values({
+			campaignId,
+			companyName,
+			contactEmail: String(formData.get("contact_email") || "").trim() || null,
+			nextSendAt: rawSend ? new Date(rawSend) : null,
+			nextEmailNote: String(formData.get("next_email_note") || "").trim() || null,
+		});
+	} catch {
+		return { error: `${companyName} is already in this campaign.` };
+	}
+	await revalidate(getCampaignsQuery.key);
+	return { success: `${companyName} added.` };
+}, "addCampaignCompany");
+
+export const updateCampaignCompanyAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const id = String(formData.get("id"));
+	const step = Number(formData.get("sequence_step") || 1);
+	const rawSend = String(formData.get("next_send_at") || "");
+	await db
+		.update(campaignCompanies)
+		.set({
+			sequenceStep: Number.isFinite(step) && step > 0 ? Math.floor(step) : 1,
+			nextSendAt: rawSend ? new Date(rawSend) : null,
+			nextEmailNote: String(formData.get("next_email_note") || "").trim() || null,
+			contactEmail: String(formData.get("contact_email") || "").trim() || null,
+		})
+		.where(eq(campaignCompanies.id, id));
+	await revalidate(getCampaignsQuery.key);
+	return { success: "Saved." };
+}, "updateCampaignCompany");
+
+export const deleteCampaignCompanyAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	await db.delete(campaignCompanies).where(eq(campaignCompanies.id, String(formData.get("id"))));
+	await revalidate(getCampaignsQuery.key);
+	return { success: "Removed." };
+}, "deleteCampaignCompany");
+
+export const setProspectCampaignAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const id = String(formData.get("id"));
+	const campaignId = String(formData.get("campaign_id") || "").trim();
+	await db
+		.update(outreachProspects)
+		.set({ campaignId: campaignId || null })
+		.where(eq(outreachProspects.id, id));
+	await revalidate(getOutreachQuery.key);
+	await revalidate(getCampaignsQuery.key);
+	return { success: campaignId ? "Campaign linked." : "Campaign unlinked." };
+}, "setProspectCampaign");
 
 export interface BrainDigestItem {
 	kind: string;
@@ -1020,3 +1278,61 @@ export const resetBrainActivityAction = action(async (formData: FormData) => {
 	await revalidate(getBrainActivityQuery.key);
 	return { success: "Brain metrics reset." };
 }, "resetBrainActivity");
+
+// ── Brain requests (the /brain lead magnet pipeline) ────────────────────────
+
+export const getBrainRequestsQuery = query(async () => {
+	"use server";
+	await requireAdmin();
+	const rows = await db.select().from(brainRequests).orderBy(desc(brainRequests.createdAt)).limit(200);
+	const issues = rows.length
+		? await db
+				.select({ id: docs.id, title: docs.title })
+				.from(docs)
+				.where(inArray(docs.id, [...new Set(rows.map((r) => r.sourceDocId).filter((x): x is string => !!x))]))
+		: [];
+	const titles = new Map(issues.map((i) => [i.id, i.title]));
+	return rows.map((r) => ({
+		...r,
+		answers: (r.answers ?? {}) as Record<string, unknown>,
+		sourceTitle: r.sourceDocId ? titles.get(r.sourceDocId) ?? null : null,
+	}));
+}, "brain-requests");
+
+export const setBrainRequestStatusAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const id = String(formData.get("id") || "");
+	const status = String(formData.get("status") || "") as "new" | "building" | "delivered" | "declined";
+	if (!["new", "building", "delivered", "declined"].includes(status)) return { error: "Unknown status." };
+	await db.update(brainRequests).set({ status }).where(eq(brainRequests.id, id));
+	await revalidate(getBrainRequestsQuery.key);
+	return { success: `Status → ${status}.` };
+}, "setBrainRequestStatus");
+
+// Ship the brain → it becomes outreach pipeline entry. Links (or creates) the
+// matching prospect row and marks the request delivered.
+export const linkBrainRequestToProspectAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const id = String(formData.get("id") || "");
+	const [req] = await db.select().from(brainRequests).where(eq(brainRequests.id, id)).limit(1);
+	if (!req) return { error: "Request not found." };
+	const company = String(formData.get("company") || "").trim() || req.company;
+	const [existing] = await db
+		.select({ id: outreachProspects.id })
+		.from(outreachProspects)
+		.where(ilike(outreachProspects.company, company))
+		.limit(1);
+	const prospectId =
+		existing?.id ??
+		(
+			await db
+				.insert(outreachProspects)
+				.values({ company, sourceNote: `brain-request ${req.createdAt.toISOString().slice(0, 10)}` })
+				.returning({ id: outreachProspects.id })
+		)[0].id;
+	await db.update(brainRequests).set({ prospectId, status: "delivered" }).where(eq(brainRequests.id, id));
+	await revalidate(getBrainRequestsQuery.key);
+	return { success: `Linked to prospect: ${company}.` };
+}, "linkBrainRequestProspect");

@@ -1,7 +1,8 @@
 // Funnels shared logic: the Freight ICP stage list (from ICP.md), lazy seed,
 // and the promote/un-approve moves shared by the API routes.
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, ilike, inArray, sql } from "drizzle-orm";
 import { db } from "~/db";
+import { campaigns, entityLinks } from "~/db/schema";
 import { checkApiKey } from "~/lib/api-key";
 import { getAuthedClient } from "~/lib/session";
 import {
@@ -130,12 +131,19 @@ export async function applyVerdictConsequences(itemId: string, stages: FunnelSta
 			.select({ stage: funnelStageResults.stage, note: funnelStageResults.note })
 			.from(funnelStageResults)
 			.where(eq(funnelStageResults.itemId, itemId));
-		const noteFor = (k: string) => resultRows.find((r) => r.stage === k)?.note ?? null;
+		const noteFor = (k: string) => resultRows.find((r) => r.stage === k)?.note ?? "unknown";
+	// attach to the Freight & logistics campaign when one exists (campaignId is
+	// nullable — a missing campaign must not block promotion)
+	const [campaign] = await db
+		.select({ id: campaigns.id })
+		.from(campaigns)
+		.where(ilike(campaigns.name, "%freight%"))
+		.limit(1);
 		if (item.prospectId) {
 			await db
 				.update(outreachProspects)
 				.set({
-					region: item.state ?? null,
+					region: item.state ?? "unknown",
 					revenueBand: noteFor("revenue_band"),
 					techTeam: noteFor("tech_team"),
 					icpApproved: true,
@@ -146,12 +154,13 @@ export async function applyVerdictConsequences(itemId: string, stages: FunnelSta
 				.insert(outreachProspects)
 				.values({
 					company: item.companyName,
-					stage: "proposed",
-					region: item.state ?? null,
+					stage: "candidate",
+					region: item.state ?? "unknown",
 					revenueBand: noteFor("revenue_band"),
 					techTeam: noteFor("tech_team"),
 					icpApproved: true,
 					sourceNote: `funnel-run ${new Date().toISOString().slice(0, 10)}`,
+					campaignId: campaign?.id ?? null,
 					notes: typeof raw.address === "string" ? raw.address : null,
 				})
 				.returning({ id: outreachProspects.id });
@@ -159,6 +168,11 @@ export async function applyVerdictConsequences(itemId: string, stages: FunnelSta
 				.update(funnelItems)
 				.set({ prospectId: prospect.id, promotedAt: new Date() })
 				.where(eq(funnelItems.id, itemId));
+			// registry link: run → promoted prospect (board card shows where it came from)
+			await db
+				.insert(entityLinks)
+				.values({ fromKind: "funnel-run", fromId: item.runId, toKind: "prospect", toId: prospect.id, linkType: "promoted", createdBy: "agent" })
+				.onConflictDoNothing();
 		}
 		return;
 	}

@@ -1,6 +1,7 @@
 import { Title } from "@solidjs/meta";
 import { createAsync, useAction } from "@solidjs/router";
 import { For, Show, Suspense, createSignal } from "solid-js";
+import CreateDialog, { type CreateResult } from "~/components/CreateDialog";
 import Layout from "~/components/Layout";
 import ConfirmButton from "~/components/ConfirmButton";
 import { getUserQuery } from "~/lib/queries";
@@ -18,23 +19,6 @@ export default function AdminApiKeys() {
 	const createKey = useAction(createAdminApiKeyAction);
 	const revokeKey = useAction(revokeAdminApiKeyAction);
 
-	const [newKey, setNewKey] = createSignal<string | null>(null);
-	const [error, setError] = createSignal("");
-	const [label, setLabel] = createSignal("");
-
-	async function handleCreate(e: Event) {
-		e.preventDefault();
-		setError("");
-		const fd = new FormData(e.target as HTMLFormElement);
-		const res = (await createKey(fd)) as { key?: string; error?: string };
-		if (res.error) {
-			setError(res.error);
-			return;
-		}
-		setNewKey(res.key ?? null);
-		setLabel("");
-	}
-
 	async function handleRevoke(id: string) {
 		const fd = new FormData();
 		fd.set("id", id);
@@ -44,37 +28,28 @@ export default function AdminApiKeys() {
 	return (
 		<Layout user={user()}>
 			<Title>API Keys — Mad Cactus</Title>
-			<h1 class="page-title">API Keys</h1>
-			<p class="page-subtitle">
-				Server-to-server keys (not tied to a portal member) — used by the Anarlog meeting publisher. Works on{" "}
-				<code>/api/clients</code> and <code>/api/upload-transcript</code> via{" "}
-				<code>Authorization: Bearer mc_…</code>
-			</p>
-
-			<Show when={newKey()}>
-				<div class="card" style={{ padding: "16px", "margin-bottom": "16px", "border-color": "#16a34a" }}>
-					<div style={{ "font-weight": "600", "margin-bottom": "6px" }}>
-						Key created — copy it now, it will not be shown again:
+			<div style={{ display: "flex", "justify-content": "space-between", "align-items": "center", "gap": "16px", "margin-bottom": "32px" }}>
+				<div>
+					<h1 class="page-title">API Keys</h1>
+					<p class="page-subtitle" style={{ "margin-bottom": "0" }}>
+						Server-to-server keys (not tied to a portal member) — used by the Anarlog meeting publisher. Works on{" "}
+						<code>/api/clients</code> and <code>/api/upload-transcript</code> via{" "}
+						<code>Authorization: Bearer mc_…</code>
+					</p>
+				</div>
+				<CreateDialog
+					label="Create Key"
+					title="Create API key"
+					submitLabel="Create Key"
+					onSubmit={(fd) => createKey(fd) as Promise<{ key?: string; error?: string }>}
+					renderSuccess={(res) => <KeyCreated result={res} />}
+				>
+					<div class="form-group">
+						<label for="label">Label</label>
+						<input type="text" id="label" name="label" placeholder="e.g. meeting-publisher" />
 					</div>
-					<code class="mono" style={{ "font-size": "13px", "word-break": "break-all" }}>{newKey()}</code>
-				</div>
-			</Show>
-
-			<form onSubmit={handleCreate} style={{ display: "flex", gap: "8px", "margin-bottom": "24px", "max-width": "480px" }}>
-				<div class="form-group" style={{ flex: "1", "margin-bottom": "0" }}>
-					<input
-						type="text"
-						name="label"
-						placeholder="Label — e.g. meeting-publisher"
-						value={label()}
-						onInput={(e) => setLabel(e.currentTarget.value)}
-					/>
-				</div>
-				<button type="submit" class="btn btn-primary">Create Key</button>
-			</form>
-			<Show when={error()}>
-				<p class="login-error">{error()}</p>
-			</Show>
+				</CreateDialog>
+			</div>
 
 			<Suspense fallback={<p class="muted">Loading…</p>}>
 				<Show
@@ -106,5 +81,32 @@ export default function AdminApiKeys() {
 				</Show>
 			</Suspense>
 		</Layout>
+	);
+}
+
+/** One-time secret panel — the dialog stays open until this is dismissed. */
+function KeyCreated(props: { result: NonNullable<CreateResult> }) {
+	const [copied, setCopied] = createSignal(false);
+	const key = () => String(props.result.key ?? "");
+	return (
+		<div style={{ "border-top": "1px solid #16a34a", "border-bottom": "1px solid #16a34a", padding: "12px 0" }}>
+			<div style={{ "font-weight": "600", "margin-bottom": "6px" }}>
+				Key created — copy it now, it will not be shown again:
+			</div>
+			<div style={{ display: "flex", gap: "8px", "align-items": "center" }}>
+				<code class="mono" style={{ "font-size": "13px", "word-break": "break-all", flex: "1" }}>{key()}</code>
+				<button
+					type="button"
+					class="btn btn-sm"
+					onClick={() => {
+						navigator.clipboard.writeText(key());
+						setCopied(true);
+						setTimeout(() => setCopied(false), 2000);
+					}}
+				>
+					{copied() ? "Copied" : "Copy"}
+				</button>
+			</div>
+		</div>
 	);
 }

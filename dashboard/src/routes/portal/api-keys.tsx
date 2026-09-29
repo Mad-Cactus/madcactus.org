@@ -1,6 +1,7 @@
 import { Title } from "@solidjs/meta";
-import { createAsync, useAction } from "@solidjs/router";
+import { createAsync, revalidate, useAction } from "@solidjs/router";
 import { For, Show, createSignal } from "solid-js";
+import CreateDialog, { type CreateResult } from "~/components/CreateDialog";
 import PortalLayout from "~/components/PortalLayout";
 import ConfirmButton from "~/components/ConfirmButton";
 import {
@@ -18,9 +19,6 @@ export default function PortalApiKeys() {
 	const createKey = useAction(createApiKeyAction);
 	const revokeKey = useAction(revokeApiKeyAction);
 
-	const [label, setLabel] = createSignal("");
-	const [newKey, setNewKey] = createSignal<string | null>(null);
-	const [error, setError] = createSignal("");
 	const [copied, setCopied] = createSignal(false);
 
 	const mcpUrl =
@@ -28,26 +26,13 @@ export default function PortalApiKeys() {
 			? `${window.location.origin}/api/mcp`
 			: "/api/mcp";
 
-	async function handleCreate(e: Event) {
-		e.preventDefault();
-		setError("");
-		const fd = new FormData();
-		fd.set("label", label() || "Default");
-		const result = await createKey(fd);
-		if (result?.key) {
-			setNewKey(result.key);
-			setLabel("");
-			// Refresh the list
-			window.location.reload();
-		}
-	}
-
-	function copyKey() {
-		if (newKey()) {
-			navigator.clipboard.writeText(newKey()!);
-			setCopied(true);
-			setTimeout(() => setCopied(false), 2000);
-		}
+	/** Creates the key; refreshes the list so the dialog's one-time secret is
+	 *  the only thing left to do. */
+	async function handleCreate(fd: FormData): Promise<CreateResult> {
+		fd.set("label", String(fd.get("label") || "").trim() || "Default");
+		const result = (await createKey(fd)) as { key?: string; error?: string };
+		if (!result?.error) await revalidate(getClientApiKeysQuery.key);
+		return result;
 	}
 
 	const claudeConfig = `{
@@ -55,7 +40,7 @@ export default function PortalApiKeys() {
     "madcactus": {
       "url": "${mcpUrl}",
       "headers": {
-        "Authorization": "Bearer ${newKey() || "YOUR_API_KEY"}"
+        "Authorization": "Bearer YOUR_API_KEY"
       }
     }
   }
@@ -64,72 +49,26 @@ export default function PortalApiKeys() {
 	return (
 		<PortalLayout user={user()}>
 			<Title>API Keys — Mad Cactus Client Portal</Title>
-			<h1 class="page-title">API Keys</h1>
-			<p class="page-subtitle">
-				Connect your AI agent to your project data via MCP
-			</p>
 
-			{/* New key display */}
-			<Show when={newKey()}>
-				<div
-					class="card"
-					style={{
-						"margin-top": "32px",
-						"margin-bottom": "24px",
-						border: "1px solid var(--gold)",
-						"background": "rgba(188, 156, 92, 0.06)",
-					}}
-				>
-					<h3 style={{ "margin-bottom": "8px" }}>API Key Created</h3>
-					<p class="muted" style={{ "font-size": "13px", "margin-bottom": "16px" }}>
-						Copy this key now — you won't see it again.
+			<div style={{ display: "flex", "justify-content": "space-between", "align-items": "center", "gap": "16px", "margin-bottom": "32px" }}>
+				<div>
+					<h1 class="page-title">API Keys</h1>
+					<p class="page-subtitle" style={{ "margin-bottom": "0" }}>
+						Connect your AI agent to your project data via MCP
 					</p>
-					<div
-						style={{
-							display: "flex",
-							gap: "8px",
-							"align-items": "center",
-						}}
-					>
-						<code
-							style={{
-								flex: "1",
-								padding: "10px 14px",
-								background: "var(--bg-elevated)",
-								border: "1px solid rgba(255,255,255,0.1)",
-								"border-radius": "0px",
-								"font-size": "13px",
-								"word-break": "break-all",
-							}}
-						>
-							{newKey()}
-						</code>
-						<button class="btn btn-primary" onClick={copyKey}>
-							{copied() ? "Copied" : "Copy"}
-						</button>
-					</div>
 				</div>
-			</Show>
-
-			{/* Create new key */}
-			<div class="card" style={{ "margin-top": "32px" }}>
-				<h3 style={{ "margin-bottom": "16px" }}>Generate New API Key</h3>
-				<form onSubmit={handleCreate} style={{ display: "flex", gap: "12px", "align-items": "flex-end" }}>
-					<div class="form-group" style={{ flex: "1", margin: "0" }}>
+				<CreateDialog
+					label="Generate Key"
+					title="Generate new API key"
+					submitLabel="Generate Key"
+					onSubmit={handleCreate}
+					renderSuccess={(res) => <KeyCreated result={res} />}
+				>
+					<div class="form-group">
 						<label for="label">Label (optional)</label>
-						<input
-							type="text"
-							id="label"
-							placeholder="e.g. Claude Desktop, Cursor"
-							value={label()}
-							onInput={(e) => setLabel(e.currentTarget.value)}
-						/>
+						<input type="text" id="label" name="label" placeholder="e.g. Claude Desktop, Cursor" />
 					</div>
-					<button type="submit" class="btn btn-primary">Generate Key</button>
-				</form>
-				<Show when={error()}>
-					<p class="login-error" style={{ "margin-top": "8px" }}>{error()}</p>
-				</Show>
+				</CreateDialog>
 			</div>
 
 			{/* Existing keys */}
@@ -218,5 +157,42 @@ export default function PortalApiKeys() {
 				</p>
 			</div>
 		</PortalLayout>
+	);
+}
+
+/** One-time secret panel — the dialog stays open until this is dismissed. */
+function KeyCreated(props: { result: NonNullable<CreateResult> }) {
+	const [copied, setCopied] = createSignal(false);
+	const key = () => String(props.result.key ?? "");
+	return (
+		<div>
+			<p class="muted" style={{ "font-size": "13px", "margin-bottom": "12px" }}>
+				Copy this key now — you won't see it again.
+			</p>
+			<div style={{ display: "flex", gap: "8px", "align-items": "center" }}>
+				<code
+					style={{
+						flex: "1",
+						padding: "10px 14px",
+						background: "var(--bg-elevated)",
+						border: "1px solid rgba(255,255,255,0.1)",
+						"font-size": "13px",
+						"word-break": "break-all",
+					}}
+				>
+					{key()}
+				</code>
+				<button
+					class="btn btn-primary"
+					onClick={() => {
+						navigator.clipboard.writeText(key());
+						setCopied(true);
+						setTimeout(() => setCopied(false), 2000);
+					}}
+				>
+					{copied() ? "Copied" : "Copy"}
+				</button>
+			</div>
+		</div>
 	);
 }

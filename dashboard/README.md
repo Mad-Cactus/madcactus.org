@@ -5,20 +5,20 @@ SolidStart + Nitro + Postgres (Drizzle) + Supabase auth. Deployed to fly as
 
 ## Local development
 
-Auth runs against the hosted Supabase project; Postgres + the app run locally
-via Docker Compose (repo root).
-
-**One-time setup**
+Auth runs against the local Supabase stack. One command from the repo root sets
+everything up:
 
 ```bash
-docker compose up -d                 # Postgres on localhost:5434
-cd dashboard
-bun install
-bun run db:push                      # schema into the local DB
+./scripts/dev-setup.sh               # env + shared local Supabase stack (Postgres :54322) + schema + seed
 ```
 
-`dashboard/.env` must exist with at least `DATABASE_URL` (compose prints its
-URL) and the `SUPABASE_*` keys. Copy values from fly secrets
+The stack is machine-global: auth, storage and the app Postgres all live in it,
+every worktree shares its data by design, and `supabase stop` stops it for the
+whole machine. `bun run dev` logs in as admin@madcactus.org / cactus-local-dev.
+Studio (storage bucket, auth users, table editor): http://localhost:54323.
+
+`dashboard/.env` must exist with at least `DATABASE_URL` (dev-setup writes it)
+and the `SUPABASE_*` keys. Copy values from fly secrets
 (`fly ssh console -a madcactus-dashboard -C "printenv SUPABASE_URL"`).
 
 **Every day**

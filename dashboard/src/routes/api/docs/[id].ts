@@ -12,6 +12,7 @@ import {
 	setDocGenre,
 	scheduleDoc,
 	republishWebDoc,
+	setDocAppendix,
 	setDocFirstComment,
 	unscheduleDoc,
 	deleteDoc,
@@ -25,7 +26,7 @@ import {
  * GET  /api/docs/:id?versions=1 → version list (no content)
  * GET  /api/docs/:id?diff=N → word-diff of version N vs N-1
  * PUT  /api/docs/:id   { markdown } → { version }
- * POST /api/docs/:id   { op: "finalize" | "share" | "rename" | "set-kind" | "set-genre" | "schedule" | "unschedule" | "set-publish-state", ... } → result
+ * POST /api/docs/:id   { op: "finalize" | "share" | "rename" | "set-kind" | "set-genre" | "schedule" | "unschedule" | "set-publish-state" | "set-appendix", ... } → result
  * DELETE /api/docs/:id → { ok }  (hard-deletes the doc + version history)
  */
 async function requireAdmin() {
@@ -72,6 +73,7 @@ export const POST = async (event: APIEvent) => {
 		firstComment?: string;
 		state?: string;
 		channel?: string;
+		content?: string;
 		markdown?: string;
 	};
 	try {
@@ -104,6 +106,12 @@ export const POST = async (event: APIEvent) => {
 		}
 		if (body.op === "set-first-comment") {
 			await setDocFirstComment(event.params.id, body.firstComment);
+			return json({ ok: true });
+		}
+		if (body.op === "set-appendix") {
+			const channel = body.channel === "email" || body.channel === "web" ? body.channel : null;
+			if (!channel) return json({ error: "channel must be 'email' or 'web'" }, 400);
+			await setDocAppendix(event.params.id, channel, String(body.content ?? ""));
 			return json({ ok: true });
 		}
 		if (body.op === "unschedule") {

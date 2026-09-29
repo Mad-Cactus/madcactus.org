@@ -45,11 +45,6 @@ CREATE TABLE "funnels" (
 	CONSTRAINT "funnels_name_unique" UNIQUE("name")
 );
 --> statement-breakpoint
-ALTER TABLE "outreach_prospects" ADD COLUMN "region" text;--> statement-breakpoint
-ALTER TABLE "outreach_prospects" ADD COLUMN "revenue_band" text;--> statement-breakpoint
-ALTER TABLE "outreach_prospects" ADD COLUMN "tech_team" text;--> statement-breakpoint
-ALTER TABLE "outreach_prospects" ADD COLUMN "icp_approved" boolean DEFAULT false NOT NULL;--> statement-breakpoint
-ALTER TABLE "outreach_prospects" ADD COLUMN "source_note" text;--> statement-breakpoint
 ALTER TABLE "funnel_items" ADD CONSTRAINT "funnel_items_run_id_funnel_runs_id_fk" FOREIGN KEY ("run_id") REFERENCES "public"."funnel_runs"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "funnel_items" ADD CONSTRAINT "funnel_items_prospect_id_outreach_prospects_id_fk" FOREIGN KEY ("prospect_id") REFERENCES "public"."outreach_prospects"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "funnel_runs" ADD CONSTRAINT "funnel_runs_funnel_id_funnels_id_fk" FOREIGN KEY ("funnel_id") REFERENCES "public"."funnels"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
