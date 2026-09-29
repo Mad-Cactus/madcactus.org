@@ -27,7 +27,7 @@ export const FREIGHT_STAGES: FunnelStage[] = [
 
 /** Funnels API accepts an admin session (UI) or an mc_ API key (scripts/agents). */
 export async function funnelAuthed(request: Request) {
-	return checkApiKey(request) || (await getAuthedClient()) !== null;
+	return (await checkApiKey(request)) || (await getAuthedClient()) !== null;
 }
 
 /** Insert the Freight ICP funnel if the table is empty. Called on list reads —
