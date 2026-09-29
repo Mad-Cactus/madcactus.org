@@ -1,0 +1,171 @@
+// Funnels shared logic: the Freight ICP stage list (from ICP.md), lazy seed,
+// and the promote/un-approve moves shared by the API routes.
+import { and, eq, inArray, sql } from "drizzle-orm";
+import { db } from "~/db";
+import { checkApiKey } from "~/lib/api-key";
+import { getAuthedClient } from "~/lib/session";
+import {
+	funnelItems,
+	funnelRuns,
+	funnelStageResults,
+	funnels,
+	outreachProspects,
+	type FunnelStage,
+} from "~/db/schema";
+
+// Ordered gates from ICP.md — a later funnel (law, gov) is another row in
+// `funnels` with its own stages; nothing here is freight-specific.
+export const FREIGHT_STAGES: FunnelStage[] = [
+	{ key: "hq_state", label: "Indiana HQ", gate: "Address/city is in Indiana, not a name token", method: "source" },
+	{ key: "industry_type", label: "Industry", gate: "Freight brokerage / 3PL / knowledge-heavy carrier", method: "source" },
+	{ key: "headcount", label: "Headcount", gate: "15-250 employees", method: "api" },
+	{ key: "revenue_band", label: "Revenue", gate: "$10-70M estimate; rev/employee $150-500k sanity", method: "human" },
+	{ key: "tech_team", label: "Tech team", gate: "≤2 title hits for CTO/VP Eng/IT Director/engineer/developer", method: "api" },
+	{ key: "owner_led", label: "Owner-led", gate: "Founder/CEO still running it, not a PE roll-up", method: "agent" },
+];
+
+/** Funnels API accepts an admin session (UI) or an mc_ API key (scripts/agents). */
+export async function funnelAuthed(request: Request) {
+	return checkApiKey(request) || (await getAuthedClient()) !== null;
+}
+
+/** Insert the Freight ICP funnel if the table is empty. Called on list reads —
+ *  no seed migration, so drizzle stays the only writer of SQL. */
+export async function ensureFreightFunnel() {
+	const existing = await db.select({ id: funnels.id }).from(funnels).where(eq(funnels.name, "Freight ICP")).limit(1);
+	if (existing.length > 0) return;
+	await db.insert(funnels).values({
+		name: "Freight ICP",
+		description: "Owner-led Indiana freight brokers/3PLs, $10-70M, no tech team (see ICP.md)",
+		stages: FREIGHT_STAGES,
+	}).onConflictDoNothing();
+}
+
+export async function getFunnel(funnelId: string) {
+	const [f] = await db.select().from(funnels).where(eq(funnels.id, funnelId)).limit(1);
+	return f ?? null;
+}
+
+/** Stage keys of the funnel a run belongs to. */
+export async function getRunStages(runId: string): Promise<{ run: typeof funnelRuns.$inferSelect; stages: FunnelStage[] } | null> {
+	const [row] = await db
+		.select({ run: funnelRuns, stages: funnels.stages })
+		.from(funnelRuns)
+		.innerJoin(funnels, eq(funnelRuns.funnelId, funnels.id))
+		.where(eq(funnelRuns.id, runId))
+		.limit(1);
+	if (!row) return null;
+	return { run: row.run, stages: row.stages };
+}
+
+/**
+ * Items queued at `stage`: all earlier stages pass, this stage has no result.
+ * Fail at any stage removes the item from all later queues (and its own).
+ */
+export async function getQueue(runId: string, stageKey: string) {
+	const info = await getRunStages(runId);
+	if (!info) return null;
+	const idx = info.stages.findIndex((s) => s.key === stageKey);
+	if (idx === -1) return null;
+	const earlier = info.stages.slice(0, idx).map((s) => s.key);
+	const rows = await db
+		.select()
+		.from(funnelItems)
+		.where(
+			and(
+				eq(funnelItems.runId, runId),
+				// no result at this stage yet
+				sql`not exists (select 1 from ${funnelStageResults} r where r.item_id = ${funnelItems.id} and r.stage = ${stageKey})`,
+				// every earlier stage has a passing result
+				...earlier.map(
+					(k) =>
+						sql`exists (select 1 from ${funnelStageResults} r where r.item_id = ${funnelItems.id} and r.stage = ${k} and r.verdict = 'pass')`,
+				),
+			),
+		)
+		.orderBy(funnelItems.companyName);
+	return rows;
+}
+
+/** Per-stage counts for a run: passed / failed / awaiting per stage. */
+export async function getSummary(runId: string, stages: FunnelStage[]) {
+	const items = await db.select({ id: funnelItems.id }).from(funnelItems).where(eq(funnelItems.runId, runId));
+	const results = items.length
+		? await db
+				.select({ itemId: funnelStageResults.itemId, stage: funnelStageResults.stage, verdict: funnelStageResults.verdict })
+				.from(funnelStageResults)
+				.where(inArray(funnelStageResults.itemId, items.map((i) => i.id)))
+		: [];
+	const byStage = stages.map((s) => {
+		const rs = results.filter((r) => r.stage === s.key);
+		return {
+			stage: s.key,
+			label: s.label,
+			passed: rs.filter((r) => r.verdict === "pass").length,
+			failed: rs.filter((r) => r.verdict === "fail").length,
+			awaiting: items.length - rs.length,
+		};
+	});
+	return { total: items.length, byStage };
+}
+
+/**
+ * After a verdict lands: 6/6 passes → promote (idempotent — a second 6/6
+ * updates the existing prospect); any fail on a promoted item → icpApproved
+ * stays false until a pass re-lands everywhere.
+ */
+export async function applyVerdictConsequences(itemId: string, stages: FunnelStage[]) {
+	const [item] = await db.select().from(funnelItems).where(eq(funnelItems.id, itemId)).limit(1);
+	if (!item) return;
+	const results = await db
+		.select({ stage: funnelStageResults.stage, verdict: funnelStageResults.verdict })
+		.from(funnelStageResults)
+		.where(eq(funnelStageResults.itemId, itemId));
+	const allPass = stages.every((s) => results.some((r) => r.stage === s.key && r.verdict === "pass"));
+	const anyFail = results.some((r) => r.verdict === "fail");
+
+	if (allPass && !anyFail) {
+		const raw = (item.rawData ?? {}) as Record<string, unknown>;
+		const resultRows = await db
+			.select({ stage: funnelStageResults.stage, note: funnelStageResults.note })
+			.from(funnelStageResults)
+			.where(eq(funnelStageResults.itemId, itemId));
+		const noteFor = (k: string) => resultRows.find((r) => r.stage === k)?.note ?? null;
+		if (item.prospectId) {
+			await db
+				.update(outreachProspects)
+				.set({
+					region: item.state ?? null,
+					revenueBand: noteFor("revenue_band"),
+					techTeam: noteFor("tech_team"),
+					icpApproved: true,
+				})
+				.where(eq(outreachProspects.id, item.prospectId));
+		} else {
+			const [prospect] = await db
+				.insert(outreachProspects)
+				.values({
+					company: item.companyName,
+					stage: "proposed",
+					region: item.state ?? null,
+					revenueBand: noteFor("revenue_band"),
+					techTeam: noteFor("tech_team"),
+					icpApproved: true,
+					sourceNote: `funnel-run ${new Date().toISOString().slice(0, 10)}`,
+					notes: typeof raw.address === "string" ? raw.address : null,
+				})
+				.returning({ id: outreachProspects.id });
+			await db
+				.update(funnelItems)
+				.set({ prospectId: prospect.id, promotedAt: new Date() })
+				.where(eq(funnelItems.id, itemId));
+		}
+		return;
+	}
+
+	// not 6/6 (or a fail landed): if promoted, drop approval — the existing
+	// invite gate picks this up; the prospect row itself survives.
+	if (item.prospectId) {
+		await db.update(outreachProspects).set({ icpApproved: allPass && !anyFail }).where(eq(outreachProspects.id, item.prospectId));
+	}
+}
