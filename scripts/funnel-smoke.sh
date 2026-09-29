@@ -22,9 +22,9 @@ say "funnel $funnel_id"
 run_id=$(curl -sf -X POST -H "$AUTH" -H "$CT" -d "{\"funnelId\":\"$funnel_id\",\"source\":\"paste\",\"note\":\"smoke $(date +%s)\"}" "$BASE/api/funnels" | python3 -c 'import sys,json;print(json.load(sys.stdin)["run"]["id"])')
 say "run $run_id"
 
-# import: 3 fake Indiana freight companies — hq_state auto-passes, one with industryType so industry_type auto-passes too
+# import: 3 fake Indiana freight companies — hq_state auto-passes from the state field
 curl -sf -X POST -H "$AUTH" -H "$CT" "$BASE/api/funnels/runs/$run_id/items" -d '{"items":[
-	{"companyName":"Smoke Brokerage LLC","city":"Indianapolis","state":"IN","rawData":{"industryType":"freight brokerage"}},
+	{"companyName":"Smoke Brokerage LLC","city":"Indianapolis","state":"IN","rawData":{"address":"1 Main St, Indianapolis, IN 46204"}},
 	{"companyName":"Smoke 3PL Inc","city":"Fishers","state":"IN"},
 	{"companyName":"Smoke Carrier Co","city":"Muncie","state":"IN"}
 ]}' | python3 -m json.tool
