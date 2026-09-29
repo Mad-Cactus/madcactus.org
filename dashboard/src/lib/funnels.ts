@@ -30,6 +30,90 @@ export async function funnelAuthed(request: Request) {
 	return (await checkApiKey(request)) || (await getAuthedClient()) !== null;
 }
 
+export type ImportRow = {
+	companyName?: string;
+	city?: string | null;
+	state?: string | null;
+	sourceUrl?: string | null;
+	sourceKind?: string | null;
+	rawData?: Record<string, unknown> | null;
+};
+
+const normState = (s?: string | null) => {
+	const t = (s ?? "").trim().toLowerCase();
+	return t === "in" || t === "indiana" ? "IN" : t ? t.toUpperCase().slice(0, 2) : null;
+};
+
+/** Insert items into an open run: dedup on (runId, company), skip already-promoted
+ *  companies, auto-write hq_state / industry_type verdicts from row evidence. */
+export async function importRunItems(
+	runId: string,
+	rows: ImportRow[],
+): Promise<{ imported: number; duplicated: number; skippedPromoted: number }> {
+	// skip companies that already made it to the CRM
+	const names = [...new Set(rows.map((r) => r.companyName!.trim()))];
+	const promoted = await db
+		.select({ company: outreachProspects.company })
+		.from(outreachProspects)
+		.where(inArray(outreachProspects.company, names));
+	const promotedSet = new Set(promoted.map((p) => p.company.toLowerCase()));
+
+	let imported = 0;
+	let skippedPromoted = 0;
+	let duplicated = 0;
+	for (const row of rows) {
+		const name = row.companyName!.trim();
+		if (promotedSet.has(name.toLowerCase())) {
+			skippedPromoted++;
+			continue;
+		}
+		const inserted = await db
+			.insert(funnelItems)
+			.values({
+				runId,
+				companyName: name,
+				city: row.city?.trim() || null,
+				state: normState(row.state),
+				sourceUrl: row.sourceUrl?.trim() || null,
+				sourceKind: row.sourceKind?.trim() || null,
+				rawData: row.rawData ?? null,
+			})
+			.onConflictDoNothing({ target: [funnelItems.runId, funnelItems.companyName] })
+			.returning({ id: funnelItems.id, state: funnelItems.state });
+		if (inserted.length === 0) {
+			duplicated++;
+			continue;
+		}
+		imported++;
+		// auto stage verdicts from pull evidence (method=source)
+		const item = inserted[0];
+		const auto: { stage: string; verdict: "pass" | "fail"; note: string | null }[] = [];
+		if (item.state) {
+			auto.push({
+				stage: "hq_state",
+				verdict: item.state === "IN" ? "pass" : "fail",
+				note: [row.city?.trim(), item.state].filter(Boolean).join(", ") || null,
+			});
+		}
+		const industry = typeof row.rawData?.industryType === "string" ? row.rawData.industryType.trim() : "";
+		if (industry) auto.push({ stage: "industry_type", verdict: "pass", note: industry });
+		for (const a of auto) {
+			await db
+				.insert(funnelStageResults)
+				.values({
+				itemId: item.id,
+				stage: a.stage,
+				verdict: a.verdict,
+				note: a.note,
+				evidenceUrl: row.sourceUrl?.trim() || null,
+				method: "source",
+			})
+			.onConflictDoNothing({ target: [funnelStageResults.itemId, funnelStageResults.stage] });
+		}
+	}
+	return { imported, duplicated, skippedPromoted };
+}
+
 /** Insert the Freight ICP funnel if the table is empty. Called on list reads —
  *  no seed migration, so drizzle stays the only writer of SQL. */
 export async function ensureFreightFunnel() {

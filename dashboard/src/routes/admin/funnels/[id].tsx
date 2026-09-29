@@ -12,7 +12,7 @@ type Summary = { total: number; byStage: { stage: string; label: string; passed:
 
 const post = async (url: string, body: unknown) => {
 	const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-	return (await r.json().catch(() => ({}))) as { error?: string; ok?: boolean; results?: number; errors?: number };
+	return (await r.json().catch(() => ({}))) as { error?: string; ok?: boolean; results?: number; errors?: number; fetched?: number; imported?: number; duplicated?: number; skippedPromoted?: number };
 };
 
 // One funnel run: summary bar, item table with stage chips, per-stage queues.
@@ -28,6 +28,7 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 	const [msg, setMsg] = createSignal("");
 	const [error, setError] = createSignal("");
 	const [busyStage, setBusyStage] = createSignal("");
+	const [pulling, setPulling] = createSignal(false);
 
 	async function refresh() {
 		const r = await fetch(`/api/funnels/runs/${props.params.id}`);
@@ -83,6 +84,22 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 		setMsg(`Imported ${body.imported ?? 0}, ${body.duplicated ?? 0} duplicates, ${body.skippedPromoted ?? 0} already in Outreach`);
 		(e.target as HTMLFormElement).reset();
 		await refresh();
+	}
+
+	async function pullYeti(e: Event) {
+		e.preventDefault();
+		setError("");
+		setMsg("");
+		setPulling(true);
+		try {
+			const fd = new FormData(e.target as HTMLFormElement);
+			const body = await post(`/api/funnels/runs/${props.params.id}/pull-yeti`, { limit: Number(fd.get("limit") || 50) });
+			if (body.error) return setError(body.error);
+			setMsg(`ImportYeti: fetched ${body.fetched ?? 0}, imported ${body.imported ?? 0}, ${body.duplicated ?? 0} duplicates, ${body.skippedPromoted ?? 0} already in Outreach`);
+			await refresh();
+		} finally {
+			setPulling(false);
+		}
 	}
 
 	async function record(e: Event, stage: string) {
@@ -170,6 +187,15 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 						/>
 						<button type="submit" class="btn btn-primary">Import</button>{" "}
 						<button type="button" class="btn" onClick={closeRun}>Close run</button>
+					</form>
+					<form onSubmit={pullYeti} style={{ "margin-top": "12px", "border-top": "1px solid var(--border, #ddd)", "padding-top": "12px" }}>
+						<button type="submit" class="btn" disabled={pulling()}>Pull from ImportYeti</button>{" "}
+					<label class="muted" style={{ "font-size": "12px" }}>
+							top <input name="limit" type="number" min="1" max="200" value="50" style={{ width: "60px" }} /> by shipments
+						</label>
+					<Show when={pulling()}>
+							<span class="muted" style={{ "font-size": "12px" }}> pulling… ~4s per search page, keep this tab open</span>
+						</Show>
 					</form>
 				</div>
 			</Show>
