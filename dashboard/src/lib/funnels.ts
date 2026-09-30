@@ -20,7 +20,7 @@ export const FREIGHT_STAGES: FunnelStage[] = [
 	{ key: "hq_state", label: "Indiana HQ", gate: "Address/city is in Indiana, not a name token", method: "source" },
 	{ key: "industry_type", label: "Industry", gate: "Freight brokerage / 3PL / knowledge-heavy carrier", method: "source" },
 	{ key: "headcount", label: "Headcount", gate: "15-250 employees", method: "api" },
-	{ key: "revenue_band", label: "Revenue", gate: "$10-70M estimate; rev/employee $150-500k sanity", method: "human" },
+	{ key: "revenue_band", label: "Revenue", gate: "$10-70M estimate; rev/employee $150-500k sanity", method: "api" },
 	{ key: "tech_team", label: "Tech team", gate: "≤2 title hits for CTO/VP Eng/IT Director/engineer/developer", method: "api" },
 	{ key: "owner_led", label: "Owner-led", gate: "Founder/CEO still running it, not a PE roll-up", method: "agent" },
 ];
@@ -117,13 +117,19 @@ export async function importRunItems(
 /** Insert the Freight ICP funnel if the table is empty. Called on list reads —
  *  no seed migration, so drizzle stays the only writer of SQL. */
 export async function ensureFreightFunnel() {
-	const existing = await db.select({ id: funnels.id }).from(funnels).where(eq(funnels.name, "Freight ICP")).limit(1);
-	if (existing.length > 0) return;
-	await db.insert(funnels).values({
-		name: "Freight ICP",
-		description: "Owner-led Indiana freight brokers/3PLs, $10-70M, no tech team (see ICP.md)",
-		stages: FREIGHT_STAGES,
-	}).onConflictDoNothing();
+	const existing = await db.select().from(funnels).where(eq(funnels.name, "Freight ICP")).limit(1);
+	if (existing.length === 0) {
+		await db.insert(funnels).values({
+			name: "Freight ICP",
+			description: "Owner-led Indiana freight brokers/3PLs, $10-70M, no tech team (see ICP.md)",
+			stages: FREIGHT_STAGES,
+		}).onConflictDoNothing();
+		return;
+	}
+	// stage definitions evolve (method changes) — keep the seeded row in sync
+	if (JSON.stringify(existing[0].stages) !== JSON.stringify(FREIGHT_STAGES)) {
+		await db.update(funnels).set({ stages: FREIGHT_STAGES }).where(eq(funnels.id, existing[0].id));
+	}
 }
 
 export async function getFunnel(funnelId: string) {

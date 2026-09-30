@@ -21,7 +21,7 @@ async function apolloPost(path: string, body: Record<string, unknown>) {
 }
 
 /** Strip legal suffixes — "10-4 GLOBAL LLC" finds nothing, "10-4 Global" does. */
-const cleanName = (n: string) => n.replace(/\s+(LLC|L\.L\.C|INC|INC\.|CORP|CORPORATION|LTD|CO\.)\s*$/i, "").trim();
+export const cleanName = (n: string) => n.replace(/\s+(LLC|L\.L\.C|INC|INC\.|CORP|CORPORATION|LTD|CO\.)\s*$/i, "").trim();
 
 /** Best name match → { domain, linkedinUrl } or null. Search alone doesn't
  *  carry estimated_num_employees on mixed_companies, so we resolve the domain

@@ -31,6 +31,11 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 	const [pulling, setPulling] = createSignal(false);
 	const [page, setPage] = createSignal(0);
 	const PAGE = 25;
+	const [tab, setTab] = createSignal<"import" | "enrich">("enrich");
+	const [stageTab, setStageTab] = createSignal("");
+	const [verdictMethod, setVerdictMethod] = createSignal("human");
+	const activeStage = () => stages().find((s) => s.key === stageTab()) ?? stages().find((s) => queueFor(s.key).length > 0) ?? stages()[0];
+	const itemById = () => new Map(items().map((i) => [i.id, i]));
 	const pageCount = () => Math.max(1, Math.ceil(items().length / PAGE));
 	const paged = () => {
 		const p = Math.min(page(), pageCount() - 1);
@@ -109,18 +114,18 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 		}
 	}
 
-	async function record(e: Event, stage: string) {
+	async function record(e: SubmitEvent, stage: string, itemId: string, method: string) {
 		e.preventDefault();
 		setError("");
 		const form = e.target as HTMLFormElement;
 		const fd = new FormData(form);
 		const body = await post("/api/funnels/results", {
-			itemId: String(fd.get("itemId")),
+			itemId,
 			stage,
-			verdict: String(fd.get("verdict")),
+			verdict: String(fd.get("verdict") ?? ""),
 			evidenceUrl: String(fd.get("evidenceUrl") ?? ""),
 			note: String(fd.get("note") ?? ""),
-			method: String(fd.get("method") || "human"),
+			method,
 		});
 		if (body.error) return setError(body.error);
 		form.reset();
@@ -176,7 +181,14 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 				</div>
 			</Show>
 
-			<Show when={run()?.status === "open"}>
+			<Show when={run()}>
+				<div class="form-row" style={{ "margin-bottom": "16px", gap: "8px" }}>
+					<button type="button" class={`btn btn-sm ${tab() === "import" ? "btn-primary" : ""}`} onClick={() => setTab("import")}>Import</button>
+					<button type="button" class={`btn btn-sm ${tab() === "enrich" ? "btn-primary" : ""}`} onClick={() => setTab("enrich")}>Enrichment</button>
+				</div>
+			</Show>
+
+			<Show when={tab() === "import" && run()?.status === "open"}>
 				<div class="card" style={{ "margin-bottom": "16px" }}>
 					<h2 style={{ "font-size": "15px", margin: "0 0 8px" }}>Import companies</h2>
 					<form onSubmit={import_}>
@@ -208,107 +220,145 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 				</div>
 			</Show>
 
-			<table class="table" style={{ "margin-bottom": "16px" }}>
-				<thead>
-					<tr>
-						<th>Company</th>
-						<For each={stages()}>{(s) => <th title={s.gate}>{s.label}</th>}</For>
-						<th></th>
-					</tr>
-				</thead>
-				<tbody>
-					<For each={paged()}>
-						{(it) => (
-							<tr>
-								<td>
-									<Show when={it.sourceUrl} fallback={it.companyName}>
-										<a href={it.sourceUrl!} target="_blank" rel="noreferrer">{it.companyName}</a>
-									</Show>
-									<Show when={it.promotedAt}> ★</Show>
-									<Show when={it.city || it.state}>
-										<div class="muted" style={{ "font-size": "12px" }}>{[it.city, it.state].filter(Boolean).join(", ")}</div>
-									</Show>
-								</td>
-								<For each={stages()}>
-									{(s) => {
-										const r = () => resultFor(it.id, s.key);
-										return (
-											<td>
-												<Show
-													when={r()}
-													fallback={<span class="muted">–</span>}
-												>
-													{(res) => (
-														<>
-															<Show when={res().verdict === "pass"} fallback={<span title={res().note ?? "failed"}>✗</span>}>
-																<Show when={res().evidenceUrl} fallback={<span>✓</span>}>
-																	<a href={res().evidenceUrl!} target="_blank" rel="noreferrer" title={res().note ?? ""}>✓</a>
-																</Show>
-															</Show>{" "}
-															<button type="button" class="delete-btn" title="Redo — clears this stage and re-queues the item" onClick={() => redo(res().id)}>↺</button>
-														</>
-													)}
-												</Show>
-											</td>
-										);
-									}}
-								</For>
-								<td>{it.promotedAt ? <span class="badge badge-active">in Outreach</span> : ""}</td>
-							</tr>
+			<Show when={tab() === "enrich"}>
+				<table class="table" style={{ "margin-bottom": "16px" }}>
+					<thead>
+						<tr>
+							<th>Company</th>
+							<For each={stages()}>{(s) => <th title={s.gate}>{s.label}</th>}</For>
+							<th></th>
+						</tr>
+					</thead>
+					<tbody>
+						<For each={paged()}>
+							{(it) => (
+								<tr>
+									<td>
+										<Show when={it.sourceUrl} fallback={it.companyName}>
+											<a href={it.sourceUrl!} target="_blank" rel="noreferrer">{it.companyName}</a>
+										</Show>
+										<Show when={it.promotedAt}> ★</Show>
+										<Show when={it.city || it.state}>
+											<div class="muted" style={{ "font-size": "12px" }}>{[it.city, it.state].filter(Boolean).join(", ")}</div>
+										</Show>
+									</td>
+									<For each={stages()}>
+										{(s) => {
+											const r = () => resultFor(it.id, s.key);
+											return (
+												<td>
+													<Show when={r()} fallback={<span class="muted">–</span>}>
+														{(res) => (
+															<>
+																<Show when={res().verdict === "pass"} fallback={<span title={res().note ?? "failed"}>✗</span>}>
+																	<Show when={res().evidenceUrl} fallback={<span>✓</span>}>
+																		<a href={res().evidenceUrl!} target="_blank" rel="noreferrer" title={res().note ?? ""}>✓</a>
+																	</Show>
+																</Show>{" "}
+																<button type="button" class="delete-btn" title="Redo — clears this stage and re-queues the item" onClick={() => redo(res().id)}>↺</button>
+															</>
+														)}
+													</Show>
+												</td>
+											);
+										}}
+									</For>
+									<td>{it.promotedAt ? <span class="badge badge-active">in Outreach</span> : ""}</td>
+								</tr>
+							)}
+						</For>
+					</tbody>
+				</table>
+				<div class="form-row" style={{ "align-items": "center", "margin-bottom": "16px" }}>
+					<button type="button" class="btn btn-sm" disabled={page() === 0} onClick={() => setPage(page() - 1)}>← Prev</button>
+					<span class="muted" style={{ "font-size": "13px" }}>
+						{Math.min(page() * PAGE + 1, items().length)}–{Math.min((page() + 1) * PAGE, items().length)} of {items().length}
+					</span>
+					<button type="button" class="btn btn-sm" disabled={page() >= pageCount() - 1} onClick={() => setPage(page() + 1)}>Next →</button>
+				</div>
+
+				<h2 style={{ "font-size": "15px", margin: "0 0 8px" }}>Stages</h2>
+				<div class="form-row" style={{ "margin-bottom": "12px", gap: "6px", "flex-wrap": "wrap" }}>
+					<For each={stages()}>
+						{(s) => (
+							<button
+								type="button"
+								class={`btn btn-sm ${activeStage()?.key === s.key ? "btn-primary" : ""}`}
+								onClick={() => setStageTab(s.key)}
+								title={s.gate}
+							>
+								{s.label} <span class="muted">({queueFor(s.key).length})</span>
+							</button>
 						)}
 					</For>
-				</tbody>
-			</table>
-			<div class="form-row" style={{ "align-items": "center", "margin-bottom": "16px" }}>
-				<button type="button" class="btn btn-sm" disabled={page() === 0} onClick={() => setPage(page() - 1)}>← Prev</button>
-				<span class="muted" style={{ "font-size": "13px" }}>
-					{Math.min(page() * PAGE + 1, items().length)}–{Math.min((page() + 1) * PAGE, items().length)} of {items().length}
-				</span>
-				<button type="button" class="btn btn-sm" disabled={page() >= pageCount() - 1} onClick={() => setPage(page() + 1)}>Next →</button>
-			</div>
+				</div>
 
-			<h2 style={{ "font-size": "15px", margin: "0 0 8px" }}>Stage queues</h2>
-			<For each={stages()}>
-				{(s) => {
-					const queue = () => queueFor(s.key);
-					return (
-						<div class="card" style={{ "margin-bottom": "12px" }}>
-							<h3 style={{ "font-size": "14px", margin: "0 0 4px" }}>
-								{s.label} <span class="muted">({queue().length} awaiting · {s.gate})</span>
-								<Show when={s.method === "api" && run()?.status === "open"}>
-									{" "}
-									<button type="button" class="btn btn-sm" disabled={busyStage() === s.key} onClick={() => runStage(s.key)}>
-										{busyStage() === s.key ? "Running…" : "Run stage (Apollo)"}
-									</button>
-									<label class="muted" style={{ "font-size": "12px" }}>
-										<input id={`${s.key}-limit`} type="number" min="1" max="500" value="50" style={{ width: "54px" }} /> per click
-									</label>
-								</Show>
+				<Show when={activeStage()}>
+					{(s) => (
+						<div class="card" style={{ "margin-bottom": "16px" }}>
+							<h3 style={{ "font-size": "14px", margin: "0 0 8px" }}>
+								{s().label} <span class="muted">· {s().gate} · {queueFor(s().key).length} awaiting</span>
 							</h3>
-							<Show when={queue().length > 0 && run()?.status === "open"} fallback={<Show when={queue().length > 0}><p class="muted" style={{ margin: 0, "font-size": "13px" }}>{queue().map((i) => i.companyName).join(" · ")}</p></Show>}>
-								<form class="form-row" onSubmit={(e) => record(e, s.key)}>
-									<select name="itemId" required title={queue().length > 25 ? `First 25 of ${queue().length} — run the stage batch or use the API for the rest` : ""}>
-										<For each={queue().slice(0, 25)}>{(i) => <option value={i.id}>{i.companyName}</option>}</For>
-									</select>
-									<select name="verdict">
-										<option value="pass">pass</option>
-										<option value="fail">fail</option>
-									</select>
-									<select name="method">
+							<div class="form-row" style={{ "margin-bottom": "12px" }}>
+								<Show when={s().method === "api" && run()?.status === "open"}>
+									<button type="button" class="btn btn-sm btn-primary" disabled={busyStage() === s().key} onClick={() => runStage(s().key)}>
+										{busyStage() === s().key ? "Running…" : "Run stage"}
+									</button>{" "}
+									<label class="muted" style={{ "font-size": "12px" }}>
+										<input id={`${s().key}-limit`} type="number" min="1" max="500" value="50" style={{ width: "54px" }} /> per click
+									</label>{" "}
+								</Show>
+								<label class="muted" style={{ "font-size": "12px" }}>
+									manual verdicts record as
+									<select value={verdictMethod()} onChange={(e) => setVerdictMethod((e.target as HTMLSelectElement).value)}>
 										<option value="human">human</option>
 										<option value="agent">agent</option>
-										<option value="api">api</option>
-										<option value="source">source</option>
 									</select>
-									<input name="evidenceUrl" placeholder="evidence URL" />
-									<input name="note" placeholder="note" />
-									<button type="submit" class="btn btn-primary btn-sm">Record</button>
-								</form>
+								</label>
+							</div>
+
+							<h4 style={{ "font-size": "13px", margin: "0 0 6px" }}>Awaiting</h4>
+							<Show
+								when={queueFor(s().key).length > 0 && run()?.status === "open"}
+								fallback={<p class="muted" style={{ margin: 0, "font-size": "13px" }}>{queueFor(s().key).length === 0 ? "Queue clear." : `${queueFor(s().key).length} awaiting — run closed.`}</p>}
+							>
+								<For each={queueFor(s().key).slice(0, 100)}>
+									{(it) => (
+										<form class="form-row" onSubmit={(e) => record(e, s().key, it.id, verdictMethod())}>
+											<span style={{ "min-width": "230px", "font-size": "13px" }}>{it.companyName}</span>
+											<input name="note" placeholder="note" style={{ "max-width": "220px" }} />
+											<input name="evidenceUrl" placeholder="evidence URL" style={{ "max-width": "220px" }} />
+											<button type="submit" class="btn btn-sm btn-primary" name="verdict" value="pass">✓ pass</button>
+											<button type="submit" class="btn btn-sm" name="verdict" value="fail">✗ fail</button>
+										</form>
+									)}
+								</For>
+								<Show when={queueFor(s().key).length > 100}>
+									<p class="muted" style={{ "font-size": "12px" }}>Showing first 100 of {queueFor(s().key).length} — run the stage batch or record via API for the rest.</p>
+								</Show>
 							</Show>
+
+							<h4 style={{ "font-size": "13px", margin: "12px 0 6px" }}>Recorded — what happened at this stage</h4>
+							<For each={results().filter((r) => r.stage === s().key).sort((a, b) => b.checkedAt.localeCompare(a.checkedAt)).slice(0, 100)}>
+								{(r) => (
+									<div class="form-row" style={{ "font-size": "13px", "align-items": "center" }}>
+										<span style={{ "min-width": "230px" }}>{itemById().get(r.itemId)?.companyName ?? "—"}</span>
+										<span>{r.verdict === "pass" ? "✓" : "✗"}</span>
+										<span class="muted" style={{ "max-width": "320px", overflow: "hidden", "text-overflow": "ellipsis" }}>{r.note ?? ""}</span>
+										<span class="badge">{r.method}</span>
+										<Show when={r.evidenceUrl}>
+											<a href={r.evidenceUrl!} target="_blank" rel="noreferrer">evidence</a>
+										</Show>
+										<span class="muted" title={r.checkedAt}>{r.checkedAt.slice(0, 10)}</span>
+										<button type="button" class="delete-btn" title="Redo — clears this stage and re-queues the item" onClick={() => redo(r.id)}>↺</button>
+									</div>
+								)}
+							</For>
 						</div>
-					);
-				}}
-			</For>
-		</Layout>
+					)}
+				</Show>
+			</Show>
+
+			</Layout>
 	);
 }
