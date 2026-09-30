@@ -3,13 +3,27 @@
 // Apollo (tech_team). Session or mc_ key guarded.
 // POST /api/funnels/runs/:id/run-stage { stage, limit? } → { results, errors, firstError? }
 import type { APIEvent } from "@solidjs/start/server";
+import { eq, sql } from "drizzle-orm";
 import { db } from "~/db";
-import { funnelStageResults } from "~/db/schema";
+import { funnelItems, funnelStageResults } from "~/db/schema";
 import { funnelAuthed, getQueue, getRunStages, applyVerdictConsequences } from "~/lib/funnels";
 import { apolloConfigured, apolloHeadcount, apolloTechTitleHits } from "~/lib/enrich-apollo";
 import { prospeoConfigured, prospeoEnrichCompany, rangeMidpoint } from "~/lib/enrich-prospeo";
 
 const M = 1_000_000;
+
+/** One Prospeo call carries the whole firmographic payload — cache it on the
+ *  item so later stages (revenue) read it free instead of re-enriching. */
+async function cacheProspeo(itemId: string, co: Awaited<ReturnType<typeof prospeoEnrichCompany>>) {
+	await db
+		.update(funnelItems)
+		.set({
+			rawData: sql`jsonb_set(coalesce(${funnelItems.rawData}, '{}'::jsonb), '{prospeo}', ${JSON.stringify(
+				co ? { matched: true, ...co } : { matched: false },
+			)}::jsonb)`,
+		})
+		.where(eq(funnelItems.id, itemId));
+}
 
 function json(body: unknown, status = 200) {
 	return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -43,6 +57,7 @@ export const POST = async (event: APIEvent) => {
 			if (stage.key === "headcount") {
 				if (prospeoConfigured()) {
 					const co = await prospeoEnrichCompany(item.companyName);
+					await cacheProspeo(item.id, co);
 					const n = co?.employeeCount ?? rangeMidpoint(co?.employeeRange ?? null);
 					// null = not in Prospeo → almost certainly <15 employees → honest fail
 					verdict = n !== null && n >= 15 && n <= 250 ? "pass" : "fail";
@@ -53,7 +68,14 @@ export const POST = async (event: APIEvent) => {
 					note = n !== null ? `${n} employees (Apollo)` : "not in Apollo — likely under 15 employees";
 				}
 			} else if (stage.key === "revenue_band") {
-				const co = await prospeoEnrichCompany(item.companyName);
+				// prefer the payload cached by the headcount run (free); enrich only if absent
+				const cached = ((item.rawData as Record<string, unknown> | null)?.prospeo ?? null) as
+				| { revenueMin?: number | null; revenueMax?: number | null }
+				| null;
+				const co =
+					cached && (cached.revenueMin !== null || cached.revenueMax !== null)
+						? (cached as { revenueMin: number | null; revenueMax: number | null })
+						: await prospeoEnrichCompany(item.companyName);
 				if (!co || co.revenueMin === null || co.revenueMax === null) throw new Error("no revenue data (Prospeo)");
 				// pass when the range overlaps the $10-70M band
 				verdict = co.revenueMax >= 10 * M && co.revenueMin <= 70 * M ? "pass" : "fail";

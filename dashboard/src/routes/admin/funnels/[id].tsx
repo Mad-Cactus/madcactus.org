@@ -36,6 +36,47 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 	const [verdictMethod, setVerdictMethod] = createSignal("human");
 	const [redoTarget, setRedoTarget] = createSignal<Result | null>(null);
 	const [detailItem, setDetailItem] = createSignal<Item | null>(null);
+	const [fq, setFq] = createSignal("");
+	const [fStage, setFStage] = createSignal("");
+	const [fVerdict, setFVerdict] = createSignal("any");
+	const [fSource, setFSource] = createSignal("any");
+	const [fMinEmp, setFMinEmp] = createSignal("");
+	const [fMinRev, setFMinRev] = createSignal("");
+	const prospeoOf = (it: Item) => ((it as unknown as { rawData?: Record<string, unknown> }).rawData?.prospeo ?? null) as
+		| { employeeCount?: number | null; revenueMin?: number | null; revenueMax?: number | null }
+		| null;
+	const filtered = () =>
+		items().filter((it) => {
+			if (fq() && !it.companyName.toLowerCase().includes(fq().toLowerCase())) return false;
+			if (fSource() !== "any" && (it.sourceKind ?? "manual") !== fSource()) return false;
+			if (fStage() && fVerdict() !== "any") {
+				const r = resultFor(it.id, fStage());
+				if (fVerdict() === "awaiting" && r) return false;
+				if (fVerdict() === "pass" && r?.verdict !== "pass") return false;
+				if (fVerdict() === "fail" && r?.verdict !== "fail") return false;
+			}
+			const minEmp = Number(fMinEmp());
+			if (fMinEmp() !== "" && !Number.isNaN(minEmp)) {
+				const n = prospeoOf(it)?.employeeCount ?? null;
+				if (n === null || n < minEmp) return false;
+			}
+			const minRev = Number(fMinRev());
+			if (fMinRev() !== "" && !Number.isNaN(minRev)) {
+				const p = prospeoOf(it);
+				const rev = p?.revenueMax ?? p?.revenueMin ?? null;
+				if (rev === null || rev < minRev * 1_000_000) return false;
+			}
+			return true;
+		});
+	const clearFilters = () => {
+		setFq("");
+		setFStage("");
+		setFVerdict("any");
+		setFSource("any");
+		setFMinEmp("");
+		setFMinRev("");
+		setPage(0);
+	};
 	const confirmRedo = async () => {
 		const r = redoTarget();
 		setRedoTarget(null);
@@ -53,10 +94,10 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 	}
 	const activeStage = () => stages().find((s) => s.key === stageTab()) ?? stages().find((s) => queueFor(s.key).length > 0) ?? stages()[0];
 	const itemById = () => new Map(items().map((i) => [i.id, i]));
-	const pageCount = () => Math.max(1, Math.ceil(items().length / PAGE));
+	const pageCount = () => Math.max(1, Math.ceil(filtered().length / PAGE));
 	const paged = () => {
 		const p = Math.min(page(), pageCount() - 1);
-		return items().slice(p * PAGE, p * PAGE + PAGE);
+		return filtered().slice(p * PAGE, p * PAGE + PAGE);
 	};
 
 	async function refresh() {
@@ -248,6 +289,37 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 			</Show>
 
 			<Show when={tab() === "enrich"}>
+				<div class="card" style={{ "margin-bottom": "12px", padding: "12px 16px" }}>
+					<div class="form-row" style={{ "flex-wrap": "wrap", gap: "8px" }}>
+						<input value={fq()} onInput={(e) => { setFq((e.target as HTMLInputElement).value); setPage(0); }} placeholder="search company" style={{ "min-width": "180px" }} />
+						<select value={fStage()} onChange={(e) => { setFStage((e.target as HTMLSelectElement).value); setPage(0); }}>
+							<option value="">any stage</option>
+							<For each={stages()}>{(s) => <option value={s.key}>{s.label}</option>}</For>
+						</select>
+						<select value={fVerdict()} onChange={(e) => { setFVerdict((e.target as HTMLSelectElement).value); setPage(0); }} disabled={!fStage()}>
+							<option value="any">any verdict</option>
+							<option value="pass">✓ pass</option>
+							<option value="fail">✗ fail</option>
+							<option value="awaiting">awaiting</option>
+						</select>
+						<select value={fSource()} onChange={(e) => { setFSource((e.target as HTMLSelectElement).value); setPage(0); }}>
+							<option value="any">any source</option>
+							<option value="fmcsa">fmcsa</option>
+							<option value="ibj">ibj</option>
+							<option value="paste">paste</option>
+						</select>
+						<label class="muted" style={{ "font-size": "12px" }}>
+							≥ <input value={fMinEmp()} onInput={(e) => { setFMinEmp((e.target as HTMLInputElement).value); setPage(0); }} type="number" min="0" placeholder="emp" style={{ width: "64px" }} /> employees
+						</label>
+						<label class="muted" style={{ "font-size": "12px" }}>
+							≥ $<input value={fMinRev()} onInput={(e) => { setFMinRev((e.target as HTMLInputElement).value); setPage(0); }} type="number" min="0" placeholder="M" style={{ width: "64px" }} /> M revenue
+						</label>
+						<button type="button" class="btn btn-sm" onClick={clearFilters}>Clear</button>
+					</div>
+					<p class="muted" style={{ margin: "6px 0 0", "font-size": "12px" }}>
+						{filtered().length} of {items().length} companies · employee/revenue filters use cached Prospeo data (fills as stages run)
+					</p>
+				</div>
 				<table class="table" style={{ "margin-bottom": "16px" }}>
 					<thead>
 						<tr>
@@ -299,7 +371,7 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 				<div style={{ display: "flex", "align-items": "center", "justify-content": "space-between", "margin-bottom": "16px" }}>
 					<button type="button" class="btn btn-sm" disabled={page() === 0} onClick={() => setPage(page() - 1)} title="Previous page">←</button>
 					<span class="muted" style={{ "font-size": "13px" }}>
-						{paged().length} on this page · {items().length} total · {pageCount() - 1 - Math.min(page(), pageCount() - 1)} pages left
+						{paged().length} on this page · {filtered().length} total · {pageCount() - 1 - Math.min(page(), pageCount() - 1)} pages left
 					</span>
 					<button type="button" class="btn btn-sm" disabled={page() >= pageCount() - 1} onClick={() => setPage(page() + 1)} title="Next page">→</button>
 				</div>
