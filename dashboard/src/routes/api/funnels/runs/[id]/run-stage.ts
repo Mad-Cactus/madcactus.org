@@ -14,14 +14,17 @@ function json(body: unknown, status = 200) {
 export const POST = async (event: APIEvent) => {
 	if (!(await funnelAuthed(event.request))) return json({ error: "Unauthorized" }, 401);
 	if (!apolloConfigured()) return json({ error: "Apollo driver unconfigured — set APOLLO_API_KEY" }, 400);
-	const body = (await event.request.json().catch(() => ({}))) as { stage?: string };
+	const body = (await event.request.json().catch(() => ({}))) as { stage?: string; limit?: number };
 	const info = await getRunStages(event.params.id);
 	const stage = info?.stages.find((s) => s.key === body.stage);
 	if (!info || !stage) return json({ error: "Run not found or unknown stage" }, 404);
 	if (stage.method !== "api") return json({ error: `Stage ${stage.key} is not an api stage` }, 400);
 
-	const items = await getQueue(event.params.id, stage.key);
-	if (!items) return json({ error: "Run not found" }, 404);
+	const queue = await getQueue(event.params.id, stage.key);
+	if (!queue) return json({ error: "Run not found" }, 404);
+	// ponytail: Apollo free tier is ~50 credits/day — slice the queue per click so
+	// one press never burns a day's credits or times out the HTTP request.
+	const items = queue.slice(0, Math.min(Math.max(Math.trunc(body.limit ?? 50), 1), 500));
 
 	let ok = 0;
 	let errors = 0;

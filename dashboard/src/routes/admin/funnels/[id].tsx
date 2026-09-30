@@ -137,7 +137,8 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 	async function runStage(stage: string) {
 		setBusyStage(stage);
 		setError("");
-		const body = await post(`/api/funnels/runs/${props.params.id}/run-stage`, { stage });
+		const limitInput = document.getElementById(`${stage}-limit`) as HTMLInputElement | null;
+		const body = await post(`/api/funnels/runs/${props.params.id}/run-stage`, { stage, limit: Number(limitInput?.value || 50) });
 		setBusyStage("");
 		if (body.error) return setError(body.error);
 		setMsg(`${stage}: ${body.results ?? 0} verdicts recorded, ${body.errors ?? 0} errors`);
@@ -279,6 +280,9 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 									<button type="button" class="btn btn-sm" disabled={busyStage() === s.key} onClick={() => runStage(s.key)}>
 										{busyStage() === s.key ? "Running…" : "Run stage (Apollo)"}
 									</button>
+									<label class="muted" style={{ "font-size": "12px" }}>
+										<input id={`${s.key}-limit`} type="number" min="1" max="500" value="50" style={{ width: "54px" }} /> per click
+									</label>
 								</Show>
 							</h3>
 							<Show when={queue().length > 0 && run()?.status === "open"} fallback={<Show when={queue().length > 0}><p class="muted" style={{ margin: 0, "font-size": "13px" }}>{queue().map((i) => i.companyName).join(" · ")}</p></Show>}>
