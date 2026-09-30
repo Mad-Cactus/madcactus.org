@@ -61,12 +61,12 @@ export async function prospeoBulkEnrich(companyNames: string[]): Promise<Map<str
 			headers: { "Content-Type": "application/json", "X-KEY": process.env.PROSPEO_API_KEY! },
 			body: JSON.stringify({ data: companyNames.map((n, i) => ({ identifier: String(i), company_name: cleanName(n) })) }),
 		});
-		if (r.status === 429 && attempt < 4) {
-			await Bun.sleep(15_000 * (attempt + 1));
+		if (r.status === 429 && attempt < 3) {
+			await Bun.sleep(30_000 * (attempt + 1));
 			continue;
 		}
 		const body = await r.text();
-		if (!r.ok) throw new Error(`prospeo bulk HTTP ${r.status}: ${body.slice(0, 120)}`);
+		if (!r.ok) throw new Error(`prospeo bulk HTTP ${r.status} (rate-limited? retry in a minute): ${body.slice(0, 120)}`);
 		const d = JSON.parse(body) as { matched?: { identifier: string; company?: Record<string, unknown> }[] };
 		const byIdx = new Map<string, ProspeoCompany>();
 		for (const m of d.matched ?? []) if (m.company) byIdx.set(m.identifier, mapCompany(m.company));

@@ -55,10 +55,15 @@ export const POST = async (event: APIEvent) => {
 	// same credit cost (per match), one rate-limit slot, no 429 storms.
 	const enriched = new Map<string, ProspeoCompany | null>();
 	if (stage.key !== "tech_team" && prospeoConfigured() && items.length > 0) {
-		for (let i = 0; i < items.length; i += 50) {
-			const chunk = items.slice(i, i + 50);
-			const res = await prospeoBulkEnrich(chunk.map((c) => c.companyName));
-			for (const c of chunk) enriched.set(c.id, res.get(c.companyName) ?? null);
+		try {
+			for (let i = 0; i < items.length; i += 50) {
+				const chunk = items.slice(i, i + 50);
+				const res = await prospeoBulkEnrich(chunk.map((c) => c.companyName));
+				for (const c of chunk) enriched.set(c.id, res.get(c.companyName) ?? null);
+			}
+		} catch (e) {
+			// rate-limit/quota failures surface as a clean message, not a 500
+			return json({ error: `Prospeo bulk failed: ${e instanceof Error ? e.message : String(e)}` }, 502);
 		}
 	}
 	for (const item of items) {
