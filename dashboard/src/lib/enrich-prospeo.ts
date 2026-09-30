@@ -31,6 +31,50 @@ export type ProspeoCompany = {
 	industry: string | null;
 };
 
+function mapCompany(c: Record<string, unknown>): ProspeoCompany {
+	const range = (c.employee_range as string | null) ?? null;
+	const rev = (c.revenue_range as { min?: number; max?: number } | null) ?? {};
+	const loc = (c.location as { city?: string; state?: string } | null) ?? {};
+	return {
+		employeeCount: typeof c.employee_count === "number" ? c.employee_count : null,
+		employeeRange: range,
+		revenueMin: typeof rev.min === "number" ? rev.min : null,
+		revenueMax: typeof rev.max === "number" ? rev.max : null,
+		founded: typeof c.founded === "number" ? c.founded : null,
+		city: loc.city ?? null,
+		state: loc.state ?? null,
+		domain: typeof c.domain === "string" ? c.domain : null,
+		linkedinUrl: typeof c.linkedin_url === "string" ? c.linkedin_url : null,
+		industry: typeof c.industry === "string" ? c.industry : null,
+	};
+}
+
+/** Bulk: up to 50 companies in ONE request (1 credit per match, 0 on miss,
+ *  one rate-limit slot instead of 50). Map value null = not matched. */
+export async function prospeoBulkEnrich(companyNames: string[]): Promise<Map<string, ProspeoCompany | null>> {
+	const out = new Map<string, ProspeoCompany | null>();
+	if (companyNames.length === 0) return out;
+	for (let attempt = 0; ; attempt++) {
+		await throttle();
+		const r = await fetch("https://api.prospeo.io/bulk-enrich-company", {
+			method: "POST",
+			headers: { "Content-Type": "application/json", "X-KEY": process.env.PROSPEO_API_KEY! },
+			body: JSON.stringify({ data: companyNames.map((n, i) => ({ identifier: String(i), company_name: cleanName(n) })) }),
+		});
+		if (r.status === 429 && attempt < 4) {
+			await Bun.sleep(15_000 * (attempt + 1));
+			continue;
+		}
+		const body = await r.text();
+		if (!r.ok) throw new Error(`prospeo bulk HTTP ${r.status}: ${body.slice(0, 120)}`);
+		const d = JSON.parse(body) as { matched?: { identifier: string; company?: Record<string, unknown> }[] };
+		const byIdx = new Map<string, ProspeoCompany>();
+		for (const m of d.matched ?? []) if (m.company) byIdx.set(m.identifier, mapCompany(m.company));
+		companyNames.forEach((n, i) => out.set(n, byIdx.get(String(i)) ?? null));
+		return out;
+	}
+}
+
 /** Enrich by company name. null = no match (costs 0 credits). */
 export async function prospeoEnrichCompany(companyName: string): Promise<ProspeoCompany | null> {
 	let body = "";
@@ -55,22 +99,7 @@ export async function prospeoEnrichCompany(companyName: string): Promise<Prospeo
 		break;
 	}
 	const d = JSON.parse(body) as { company?: Record<string, unknown> };
-	const c = d.company ?? {};
-	const range = (c.employee_range as string | null) ?? null;
-	const rev = (c.revenue_range as { min?: number; max?: number } | null) ?? {};
-	const loc = (c.location as { city?: string; state?: string } | null) ?? {};
-	return {
-		employeeCount: typeof c.employee_count === "number" ? c.employee_count : null,
-		employeeRange: range,
-		revenueMin: typeof rev.min === "number" ? rev.min : null,
-		revenueMax: typeof rev.max === "number" ? rev.max : null,
-		founded: typeof c.founded === "number" ? c.founded : null,
-		city: loc.city ?? null,
-		state: loc.state ?? null,
-		domain: typeof c.domain === "string" ? c.domain : null,
-		linkedinUrl: typeof c.linkedin_url === "string" ? c.linkedin_url : null,
-		industry: typeof c.industry === "string" ? c.industry : null,
-	};
+	return d.company ? mapCompany(d.company) : null;
 }
 
 /** "11-50" → 30 (midpoint). Falls back when employee_count is null. */

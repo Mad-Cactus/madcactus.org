@@ -8,13 +8,13 @@ import { db } from "~/db";
 import { funnelItems, funnelStageResults } from "~/db/schema";
 import { funnelAuthed, getQueue, getRunStages, applyVerdictConsequences } from "~/lib/funnels";
 import { apolloConfigured, apolloHeadcount, apolloTechTitleHits } from "~/lib/enrich-apollo";
-import { prospeoConfigured, prospeoEnrichCompany, rangeMidpoint } from "~/lib/enrich-prospeo";
+import { prospeoBulkEnrich, prospeoConfigured, rangeMidpoint, type ProspeoCompany } from "~/lib/enrich-prospeo";
 
 const M = 1_000_000;
 
 /** One Prospeo call carries the whole firmographic payload — cache it on the
  *  item so later stages (revenue) read it free instead of re-enriching. */
-async function cacheProspeo(itemId: string, co: Awaited<ReturnType<typeof prospeoEnrichCompany>>) {
+async function cacheProspeo(itemId: string, co: ProspeoCompany | null) {
 	await db
 		.update(funnelItems)
 		.set({
@@ -50,13 +50,24 @@ export const POST = async (event: APIEvent) => {
 	let ok = 0;
 	let errors = 0;
 	let firstError = "";
+
+	// Prospeo stages: one bulk request per 50 companies instead of N singles —
+	// same credit cost (per match), one rate-limit slot, no 429 storms.
+	const enriched = new Map<string, ProspeoCompany | null>();
+	if (stage.key !== "tech_team" && prospeoConfigured() && items.length > 0) {
+		for (let i = 0; i < items.length; i += 50) {
+			const chunk = items.slice(i, i + 50);
+			const res = await prospeoBulkEnrich(chunk.map((c) => c.companyName));
+			for (const c of chunk) enriched.set(c.id, res.get(c.companyName) ?? null);
+		}
+	}
 	for (const item of items) {
 		try {
 			let verdict: "pass" | "fail" = "fail";
 			let note = "";
 			if (stage.key === "headcount") {
 				if (prospeoConfigured()) {
-					const co = await prospeoEnrichCompany(item.companyName);
+					const co = enriched.get(item.id) ?? null;
 					await cacheProspeo(item.id, co);
 					const n = co?.employeeCount ?? rangeMidpoint(co?.employeeRange ?? null);
 					// null = not in Prospeo → almost certainly <15 employees → honest fail
@@ -75,7 +86,7 @@ export const POST = async (event: APIEvent) => {
 				const co =
 					cached && (cached.revenueMin !== null || cached.revenueMax !== null)
 						? (cached as { revenueMin: number | null; revenueMax: number | null })
-						: await prospeoEnrichCompany(item.companyName);
+						: enriched.get(item.id) ?? null;
 				if (!co || co.revenueMin === null || co.revenueMax === null) throw new Error("no revenue data (Prospeo)");
 				// pass when the range overlaps the $10-70M band
 				verdict = co.revenueMax >= 10 * M && co.revenueMin <= 70 * M ? "pass" : "fail";
