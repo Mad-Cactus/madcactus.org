@@ -86,16 +86,16 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 		await refresh();
 	}
 
-	async function pullYeti(e: Event) {
+	async function pullFmcsa(e: Event) {
 		e.preventDefault();
 		setError("");
 		setMsg("");
 		setPulling(true);
 		try {
 			const fd = new FormData(e.target as HTMLFormElement);
-			const body = await post(`/api/funnels/runs/${props.params.id}/pull-yeti`, { limit: Number(fd.get("limit") || 50) });
+			const body = await post(`/api/funnels/runs/${props.params.id}/pull-fmcsa`, { limit: Number(fd.get("limit") || 200) });
 			if (body.error) return setError(body.error);
-			setMsg(`ImportYeti: fetched ${body.fetched ?? 0}, imported ${body.imported ?? 0}, ${body.duplicated ?? 0} duplicates, ${body.skippedPromoted ?? 0} already in Outreach`);
+			setMsg(`FMCSA: fetched ${body.fetched ?? 0}, imported ${body.imported ?? 0}, ${body.duplicated ?? 0} duplicates, ${body.skippedPromoted ?? 0} already in Outreach`);
 			await refresh();
 		} finally {
 			setPulling(false);
@@ -188,13 +188,13 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 						<button type="submit" class="btn btn-primary">Import</button>{" "}
 						<button type="button" class="btn" onClick={closeRun}>Close run</button>
 					</form>
-					<form onSubmit={pullYeti} style={{ "margin-top": "12px", "border-top": "1px solid var(--border, #ddd)", "padding-top": "12px" }}>
-						<button type="submit" class="btn" disabled={pulling()}>Pull from ImportYeti</button>{" "}
-					<label class="muted" style={{ "font-size": "12px" }}>
-							top <input name="limit" type="number" min="1" max="200" value="50" style={{ width: "60px" }} /> by shipments
+					<form onSubmit={pullFmcsa} style={{ "margin-top": "12px", "border-top": "1px solid var(--border, #ddd)", "padding-top": "12px" }}>
+						<button type="submit" class="btn" disabled={pulling()}>Pull from FMCSA</button>{" "}
+						<label class="muted" style={{ "font-size": "12px" }}>
+							top <input name="limit" type="number" min="1" max="1600" value="200" style={{ width: "60px" }} /> newest Indiana brokers/3PLs
 						</label>
-					<Show when={pulling()}>
-							<span class="muted" style={{ "font-size": "12px" }}> pulling… ~4s per search page, keep this tab open</span>
+						<Show when={pulling()}>
+							<span class="muted" style={{ "font-size": "12px" }}> pulling… one census query, then inserts</span>
 						</Show>
 					</form>
 				</div>
