@@ -20,16 +20,23 @@ async function apolloPost(path: string, body: Record<string, unknown>) {
 	return (await r.json()) as Record<string, unknown>;
 }
 
+/** Strip legal suffixes — "10-4 GLOBAL LLC" finds nothing, "10-4 Global" does. */
+const cleanName = (n: string) => n.replace(/\s+(LLC|L\.L\.C|INC|INC\.|CORP|CORPORATION|LTD|CO\.)\s*$/i, "").trim();
+
 /** Best name match → { domain, linkedinUrl } or null. Search alone doesn't
  *  carry estimated_num_employees on mixed_companies, so we resolve the domain
- *  here and enrich in a second call. */
+ *  here and enrich in a second call. US-only: without the location filter a
+ *  foreign same-name company can win the top slot. */
 export async function apolloResolveOrg(companyName: string): Promise<{ domain: string | null; linkedinUrl: string | null } | null> {
-	const data = await apolloPost("/mixed_companies/search", { q_organization_name: companyName, per_page: 1 });
+	const data = await apolloPost("/mixed_companies/search", {
+		q_organization_name: cleanName(companyName),
+		organization_locations: ["United States"],
+		per_page: 1,
+	});
 	const orgs = (data.organizations ?? []) as Array<Record<string, unknown>>;
 	const org = orgs[0];
 	if (!org) return null;
-	// ponytail: name-match is fuzzy on Apollo's side; a totally different company
-	// can win the top slot. Upgrade: require a domain match from funnel rawData.
+	// ponytail: name-match is still fuzzy; upgrade: require a domain match from funnel rawData.
 	return {
 		domain: typeof org.primary_domain === "string" ? org.primary_domain : null,
 		linkedinUrl: typeof org.linkedin_url === "string" ? org.linkedin_url : null,

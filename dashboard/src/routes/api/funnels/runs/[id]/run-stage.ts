@@ -33,22 +33,23 @@ export const POST = async (event: APIEvent) => {
 		try {
 			if (stage.key === "headcount") {
 				const n = await apolloHeadcount(item.companyName);
-				if (n === null) throw new Error("no Apollo match");
+				// null = not in Apollo at all → a for-hire company absent from a 200M-company
+				// DB is almost certainly <15 employees → honest fail, clears the queue.
 				await db.insert(funnelStageResults).values({
 					itemId: item.id,
 					stage: stage.key,
-					verdict: n >= 15 && n <= 250 ? "pass" : "fail",
-					note: `${n} employees (Apollo)`,
+					verdict: n !== null && n >= 15 && n <= 250 ? "pass" : "fail",
+					note: n !== null ? `${n} employees (Apollo)` : "not in Apollo — likely under 15 employees",
 					method: "api",
 				});
 			} else if (stage.key === "tech_team") {
 				const hits = await apolloTechTitleHits(item.companyName);
-				if (hits === null) throw new Error("no Apollo data");
+				// null = no people data at all → absence of tech-staff evidence supports the gate
 				await db.insert(funnelStageResults).values({
 					itemId: item.id,
 					stage: stage.key,
-					verdict: hits <= 2 ? "pass" : "fail",
-					note: `${hits} tech-title hits (Apollo)`,
+					verdict: hits !== null && hits > 2 ? "fail" : "pass",
+					note: hits !== null ? `${hits} tech-title hits (Apollo)` : "no tech titles found (Apollo)",
 					method: "api",
 				});
 			} else {

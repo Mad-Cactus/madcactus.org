@@ -168,7 +168,13 @@ export async function getQueue(runId: string, stageKey: string) {
 				),
 			),
 		)
-		.orderBy(funnelItems.companyName);
+		.orderBy(
+			// IBJ rank first (highest signal), then oldest-founded FMCSA companies
+			// (established = far more likely to be in Apollo), then alphabetical.
+			sql`(${funnelItems.rawData}->>'rank')::int asc nulls last`,
+			sql`(${funnelItems.rawData}->>'founded') asc nulls last`,
+			funnelItems.companyName,
+		);
 	return rows;
 }
 
