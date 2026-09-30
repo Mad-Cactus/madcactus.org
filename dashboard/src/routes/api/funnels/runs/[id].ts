@@ -2,7 +2,7 @@
 // GET  /api/funnels/runs/:id → { run, stages, items, results, summary }
 // POST /api/funnels/runs/:id { action: "close" } → close the run (no more imports)
 import type { APIEvent } from "@solidjs/start/server";
-import { asc, eq, inArray } from "drizzle-orm";
+import { asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "~/db";
 import { funnelItems, funnelRuns, funnelStageResults } from "~/db/schema";
 import { funnelAuthed, getRunStages, getSummary } from "~/lib/funnels";
@@ -19,7 +19,13 @@ export const GET = async (event: APIEvent) => {
 		.select()
 		.from(funnelItems)
 		.where(eq(funnelItems.runId, event.params.id))
-		.orderBy(asc(funnelItems.companyName));
+		.orderBy(
+			// match the queue order (IBJ rank, then oldest-founded) so page 1 of the
+			// table shows the companies the stage batch just processed
+			sql`(${funnelItems.rawData}->>'rank')::int asc nulls last`,
+			sql`(${funnelItems.rawData}->>'founded') asc nulls last`,
+			funnelItems.companyName,
+		);
 	const results = items.length
 		? await db
 				.select()
