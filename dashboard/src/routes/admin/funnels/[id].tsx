@@ -35,6 +35,7 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 	const [stageTab, setStageTab] = createSignal("");
 	const [verdictMethod, setVerdictMethod] = createSignal("human");
 	const [redoTarget, setRedoTarget] = createSignal<Result | null>(null);
+	const [detailItem, setDetailItem] = createSignal<Item | null>(null);
 	const confirmRedo = async () => {
 		const r = redoTarget();
 		setRedoTarget(null);
@@ -260,9 +261,7 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 							{(it) => (
 								<tr>
 									<td>
-										<Show when={it.sourceUrl} fallback={it.companyName}>
-											<a href={it.sourceUrl!} target="_blank" rel="noreferrer">{it.companyName}</a>
-										</Show>
+										<a href={it.sourceUrl ?? "#"} target={it.sourceUrl ? "_blank" : undefined} rel="noreferrer" title="Open company detail" onClick={(e) => { if (!it.sourceUrl) e.preventDefault(); setDetailItem(it); }}>{it.companyName}</a>
 										<Show when={it.promotedAt}> ★</Show>
 										<Show when={it.city || it.state}>
 											<div class="muted" style={{ "font-size": "12px" }}>{[it.city, it.state].filter(Boolean).join(", ")}</div>
@@ -345,27 +344,9 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 								</label>
 							</div>
 
-							<h4 style={{ "font-size": "13px", margin: "0 0 6px" }}>Awaiting</h4>
-							<Show
-								when={queueFor(s().key).length > 0 && run()?.status === "open"}
-								fallback={<p class="muted" style={{ margin: 0, "font-size": "13px" }}>{queueFor(s().key).length === 0 ? "Queue clear." : `${queueFor(s().key).length} awaiting — run closed.`}</p>}
-							>
-								<For each={queueFor(s().key).slice(0, 100)}>
-									{(it) => (
-										<form class="form-row" onSubmit={(e) => record(e, s().key, it.id, verdictMethod())}>
-											<span style={{ "min-width": "230px", "font-size": "13px" }}>{it.companyName}</span>
-											<input name="note" placeholder="note" style={{ "max-width": "220px" }} />
-											<input name="evidenceUrl" placeholder="evidence URL" style={{ "max-width": "220px" }} />
-											<button type="submit" class="btn btn-sm btn-primary" name="verdict" value="pass">✓ pass</button>
-											<button type="submit" class="btn btn-sm" name="verdict" value="fail">✗ fail</button>
-										</form>
-									)}
-								</For>
-								<Show when={queueFor(s().key).length > 100}>
-									<p class="muted" style={{ "font-size": "12px" }}>Showing first 100 of {queueFor(s().key).length} — run the stage batch or record via API for the rest.</p>
-								</Show>
-							</Show>
-
+							<p class="muted" style={{ margin: "0 0 4px", "font-size": "13px" }}>
+								{queueFor(s().key).length} awaiting — click a company in the table above to record a manual verdict.
+							</p>
 							<h4 style={{ "font-size": "13px", margin: "12px 0 6px" }}>Recorded — what happened at this stage</h4>
 							<For each={results().filter((r) => r.stage === s().key).sort((a, b) => b.checkedAt.localeCompare(a.checkedAt)).slice(0, 100)}>
 								{(r) => (
@@ -387,7 +368,74 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 				</Show>
 			</Show>
 
-			<Show when={redoTarget()}>
+			<Show when={detailItem()}>
+			{(it) => (
+				<div
+					style={{ position: "fixed", inset: "0", background: "rgba(0,0,0,0.4)", display: "flex", "align-items": "center", "justify-content": "center", "z-index": "100" }}
+					onClick={(e) => e.target === e.currentTarget && setDetailItem(null)}
+				>
+					<div class="card" style={{ width: "560px", "max-width": "92vw", "max-height": "86vh", overflow: "auto", margin: "0" }}>
+						<h3 style={{ "font-size": "15px", margin: "0 0 4px" }}>
+							{it().companyName}
+							<Show when={it().promotedAt}> ★</Show>
+						</h3>
+						<p class="muted" style={{ margin: "0 0 12px", "font-size": "13px" }}>
+							{[it().city, it().state].filter(Boolean).join(", ")} · {it().sourceKind ?? "manual"}
+							<Show when={it().sourceUrl}>{" · "}<a href={it().sourceUrl!} target="_blank" rel="noreferrer">source</a></Show>
+						</p>
+						<For each={stages()}>
+							{(s) => {
+								const r = () => resultFor(it().id, s.key);
+								return (
+									<div style={{ "border-top": "1px solid var(--border, #eee)", padding: "10px 0" }}>
+										<strong style={{ "font-size": "13px" }}>{s.label}</strong>{" "}
+										<span class="muted" style={{ "font-size": "12px" }}>{s.gate}</span>
+										<Show
+											when={r()}
+											fallback={
+												<Show when={run()?.status === "open"} fallback={<span class="muted" style={{ "font-size": "13px" }}> – awaiting</span>}>
+													<form class="form-row" onSubmit={(e) => record(e, s.key, it().id, verdictMethod())} style={{ "margin-top": "6px" }}>
+														<input name="note" placeholder={`note (${s.label.toLowerCase()} value/evidence)`} style={{ "max-width": "240px" }} />
+														<input name="evidenceUrl" placeholder="evidence URL" style={{ "max-width": "200px" }} />
+														<button type="submit" class="btn btn-sm btn-primary" name="verdict" value="pass">✓ pass</button>
+														<button type="submit" class="btn btn-sm" name="verdict" value="fail">✗ fail</button>
+													</form>
+												</Show>
+											}
+										>
+											{(res) => (
+												<div class="form-row" style={{ "font-size": "13px", "align-items": "center", "margin-top": "4px" }}>
+													<span>{res().verdict === "pass" ? "✓" : "✗"}</span>
+													<span class="muted">{res().note ?? ""}</span>
+													<span class="badge">{res().method}</span>
+													<Show when={res().evidenceUrl}>
+														<a href={res().evidenceUrl!} target="_blank" rel="noreferrer">evidence</a>
+													</Show>
+													<span class="muted">{res().checkedAt.slice(0, 10)}</span>
+													<button type="button" class="delete-btn" title="Redo — clears this stage verdict" onClick={() => { setDetailItem(null); setRedoTarget(res()); }}>✕</button>
+												</div>
+											)}
+										</Show>
+									</div>
+								);
+							}}
+						</For>
+						<div class="form-row" style={{ "margin-top": "12px" }}>
+							<label class="muted" style={{ "font-size": "12px" }}>
+								manual verdicts record as
+								<select value={verdictMethod()} onChange={(e) => setVerdictMethod((e.target as HTMLSelectElement).value)}>
+									<option value="human">human</option>
+									<option value="agent">agent</option>
+								</select>
+							</label>
+							<button type="button" class="btn btn-sm" onClick={() => setDetailItem(null)}>Close</button>
+						</div>
+					</div>
+				</div>
+			)}
+		</Show>
+
+		<Show when={redoTarget()}>
 			{(r) => (
 				<div
 					style={{ position: "fixed", inset: "0", background: "rgba(0,0,0,0.4)", display: "flex", "align-items": "center", "justify-content": "center", "z-index": "100" }}
