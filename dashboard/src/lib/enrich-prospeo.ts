@@ -5,6 +5,15 @@
 // Docs: https://prospeo.io/api-docs/enrich-company
 import { cleanName } from "./enrich-apollo";
 
+// Prospeo rate-limits per minute (429) — space calls out and back off on 429.
+const MIN_INTERVAL = 4000;
+let lastCall = 0;
+async function throttle() {
+	const wait = MIN_INTERVAL - (Date.now() - lastCall);
+	if (wait > 0) await Bun.sleep(wait);
+	lastCall = Date.now();
+}
+
 export function prospeoConfigured() {
 	return Boolean(process.env.PROSPEO_API_KEY);
 }
@@ -24,18 +33,28 @@ export type ProspeoCompany = {
 
 /** Enrich by company name. null = no match (costs 0 credits). */
 export async function prospeoEnrichCompany(companyName: string): Promise<ProspeoCompany | null> {
-	const r = await fetch("https://api.prospeo.io/enrich-company", {
-		method: "POST",
-		headers: { "Content-Type": "application/json", "X-KEY": process.env.PROSPEO_API_KEY! },
-		body: JSON.stringify({ data: { company_name: cleanName(companyName) } }),
-	});
-	if (r.status === 400) {
-		const d = (await r.json().catch(() => ({}))) as { error_code?: string };
-		if (d.error_code === "NO_MATCH") return null;
-		throw new Error(`prospeo: ${d.error_code ?? "bad request"}`);
+	let body = "";
+	for (let attempt = 0; ; attempt++) {
+		await throttle();
+		const r = await fetch("https://api.prospeo.io/enrich-company", {
+			method: "POST",
+			headers: { "Content-Type": "application/json", "X-KEY": process.env.PROSPEO_API_KEY! },
+			body: JSON.stringify({ data: { company_name: cleanName(companyName) } }),
+		});
+		if (r.status === 429 && attempt < 4) {
+			await Bun.sleep(15_000 * (attempt + 1));
+			continue;
+		}
+		body = await r.text();
+		if (r.status === 400) {
+			const d = JSON.parse(body || "{}") as { error_code?: string };
+			if (d.error_code === "NO_MATCH") return null;
+			throw new Error(`prospeo: ${d.error_code ?? "bad request"}`);
+		}
+		if (!r.ok) throw new Error(`prospeo enrich HTTP ${r.status}: ${body.slice(0, 120)}`);
+		break;
 	}
-	if (!r.ok) throw new Error(`prospeo enrich HTTP ${r.status}`);
-	const d = (await r.json()) as { company?: Record<string, unknown> };
+	const d = JSON.parse(body) as { company?: Record<string, unknown> };
 	const c = d.company ?? {};
 	const range = (c.employee_range as string | null) ?? null;
 	const rev = (c.revenue_range as { min?: number; max?: number } | null) ?? {};
