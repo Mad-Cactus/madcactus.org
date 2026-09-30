@@ -40,6 +40,16 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 		setRedoTarget(null);
 		if (r) await redo(r.id);
 	};
+	const [editing, setEditing] = createSignal(false);
+
+	async function saveEdit(e: Event) {
+		e.preventDefault();
+		const fd = new FormData(e.target as HTMLFormElement);
+		const body = await post(`/api/funnels/runs/${props.params.id}`, { action: "edit", note: String(fd.get("note") ?? ""), source: String(fd.get("source") ?? "") });
+		if (body.error) return setError(body.error);
+		setEditing(false);
+		await refresh();
+	}
 	const activeStage = () => stages().find((s) => s.key === stageTab()) ?? stages().find((s) => queueFor(s.key).length > 0) ?? stages()[0];
 	const itemById = () => new Map(items().map((i) => [i.id, i]));
 	const pageCount = () => Math.max(1, Math.ceil(items().length / PAGE));
@@ -166,12 +176,22 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 		<Layout>
 			<Title>Funnel run</Title>
 			<p class="muted" style={{ margin: "0" }}><A href="/admin/funnels">← Funnels</A></p>
-			<h1 class="page-title">
-				{run()?.note || "Funnel run"}
-				<Show when={run()}>
-					<span class="muted" style={{ "font-size": "14px", "font-weight": "normal" }}> · {run()!.source} · {run()!.status}</span>
-				</Show>
-			</h1>
+			<Show when={!editing()} fallback={
+				<form class="form-row" onSubmit={saveEdit} style={{ "margin-bottom": "8px" }}>
+					<input name="note" value={run()?.note ?? ""} placeholder="run title" style={{ "max-width": "320px" }} />
+					<input name="source" value={run()?.source ?? ""} placeholder="source" style={{ "max-width": "160px" }} />
+					<button type="submit" class="btn btn-sm btn-primary">Save</button>
+					<button type="button" class="btn btn-sm" onClick={() => setEditing(false)}>Cancel</button>
+				</form>
+			}>
+				<h1 class="page-title">
+					{run()?.note || "Funnel run"}
+					<Show when={run()}>
+						<span class="muted" style={{ "font-size": "14px", "font-weight": "normal" }}> · {run()!.source} · {run()!.status}</span>{" "}
+						<button type="button" class="btn btn-sm" title="Edit title and source" onClick={() => setEditing(true)}>Edit</button>
+					</Show>
+				</h1>
+			</Show>
 			<Show when={error()}><p class="login-error">{error()}</p></Show>
 			<Show when={msg()}><p class="muted">{msg()}</p></Show>
 

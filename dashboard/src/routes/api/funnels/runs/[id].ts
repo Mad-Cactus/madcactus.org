@@ -1,6 +1,7 @@
 // Funnel run detail — session or mc_ key guarded.
 // GET  /api/funnels/runs/:id → { run, stages, items, results, summary }
 // POST /api/funnels/runs/:id { action: "close" } → close the run (no more imports)
+//      { action: "edit", note?, source? } → rename the run
 import type { APIEvent } from "@solidjs/start/server";
 import { asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "~/db";
@@ -39,8 +40,18 @@ export const GET = async (event: APIEvent) => {
 
 export const POST = async (event: APIEvent) => {
 	if (!(await funnelAuthed(event.request))) return json({ error: "Unauthorized" }, 401);
-	const body = (await event.request.json().catch(() => ({}))) as { action?: string };
-	if (body.action !== "close") return json({ error: "Unsupported action" }, 400);
-	await db.update(funnelRuns).set({ status: "closed", closedAt: new Date() }).where(eq(funnelRuns.id, event.params.id));
-	return json({ ok: true });
+	const body = (await event.request.json().catch(() => ({}))) as { action?: string; note?: string; source?: string };
+	if (body.action === "close") {
+		await db.update(funnelRuns).set({ status: "closed", closedAt: new Date() }).where(eq(funnelRuns.id, event.params.id));
+		return json({ ok: true });
+	}
+	if (body.action === "edit") {
+		const patch: Partial<typeof funnelRuns.$inferInsert> = {};
+		if (typeof body.note === "string") patch.note = body.note.trim() || null;
+		if (typeof body.source === "string") patch.source = body.source.trim() || "manual";
+		if (Object.keys(patch).length === 0) return json({ error: "Nothing to edit" }, 400);
+		await db.update(funnelRuns).set(patch).where(eq(funnelRuns.id, event.params.id));
+		return json({ ok: true });
+	}
+	return json({ error: "Unsupported action" }, 400);
 };
