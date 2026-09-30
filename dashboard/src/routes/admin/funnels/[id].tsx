@@ -29,6 +29,13 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 	const [error, setError] = createSignal("");
 	const [busyStage, setBusyStage] = createSignal("");
 	const [pulling, setPulling] = createSignal(false);
+	const [page, setPage] = createSignal(0);
+	const PAGE = 25;
+	const pageCount = () => Math.max(1, Math.ceil(items().length / PAGE));
+	const paged = () => {
+		const p = Math.min(page(), pageCount() - 1);
+		return items().slice(p * PAGE, p * PAGE + PAGE);
+	};
 
 	async function refresh() {
 		const r = await fetch(`/api/funnels/runs/${props.params.id}`);
@@ -209,7 +216,7 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 					</tr>
 				</thead>
 				<tbody>
-					<For each={items()}>
+					<For each={paged()}>
 						{(it) => (
 							<tr>
 								<td>
@@ -251,6 +258,13 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 					</For>
 				</tbody>
 			</table>
+			<div class="form-row" style={{ "align-items": "center", "margin-bottom": "16px" }}>
+				<button type="button" class="btn btn-sm" disabled={page() === 0} onClick={() => setPage(page() - 1)}>← Prev</button>
+				<span class="muted" style={{ "font-size": "13px" }}>
+					{Math.min(page() * PAGE + 1, items().length)}–{Math.min((page() + 1) * PAGE, items().length)} of {items().length}
+				</span>
+				<button type="button" class="btn btn-sm" disabled={page() >= pageCount() - 1} onClick={() => setPage(page() + 1)}>Next →</button>
+			</div>
 
 			<h2 style={{ "font-size": "15px", margin: "0 0 8px" }}>Stage queues</h2>
 			<For each={stages()}>
@@ -269,8 +283,8 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 							</h3>
 							<Show when={queue().length > 0 && run()?.status === "open"} fallback={<Show when={queue().length > 0}><p class="muted" style={{ margin: 0, "font-size": "13px" }}>{queue().map((i) => i.companyName).join(" · ")}</p></Show>}>
 								<form class="form-row" onSubmit={(e) => record(e, s.key)}>
-									<select name="itemId" required>
-										<For each={queue()}>{(i) => <option value={i.id}>{i.companyName}</option>}</For>
+									<select name="itemId" required title={queue().length > 25 ? `First 25 of ${queue().length} — run the stage batch or use the API for the rest` : ""}>
+										<For each={queue().slice(0, 25)}>{(i) => <option value={i.id}>{i.companyName}</option>}</For>
 									</select>
 									<select name="verdict">
 										<option value="pass">pass</option>
