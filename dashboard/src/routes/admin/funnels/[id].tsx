@@ -297,12 +297,12 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 						</For>
 					</tbody>
 				</table>
-				<div class="form-row" style={{ "align-items": "center", "margin-bottom": "16px" }}>
-					<button type="button" class="btn btn-sm" disabled={page() === 0} onClick={() => setPage(page() - 1)}>← Prev</button>
+				<div style={{ display: "flex", "align-items": "center", "justify-content": "space-between", "margin-bottom": "16px" }}>
+					<button type="button" class="btn btn-sm" disabled={page() === 0} onClick={() => setPage(page() - 1)} title="Previous page">←</button>
 					<span class="muted" style={{ "font-size": "13px" }}>
-						{Math.min(page() * PAGE + 1, items().length)}–{Math.min((page() + 1) * PAGE, items().length)} of {items().length}
+						{paged().length} on this page · {items().length} total · {pageCount() - 1 - Math.min(page(), pageCount() - 1)} pages left
 					</span>
-					<button type="button" class="btn btn-sm" disabled={page() >= pageCount() - 1} onClick={() => setPage(page() + 1)}>Next →</button>
+					<button type="button" class="btn btn-sm" disabled={page() >= pageCount() - 1} onClick={() => setPage(page() + 1)} title="Next page">→</button>
 				</div>
 
 				<h2 style={{ "font-size": "15px", margin: "0 0 8px" }}>Stages</h2>
