@@ -28,6 +28,7 @@ export const POST = async (event: APIEvent) => {
 
 	let ok = 0;
 	let errors = 0;
+	let firstError = "";
 	for (const item of items) {
 		try {
 			if (stage.key === "headcount") {
@@ -55,9 +56,11 @@ export const POST = async (event: APIEvent) => {
 			}
 			ok++;
 			await applyVerdictConsequences(item.id, info.stages);
-		} catch {
+		} catch (e) {
 			errors++;
+			// surface the first failure reason — silent error counts made this hard to debug
+			if (!firstError) firstError = e instanceof Error ? e.message : String(e);
 		}
 	}
-	return json({ ok: true, results: ok, errors });
+	return json({ ok: true, results: ok, errors, ...(firstError ? { firstError: firstError.slice(0, 200) } : {}) });
 };

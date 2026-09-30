@@ -12,7 +12,7 @@ type Summary = { total: number; byStage: { stage: string; label: string; passed:
 
 const post = async (url: string, body: unknown) => {
 	const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-	return (await r.json().catch(() => ({}))) as { error?: string; ok?: boolean; results?: number; errors?: number; fetched?: number; imported?: number; duplicated?: number; skippedPromoted?: number };
+	return (await r.json().catch(() => ({}))) as { error?: string; ok?: boolean; results?: number; errors?: number; firstError?: string; fetched?: number; imported?: number; duplicated?: number; skippedPromoted?: number };
 };
 
 // One funnel run: summary bar, item table with stage chips, per-stage queues.
@@ -141,7 +141,7 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 		const body = await post(`/api/funnels/runs/${props.params.id}/run-stage`, { stage, limit: Number(limitInput?.value || 50) });
 		setBusyStage("");
 		if (body.error) return setError(body.error);
-		setMsg(`${stage}: ${body.results ?? 0} verdicts recorded, ${body.errors ?? 0} errors`);
+		setMsg(`${stage}: ${body.results ?? 0} verdicts recorded, ${body.errors ?? 0} errors${body.firstError ? ` — first error: ${body.firstError}` : ""}`);
 		await refresh();
 	}
 

@@ -1,7 +1,9 @@
 // Apollo enrichment for funnel api-stages (headcount, tech_team).
-// Reads APOLLO_API_KEY (free tier to start). Absent key → apolloConfigured()
-// is false and the "Run stage" button reports the driver unconfigured.
-// Docs: https://docs.apollo.io — mixed_companies/search + mixed_people/search.
+// Reads APOLLO_API_KEY. The key must be scoped for: mixed_companies/search,
+// organizations/enrich, and mixed_people/search (Apollo scopes per endpoint
+// in the API key editor). Absent key → apolloConfigured() false and the
+// "Run stage" button reports the driver unconfigured.
+// Docs: https://docs.apollo.io
 const API = "https://api.apollo.io/v1";
 
 export function apolloConfigured() {
@@ -18,14 +20,28 @@ async function apolloPost(path: string, body: Record<string, unknown>) {
 	return (await r.json()) as Record<string, unknown>;
 }
 
-/** Estimated employee count for the best name match. null = no confident match. */
-export async function apolloHeadcount(companyName: string): Promise<number | null> {
+/** Best name match → { domain, linkedinUrl } or null. Search alone doesn't
+ *  carry estimated_num_employees on mixed_companies, so we resolve the domain
+ *  here and enrich in a second call. */
+export async function apolloResolveOrg(companyName: string): Promise<{ domain: string | null; linkedinUrl: string | null } | null> {
 	const data = await apolloPost("/mixed_companies/search", { q_organization_name: companyName, per_page: 1 });
 	const orgs = (data.organizations ?? []) as Array<Record<string, unknown>>;
 	const org = orgs[0];
 	if (!org) return null;
 	// ponytail: name-match is fuzzy on Apollo's side; a totally different company
 	// can win the top slot. Upgrade: require a domain match from funnel rawData.
+	return {
+		domain: typeof org.primary_domain === "string" ? org.primary_domain : null,
+		linkedinUrl: typeof org.linkedin_url === "string" ? org.linkedin_url : null,
+	};
+}
+
+/** Estimated employee count for the company. null = no data in Apollo. */
+export async function apolloHeadcount(companyName: string): Promise<number | null> {
+	const resolved = await apolloResolveOrg(companyName);
+	if (!resolved?.domain) return null;
+	const data = await apolloPost("/organizations/enrich", { domain: resolved.domain });
+	const org = (data.organization ?? data) as Record<string, unknown>;
 	const n = org.estimated_num_employees;
 	return typeof n === "number" && n > 0 ? n : null;
 }
@@ -34,8 +50,10 @@ const TECH_TITLES = ["CTO", "VP Engineering", "IT Director", "software engineer"
 
 /** Count of people at the company holding tech titles (the ≤2-hits gate). */
 export async function apolloTechTitleHits(companyName: string): Promise<number | null> {
+	const resolved = await apolloResolveOrg(companyName);
+	if (!resolved?.domain) return null;
 	const data = await apolloPost("/mixed_people/search", {
-		q_organization_names: [companyName],
+		q_organization_domains: [resolved.domain],
 		person_titles: TECH_TITLES,
 		page: 1,
 		per_page: 1,
