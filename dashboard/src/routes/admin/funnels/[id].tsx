@@ -34,6 +34,12 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 	const [tab, setTab] = createSignal<"import" | "enrich">("enrich");
 	const [stageTab, setStageTab] = createSignal("");
 	const [verdictMethod, setVerdictMethod] = createSignal("human");
+	const [redoTarget, setRedoTarget] = createSignal<Result | null>(null);
+	const confirmRedo = async () => {
+		const r = redoTarget();
+		setRedoTarget(null);
+		if (r) await redo(r.id);
+	};
 	const activeStage = () => stages().find((s) => s.key === stageTab()) ?? stages().find((s) => queueFor(s.key).length > 0) ?? stages()[0];
 	const itemById = () => new Map(items().map((i) => [i.id, i]));
 	const pageCount = () => Math.max(1, Math.ceil(items().length / PAGE));
@@ -250,12 +256,14 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 													<Show when={r()} fallback={<span class="muted">–</span>}>
 														{(res) => (
 															<>
-																<Show when={res().verdict === "pass"} fallback={<span title={res().note ?? "failed"}>✗</span>}>
-																	<Show when={res().evidenceUrl} fallback={<span>✓</span>}>
-																		<a href={res().evidenceUrl!} target="_blank" rel="noreferrer" title={res().note ?? ""}>✓</a>
-																	</Show>
+																<Show when={res().verdict === "pass"} fallback={<span class="muted" title={res().note ?? "failed"}>✗ {res().note ?? ""}</span>}>
+																	<span title={res().note ?? ""} style={{ "font-size": "13px" }}>
+																		✓ <Show when={res().evidenceUrl} fallback={<span>{res().note ?? ""}</span>}>
+																			<a href={res().evidenceUrl!} target="_blank" rel="noreferrer" style={{ color: "inherit" }}>{res().note ?? ""}</a>
+																		</Show>
+																	</span>
 																</Show>{" "}
-																<button type="button" class="delete-btn" title="Redo — clears this stage and re-queues the item" onClick={() => redo(res().id)}>↺</button>
+																<button type="button" class="delete-btn" title="Redo — clears this stage verdict" onClick={() => setRedoTarget(res())}>✕</button>
 															</>
 														)}
 													</Show>
@@ -350,7 +358,7 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 											<a href={r.evidenceUrl!} target="_blank" rel="noreferrer">evidence</a>
 										</Show>
 										<span class="muted" title={r.checkedAt}>{r.checkedAt.slice(0, 10)}</span>
-										<button type="button" class="delete-btn" title="Redo — clears this stage and re-queues the item" onClick={() => redo(r.id)}>↺</button>
+										<button type="button" class="delete-btn" title="Redo — clears this stage verdict" onClick={() => setRedoTarget(r)}>✕</button>
 									</div>
 								)}
 							</For>
@@ -359,6 +367,29 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 				</Show>
 			</Show>
 
-			</Layout>
+			<Show when={redoTarget()}>
+			{(r) => (
+				<div
+					style={{ position: "fixed", inset: "0", background: "rgba(0,0,0,0.4)", display: "flex", "align-items": "center", "justify-content": "center", "z-index": "100" }}
+					onClick={(e) => e.target === e.currentTarget && setRedoTarget(null)}
+				>
+					<div class="card" style={{ width: "420px", "max-width": "90vw", margin: "0" }}>
+						<h3 style={{ "font-size": "15px", margin: "0 0 8px" }}>Redo this stage verdict?</h3>
+						<p style={{ margin: "0 0 16px", "font-size": "14px" }}>
+							<strong>{itemById().get(r().itemId)?.companyName ?? "Company"}</strong> ·{" "}
+							{stages().find((s) => s.key === r().stage)?.label ?? r().stage}
+							<span class="muted" style={{ display: "block", "margin-top": "4px" }}>
+								Current: {r().verdict === "pass" ? "✓" : "✗"} {r().note ?? ""}. Clearing re-queues the company at this stage and may un-promote it.
+							</span>
+						</p>
+						<div class="form-row">
+							<button type="button" class="btn btn-primary" onClick={confirmRedo}>Yes, clear it</button>
+							<button type="button" class="btn" onClick={() => setRedoTarget(null)}>Cancel</button>
+						</div>
+					</div>
+				</div>
+			)}
+		</Show>
+		</Layout>
 	);
 }
