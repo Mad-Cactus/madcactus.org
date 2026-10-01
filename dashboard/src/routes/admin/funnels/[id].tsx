@@ -253,7 +253,7 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 					<form onSubmit={pullFmcsa} style={{ "margin-top": "12px", "border-top": "1px solid var(--border, #ddd)", "padding-top": "12px" }}>
 						<button type="submit" class="btn" disabled={pulling()}>Pull from FMCSA</button>{" "}
 						<label class="muted" style={{ "font-size": "12px" }}>
-							top <input name="limit" type="number" min="1" max="1600" value="200" style={{ width: "60px" }} /> newest Indiana brokers/3PLs
+							top <input name="limit" type="number" class="num" min="1" max="1600" value="200" /> newest Indiana brokers/3PLs
 						</label>
 						<Show when={pulling()}>
 							<span class="muted" style={{ "font-size": "12px" }}> pulling… one census query, then inserts</span>
@@ -364,7 +364,7 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 										{busyStage() === s().key ? "Running…" : `Run stage (${s().key === "tech_team" ? "Apollo" : "Prospeo"})`}
 									</button>{" "}
 									<label class="muted" style={{ "font-size": "12px" }}>
-										<input id={`${s().key}-limit`} type="number" min="1" max="500" value="50" style={{ width: "54px" }} /> per click
+										<input id={`${s().key}-limit`} type="number" class="num" min="1" max="500" value="50" /> per click
 									</label>{" "}
 								</Show>
 							</div>
