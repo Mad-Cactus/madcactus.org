@@ -8,7 +8,7 @@ import { db } from "~/db";
 import { funnelItems, funnelStageResults } from "~/db/schema";
 import { funnelAuthed, getQueue, getRunStages, applyVerdictConsequences } from "~/lib/funnels";
 import { apolloConfigured, apolloHeadcount, apolloTechTitleHits } from "~/lib/enrich-apollo";
-import { prospeoBulkEnrich, prospeoConfigured, rangeMidpoint, type ProspeoCompany } from "~/lib/enrich-prospeo";
+import { prospeoConfigured, prospeoEnrichBatch, rangeMidpoint, type ProspeoCompany } from "~/lib/enrich-prospeo";
 
 const M = 1_000_000;
 
@@ -58,7 +58,7 @@ export const POST = async (event: APIEvent) => {
 		try {
 			for (let i = 0; i < items.length; i += 50) {
 				const chunk = items.slice(i, i + 50);
-				const res = await prospeoBulkEnrich(chunk.map((c) => c.companyName));
+				const res = await prospeoEnrichBatch(chunk.map((c) => c.companyName));
 				for (const c of chunk) enriched.set(c.id, res.get(c.companyName) ?? null);
 			}
 		} catch (e) {

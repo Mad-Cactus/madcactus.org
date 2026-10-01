@@ -6,7 +6,7 @@
 import { cleanName } from "./enrich-apollo";
 
 // Prospeo rate-limits per minute (429) — space calls out and back off on 429.
-const MIN_INTERVAL = 4000;
+const MIN_INTERVAL = 10_000;
 let lastCall = 0;
 async function throttle() {
 	const wait = MIN_INTERVAL - (Date.now() - lastCall);
@@ -73,6 +73,20 @@ export async function prospeoBulkEnrich(companyNames: string[]): Promise<Map<str
 		companyNames.forEach((n, i) => out.set(n, byIdx.get(String(i)) ?? null));
 		return out;
 	}
+}
+
+/** Enrich a batch: bulk when the plan allows it, else spaced singles.
+ *  (Free plans meter bulk per record — a 50-record bulk 429s while 1-record
+ *  bulks pass — so catch that and fall back rather than failing the run.) */
+export async function prospeoEnrichBatch(companyNames: string[]): Promise<Map<string, ProspeoCompany | null>> {
+	try {
+		return await prospeoBulkEnrich(companyNames);
+	} catch (e) {
+		if (!(e instanceof Error && e.message.includes("429"))) throw e;
+	}
+	const out = new Map<string, ProspeoCompany | null>();
+	for (const n of companyNames) out.set(n, await prospeoEnrichCompany(n));
+	return out;
 }
 
 /** Enrich by company name. null = no match (costs 0 credits). */
