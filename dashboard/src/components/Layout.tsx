@@ -59,6 +59,7 @@ const Layout: ParentComponent<{ user?: { id?: string; email?: string } | null }>
 	return (
 		<div class="layout" classList={{ collapsed: collapsed() }}>
 			<CommandPalette />
+			<Toaster />
 			<aside class="sidebar">
 				<button
 					type="button"

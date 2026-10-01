@@ -1,7 +1,11 @@
 import { Title } from "@solidjs/meta";
 import { A, createAsync } from "@solidjs/router";
 import { For, Show, createSignal, onMount } from "solid-js";
-import Layout from "~/components/Layout";
+import Layout from "~/components/Layout"
+import { toast } from "~/lib/toast";
+
+const errT = (m: string) => toast(m, "error");
+const okT = (m: string) => toast(m, "success");
 import { getUserQuery } from "~/lib/queries";
 
 type Stage = { key: string; label: string; gate: string; method: string };
@@ -25,8 +29,6 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 	const [items, setItems] = createSignal<Item[]>([]);
 	const [results, setResults] = createSignal<Result[]>([]);
 	const [summary, setSummary] = createSignal<Summary | null>(null);
-	const [msg, setMsg] = createSignal("");
-	const [error, setError] = createSignal("");
 	const [busyStage, setBusyStage] = createSignal("");
 	const [pulling, setPulling] = createSignal(false);
 	const [page, setPage] = createSignal(0);
@@ -62,7 +64,7 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 		e.preventDefault();
 		const fd = new FormData(e.target as HTMLFormElement);
 		const body = await post(`/api/funnels/runs/${props.params.id}`, { action: "edit", note: String(fd.get("note") ?? ""), source: String(fd.get("source") ?? "") });
-		if (body.error) return setError(body.error);
+		if (body.error) return errT(body.error);
 		setEditing(false);
 		await refresh();
 	}
@@ -76,7 +78,7 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 
 	async function refresh() {
 		const r = await fetch(`/api/funnels/runs/${props.params.id}`);
-		if (!r.ok) return setError((await r.json().catch(() => ({})) as { error?: string }).error ?? "Load failed");
+		if (!r.ok) return errT((await r.json().catch(() => ({})) as { error?: string }).error ?? "Load failed");
 		const body = (await r.json()) as { run: Run; stages: Stage[]; items: Item[]; results: Result[]; summary: Summary };
 		setRun(body.run);
 		setStages(body.stages);
@@ -99,8 +101,8 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 
 	async function import_(e: Event) {
 		e.preventDefault();
-		setError("");
-		setMsg("");
+		;
+		;
 		const fd = new FormData(e.target as HTMLFormElement);
 		const sourceKind = String(fd.get("sourceKind") || "paste");
 		const rows = String(fd.get("payload") ?? "")
@@ -124,22 +126,22 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ items: rows }),
 		})).json()) as { error?: string; imported?: number; duplicated?: number; skippedPromoted?: number };
-		if (body.error) return setError(body.error);
-		setMsg(`Imported ${body.imported ?? 0}, ${body.duplicated ?? 0} duplicates, ${body.skippedPromoted ?? 0} already in Outreach`);
+		if (body.error) return errT(body.error);
+		okT(`Imported ${body.imported ?? 0}, ${body.duplicated ?? 0} duplicates, ${body.skippedPromoted ?? 0} already in Outreach`);
 		(e.target as HTMLFormElement).reset();
 		await refresh();
 	}
 
 	async function pullFmcsa(e: Event) {
 		e.preventDefault();
-		setError("");
-		setMsg("");
+		;
+		;
 		setPulling(true);
 		try {
 			const fd = new FormData(e.target as HTMLFormElement);
 			const body = await post(`/api/funnels/runs/${props.params.id}/pull-fmcsa`, { limit: Number(fd.get("limit") || 200) });
-			if (body.error) return setError(body.error);
-			setMsg(`FMCSA: fetched ${body.fetched ?? 0}, imported ${body.imported ?? 0}, ${body.duplicated ?? 0} duplicates, ${body.skippedPromoted ?? 0} already in Outreach`);
+			if (body.error) return errT(body.error);
+			okT(`FMCSA: fetched ${body.fetched ?? 0}, imported ${body.imported ?? 0}, ${body.duplicated ?? 0} duplicates, ${body.skippedPromoted ?? 0} already in Outreach`);
 			await refresh();
 		} finally {
 			setPulling(false);
@@ -148,7 +150,7 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 
 	async function record(e: SubmitEvent, stage: string, itemId: string, method: string) {
 		e.preventDefault();
-		setError("");
+		;
 		const form = e.target as HTMLFormElement;
 		const fd = new FormData(form);
 		const body = await post("/api/funnels/results", {
@@ -159,32 +161,32 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 			note: String(fd.get("note") ?? ""),
 			method,
 		});
-		if (body.error) return setError(body.error);
+		if (body.error) return errT(body.error);
 		form.reset();
 		await refresh();
 	}
 
 	async function redo(resultId: string) {
-		setError("");
+		;
 		const body = await post(`/api/funnels/results/${resultId}/redo`, {});
-		if (body.error) return setError(body.error);
+		if (body.error) return errT(body.error);
 		await refresh();
 	}
 
 	async function runStage(stage: string) {
 		setBusyStage(stage);
-		setError("");
+		;
 		const limitInput = document.getElementById(`${stage}-limit`) as HTMLInputElement | null;
 		const body = await post(`/api/funnels/runs/${props.params.id}/run-stage`, { stage, limit: Number(limitInput?.value || 50) });
 		setBusyStage("");
-		if (body.error) return setError(body.error);
-		setMsg(`${stage}: ${body.results ?? 0} verdicts recorded, ${body.errors ?? 0} errors${body.firstError ? ` — first error: ${body.firstError}` : ""}`);
+		if (body.error) return errT(body.error);
+		okT(`${stage}: ${body.results ?? 0} verdicts recorded, ${body.errors ?? 0} errors${body.firstError ? ` — first error: ${body.firstError}` : ""}`);
 		await refresh();
 	}
 
 	async function closeRun() {
 		const body = await post(`/api/funnels/runs/${props.params.id}`, { action: "close" });
-		if (body.error) return setError(body.error);
+		if (body.error) return errT(body.error);
 		await refresh();
 	}
 
@@ -208,8 +210,6 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 					</Show>
 				</h1>
 			</Show>
-			<Show when={error()}><p class="login-error">{error()}</p></Show>
-			<Show when={msg()}><p class="muted">{msg()}</p></Show>
 
 			<Show when={summary()}>
 				<div style={{ display: "flex", "flex-wrap": "wrap", gap: "6px", "margin-bottom": "16px" }}>

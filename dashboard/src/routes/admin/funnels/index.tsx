@@ -1,7 +1,11 @@
 import { Title } from "@solidjs/meta";
 import { A, createAsync } from "@solidjs/router";
 import { For, Show, createSignal, onMount } from "solid-js";
-import Layout from "~/components/Layout";
+import Layout from "~/components/Layout"
+import { toast } from "~/lib/toast"
+
+const errT = (m: string) => toast(m, "error");
+const okT = (m: string) => toast(m, "success");;
 import { getUserQuery } from "~/lib/queries";
 
 type Stage = { key: string; label: string; gate: string; method: string };
@@ -17,11 +21,10 @@ export default function AdminFunnels() {
 	createAsync(() => getUserQuery(), { deferStream: true });
 	const [funnels, setFunnels] = createSignal<Funnel[]>([]);
 	const [runs, setRuns] = createSignal<Run[]>([]);
-	const [error, setError] = createSignal("");
 
 	async function refresh() {
 		const r = await fetch("/api/funnels");
-		if (!r.ok) return setError((await r.json().catch(() => ({})) as { error?: string }).error ?? "Load failed");
+		if (!r.ok) return errT((await r.json().catch(() => ({})) as { error?: string }).error ?? "Load failed");
 		const body = (await r.json()) as { funnels: Funnel[]; runs: Run[] };
 		setFunnels(body.funnels);
 		setRuns(body.runs);
@@ -30,7 +33,7 @@ export default function AdminFunnels() {
 
 	async function createRun(e: Event) {
 		e.preventDefault();
-		setError("");
+		errT("");
 		const fd = new FormData(e.target as HTMLFormElement);
 		const r = await fetch("/api/funnels", {
 			method: "POST",
@@ -38,7 +41,7 @@ export default function AdminFunnels() {
 			body: JSON.stringify({ funnelId: String(fd.get("funnelId")), source: String(fd.get("source")), note: String(fd.get("note") ?? "") }),
 		});
 		const body = (await r.json()) as { error?: string; run?: Run };
-		if (!r.ok || !body.run) return setError(body.error ?? "Create failed");
+		if (!r.ok || !body.run) return errT(body.error ?? "Create failed");
 		location.href = `/admin/funnels/${body.run.id}`;
 	}
 
@@ -47,7 +50,6 @@ export default function AdminFunnels() {
 			<Title>Funnels</Title>
 			<h1 class="page-title">Funnels</h1>
 			<p class="page-subtitle">Staged ICP verification — pull companies in, work them through the gates, survivors promote to Outreach.</p>
-			<Show when={error()}><p class="login-error">{error()}</p></Show>
 
 			<For each={funnels()}>
 				{(f) => (
