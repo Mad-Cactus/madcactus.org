@@ -2,6 +2,9 @@ import { Title } from "@solidjs/meta";
 import { createAsync, revalidate, useAction, useSearchParams } from "@solidjs/router";
 import { For, Show, createSignal, createEffect, onMount, onCleanup } from "solid-js";
 import Layout from "~/components/Layout";
+import { VoiceLintPanel } from "~/components/VoiceLintPanel";
+import { LintedTextarea } from "~/components/LintedTextarea";
+import type { LintResult } from "~/lib/voice-lint";
 import {
 	getInboxQuery,
 	syncEmailAction,
@@ -73,6 +76,32 @@ export default function AdminEmail() {
 	const [draftVersions, setDraftVersions] = createSignal<Record<string, DraftVersionRow[]>>({});
 	const [draftDiff, setDraftDiff] = createSignal<{ id: string; parts: DraftDiffPart[] | null } | null>(null);
 	const draftSaveTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+	// docs-style autosave feedback + inline voice lint for the draft overlay
+	const [draftSaveState, setDraftSaveState] = createSignal<Record<string, string>>({});
+	const [draftLint, setDraftLint] = createSignal<Record<string, LintResult | null>>({});
+	const [lintStale, setLintStale] = createSignal<Record<string, boolean>>({});
+	const draftLintTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+	const lintDraft = (outboxId: string, body: string) => {
+		setLintStale({ ...lintStale(), [outboxId]: true });
+		clearTimeout(draftLintTimers[outboxId]);
+		draftLintTimers[outboxId] = setTimeout(async () => {
+			const res = await fetch("/api/lint", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ text: body, surface: "email" }),
+			});
+			if (res.ok) {
+				setDraftLint({ ...draftLint(), [outboxId]: await res.json() });
+				setLintStale({ ...lintStale(), [outboxId]: false });
+			}
+		}, 700);
+	};
+	// opening a draft lints its current body once (edits re-lint via editDraft)
+	createEffect(() => {
+		const id = openDraft();
+		if (!id || draftLint()[id] !== undefined) return;
+		lintDraft(id, editBody()[id] ?? inbox()?.drafts.find((d) => d.id === id)?.body ?? "");
+	});
 
 	// Linear/Superhuman trick: the pane paints from an in-memory thread cache
 	// and neighbors are prefetched after each move — j/k almost always hits
@@ -157,10 +186,6 @@ export default function AdminEmail() {
 		}
 	};
 
-	// set by threadOp when a row-removing op lands — the inbox effect then
-	// selects the thread above so triage continues from the same spot
-	let cursorToRestore: number | null = null;
-
 	const flash = (msg: string, ms = 6000) => {
 		setSendStatus(msg);
 		setTimeout(() => setSendStatus(""), ms);
@@ -180,8 +205,16 @@ export default function AdminEmail() {
 		}
 		const removing = op === "archive" || op === "spam" || op === "delete";
 		if (removing) {
-			cursorToRestore = Math.max(selIdx() - 1, 0);
 			setHiddenIds(new Set([...hiddenIds(), id]));
+			// triage flow: keep the reading pane open on the next thread down —
+			// the row that just slid into the removed row's slot
+			const rest = visibleThreads().filter((t) => t.id !== id);
+			const nextIdx = Math.min(selIdx(), rest.length - 1);
+			const next = folder() === "inbox" ? rest[nextIdx] : undefined;
+			if (next) {
+				await loadThread(next, nextIdx);
+				return true;
+			}
 		} else if (op === "unread") {
 			setReadOverride({ ...readOverride(), [id]: true });
 		} else if (op === "unarchive") {
@@ -209,7 +242,6 @@ export default function AdminEmail() {
 			else lastErr = ((await res.json().catch(() => ({}))) as { error?: string }).error ?? `HTTP ${res.status}`;
 		}
 		if (op === "archive" || op === "spam" || op === "delete") {
-			cursorToRestore = Math.max(visRangeIdx()[0] - 1, 0);
 			setHiddenIds(new Set([...hiddenIds(), ...ids]));
 		} else if (op === "unread") {
 			const overrides = { ...readOverride() };
@@ -299,11 +331,15 @@ export default function AdminEmail() {
 	// draft autosave — debounced PUT for body/to/subject; body is CRDT-tracked
 	// server-side (hunks into the Loro snapshot, coalesced version rows)
 	const editDraft = (outboxId: string, patch: { body?: string; to?: string; subject?: string; cc?: string; bcc?: string }) => {
-		if (patch.body !== undefined) setEditBody({ ...editBody(), [outboxId]: patch.body });
+		if (patch.body !== undefined) {
+			setEditBody({ ...editBody(), [outboxId]: patch.body });
+			lintDraft(outboxId, patch.body);
+		}
 		if (patch.to !== undefined || patch.subject !== undefined || patch.cc !== undefined || patch.bcc !== undefined) {
 			setEditMeta({ ...editMeta(), [outboxId]: { ...editMeta()[outboxId], ...patch } });
 		}
 		clearTimeout(draftSaveTimers[outboxId]);
+		setDraftSaveState({ ...draftSaveState(), [outboxId]: "saving…" });
 		draftSaveTimers[outboxId] = setTimeout(async () => {
 			const payload: Record<string, string> = {};
 			if (editBody()[outboxId] !== undefined) payload.body = editBody()[outboxId];
@@ -317,9 +353,14 @@ export default function AdminEmail() {
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify(payload),
 			});
-			if (res.ok && openDraftHistory() === outboxId) {
-				const r = await fetch(`/api/email/drafts/${outboxId}?versions=1`);
-				if (r.ok) setDraftVersions({ ...draftVersions(), [outboxId]: ((await r.json()) as { versions: DraftVersionRow[] }).versions });
+			if (res.ok) {
+				setDraftSaveState({ ...draftSaveState(), [outboxId]: `saved ${new Date().toLocaleTimeString()}` });
+				if (openDraftHistory() === outboxId) {
+					const r = await fetch(`/api/email/drafts/${outboxId}?versions=1`);
+					if (r.ok) setDraftVersions({ ...draftVersions(), [outboxId]: ((await r.json()) as { versions: DraftVersionRow[] }).versions });
+				}
+			} else {
+				setDraftSaveState({ ...draftSaveState(), [outboxId]: "save failed" });
 			}
 		}, 1000);
 	};
@@ -604,11 +645,14 @@ export default function AdminEmail() {
 			} else if (e.key === "x" && !visMode() && selected()) {
 				void askUnsub();
 			} else if (e.key === "r" && !visMode() && selected()) {
-				const last = selected()!.messages.filter((m) => !m.isSent).at(-1);
+				// reply targets the last inbound message; on a sent-only thread
+				// (cold outreach, no answer yet) fall back to the last message —
+				// the recipient is its To: header
+				const last = selected()!.messages.filter((m) => !m.isSent).at(-1) ?? selected()!.messages.at(-1);
 				setCompose({
-					to: last?.fromEmail ?? "",
+					to: last ? (last.isSent ? (last.toEmails ?? "") : (last.fromEmail ?? "")) : "",
 					subject: selected()!.thread.subject.startsWith("Re:") ? selected()!.thread.subject : `Re: ${selected()!.thread.subject}`,
-					body: `\n\n---\nOn ${last ? new Date(last.date).toLocaleString() : ""}, ${last?.fromEmail ?? ""} wrote:\n${(last?.bodyText ?? "").slice(0, 2000)}`,
+					body: `\n\n${(last?.bodyText ?? "").slice(0, 2000)}`,
 					threadId: selected()!.thread.id,
 				});
 			} else if (e.key === "f" && !visMode() && selected()) {
@@ -622,16 +666,6 @@ export default function AdminEmail() {
 		};
 		window.addEventListener("keydown", handler);
 		onCleanup(() => window.removeEventListener("keydown", handler));
-	});
-
-	createEffect(() => {
-		const threads = visibleThreads();
-		if (cursorToRestore === null || !threads.length) return;
-		// the removed row's slot opened — land on the thread above it
-		const i = Math.min(cursorToRestore, threads.length - 1);
-		cursorToRestore = null;
-		const t = threads[i];
-		if (t) void loadThread(t, i);
 	});
 
 	createEffect(() => {
@@ -935,7 +969,24 @@ export default function AdminEmail() {
 											<div class="muted" style={{ "font-size": "12px", "margin-bottom": "6px" }}>
 												{m.fromName ?? m.fromEmail} · {new Date(m.date).toLocaleString()}
 											</div>
-											<pre style={{ "white-space": "pre-wrap", "font-family": "inherit", "font-size": "14px", margin: 0 }}>{m.bodyText}</pre>
+											<Show
+												when={m.bodyHtml}
+												fallback={<pre style={{ "white-space": "pre-wrap", "font-family": "inherit", "font-size": "14px", margin: 0 }}>{m.bodyText}</pre>}
+											>
+												{(html) => (
+													// untrusted email HTML: sandbox without allow-scripts = no JS can run;
+													// allow-same-origin lets us auto-size; email CSS stays inside the frame
+													<iframe
+														sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+														srcdoc={html()}
+														style={{ width: "100%", border: "0", display: "block", "min-height": "160px" }}
+														onLoad={(e) => {
+															const doc = e.currentTarget.contentDocument;
+															if (doc?.body) e.currentTarget.style.height = `${doc.body.scrollHeight}px`;
+														}}
+													/>
+												)}
+											</Show>
 										</div>
 									);
 								}
@@ -1025,17 +1076,20 @@ export default function AdminEmail() {
 								onInput={(e) => editDraft(d.id, { subject: e.currentTarget.value })}
 								style={{ width: "100%", "margin-bottom": "8px", padding: "8px", border: "1px solid rgba(0,0,0,0.12)" }}
 							/>
-							<textarea
-								placeholder="Body"
+							<LintedTextarea
+								ariaLabel="Draft body"
 								value={editBody()[d.id] ?? d.body}
-								onInput={(e) => editDraft(d.id, { body: e.currentTarget.value })}
+								violations={draftLint()[d.id]?.violations ?? []}
+								onInput={(v) => editDraft(d.id, { body: v })}
 								rows={12}
-								style={{ width: "100%", "margin-bottom": "8px", padding: "8px", "font-family": "inherit", border: "1px solid rgba(0,0,0,0.12)" }}
 							/>
+							<VoiceLintPanel result={draftLint()[d.id] ?? null} stale={lintStale()[d.id]} />
 							<div style={{ display: "flex", gap: "8px", "align-items": "center", "flex-wrap": "wrap" }}>
 								<button type="button" class="btn btn-sm" classList={{ active: openDraftHistory() === d.id }} onClick={() => void toggleDraftHistory(d.id)}>
 									History
 								</button>
+								<div style={{ flex: 1 }} />
+								<Show when={draftSaveState()[d.id]}><span class="muted" style={{ "font-size": "12px" }}>{draftSaveState()[d.id]}</span></Show>
 								<Show when={lintBlockedDraft() === d.id} fallback={<button type="button" class="btn btn-primary btn-sm" onClick={() => sendDraft(d.id)}>Send</button>}>
 									<button type="button" class="btn btn-sm" style={{ "border-color": "#a33", color: "#a33" }} onClick={() => sendDraft(d.id, true)}>Send anyway (ignores voice lint)</button>
 								</Show>

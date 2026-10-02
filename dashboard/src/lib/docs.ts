@@ -5,14 +5,17 @@
 // markdown; we convert old→new into Loro deltas so a concurrent agent append
 // merges instead of clobbering. The markdown column is the projection: search,
 // export, lint, pairs.
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { randomHex } from "~/lib/crypto";
 import { db } from "~/db";
-import { docs, textVersions, type Doc } from "~/db/schema";
+import { docs, shortLinks, textVersions, type Doc } from "~/db/schema";
 import { lintGateError, lintVoiceText, type LintResult, type VoiceScope } from "~/lib/voice-lint-db";
 import { docSurface } from "~/lib/voice-lint";
+import { brainCtaAppendix } from "~/lib/publish-core";
+import { randomKey, shortLinkBase } from "~/lib/short-links";
 import { trackText, listTextVersions, getTextVersionDiff } from "~/lib/crdt-text-db";
 import { UUID_RE } from "~/lib/uuid";
+import { syncDocMentions } from "~/lib/entity-links";
 
 // ── Queries ────────────────────────────────────────────────────────
 
@@ -28,6 +31,7 @@ export async function createDoc(
 	} = {},
 ): Promise<Doc> {
 	const author = opts.author ?? "human";
+	const isNewsletter = opts.kind === "newsletter";
 	const [row] = await db
 		.insert(docs)
 		.values({
@@ -39,6 +43,7 @@ export async function createDoc(
 			...(opts.chatUuid ? { chatUuid: opts.chatUuid } : {}),
 		})
 		.returning();
+	if (isNewsletter) await seedNewsletterAppendix(row.id);
 	if (markdown) {
 		const tracked = await trackText("doc", row.id, "", author, markdown);
 		if (tracked) {
@@ -47,10 +52,11 @@ export async function createDoc(
 				.set({ loroSnapshot: tracked.loroSnapshot, version: tracked.version })
 				.where(eq(docs.id, row.id))
 				.returning();
-			return updated;
 		}
 	}
-	return row;
+	// mentions → entity_links backlinks (one funnel: creation counts as a save)
+	await syncDocMentions(row.id, markdown).catch(() => {});
+	return getDoc(row.id) as Promise<Doc>;
 }
 
 export async function listDocs(): Promise<Doc[]> {
@@ -96,6 +102,11 @@ export async function saveDocMarkdown(
 			...(chatUuid ? { chatUuid } : {}),
 		})
 		.where(eq(docs.id, id));
+	// mentions → entity_links backlinks. THE single server-side funnel for doc
+	// saves: editor autosave (PUT /api/docs/:id), ⌘S, and agent write_doc all
+	// land here, so backlinks exist without any agent effort. Never blocks the
+	// save on a link-sync failure.
+	await syncDocMentions(id, markdown).catch(() => {});
 	return tracked.version;
 }
 
@@ -115,6 +126,45 @@ export async function setDocGenre(id: string, genre: string | null) {
 /** Voice scope a doc's text lints/learns under — kind → surface, freeform genre. */
 export function docVoiceScope(doc: Pick<Doc, "kind" | "genre">): VoiceScope {
 	return { surface: docSurface(doc.kind), genre: doc.genre };
+}
+
+/** New issues seed the /brain CTA into the EMAIL appendix, pointed at the
+ *  issue's OWN /l/ link: per-person clicks land in newsletter_events in email
+ *  (r={{email}} via perPersonLinks), and the target carries ref=<docId> so
+ *  brain requests attribute themselves. Web stays clean — the styled CTA
+ *  block on the issue page covers it (seeding both would show two CTAs).
+ *  Slug collisions retry (astronomically rare); the appendix never blocks
+ *  doc creation.
+ *  ponytail: note the returned Doc from createDoc predates this update —
+ *  callers reading emailAppendix must refetch. */
+export async function seedNewsletterAppendix(docId: string): Promise<void> {
+	for (let attempt = 0; attempt < 3; attempt++) {
+		const slug = randomKey();
+		try {
+			await db.insert(shortLinks).values({
+				slug,
+				target: `${shortLinkBase()}/brain?ref=${docId}&utm_source=newsletter`,
+				docId,
+			});
+			const link = `${shortLinkBase()}/l/${slug}`;
+			await db
+				.update(docs)
+				.set({ emailAppendix: brainCtaAppendix(link), webAppendix: "" })
+				.where(eq(docs.id, docId));
+			return;
+		} catch (e) {
+			if (!(e instanceof Error) || !e.message.includes("duplicate key")) throw e;
+		}
+	}
+}
+
+/** Per-channel appendix (the CTA block after the body). Channel copy lives in
+ *  its own fields, never inside body markdown. */
+export async function setDocAppendix(id: string, channel: "email" | "web", content: string) {
+	await db
+		.update(docs)
+		.set(channel === "email" ? { emailAppendix: content } : { webAppendix: content })
+		.where(eq(docs.id, id));
 }
 
 /** Queue a doc for the scheduler. Any status is allowed — rescheduling a
@@ -159,7 +209,7 @@ export async function unscheduleDoc(id: string) {
  *  belong to the scheduler. */
 export async function setPublishState(id: string, state: "final" | "published"): Promise<Doc | null> {
 	const [doc] = await db
-		.select({ status: docs.status, publishedAt: docs.publishedAt })
+		.select({ status: docs.status, publishedAt: docs.publishedAt, issueNumber: docs.issueNumber })
 		.from(docs)
 		.where(eq(docs.id, id));
 	if (!doc) return null;
@@ -171,6 +221,8 @@ export async function setPublishState(id: string, state: "final" | "published"):
 				status: "published",
 				publishError: null,
 				...(doc.publishedAt ? {} : { publishedAt: new Date() }),
+				// mint the dispatch issue number once — unlist/relist keeps it
+				...(doc.issueNumber ? {} : { issueNumber: sql`(select coalesce(max(issue_number), 0) + 1 from docs where kind = 'newsletter')` }),
 			})
 			.where(eq(docs.id, id));
 	} else {

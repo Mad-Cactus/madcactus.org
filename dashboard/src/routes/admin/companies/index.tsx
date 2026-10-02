@@ -1,6 +1,7 @@
 import { Title } from "@solidjs/meta";
 import { A, createAsync, useAction } from "@solidjs/router";
 import { For, Show, Suspense, createSignal } from "solid-js";
+import CreateDialog from "~/components/CreateDialog";
 import Layout from "~/components/Layout";
 import {
 	createCompanyAction,
@@ -30,19 +31,9 @@ export default function Companies() {
 	const toggleActive = useAction(toggleMemberActiveAction);
 	const linkMember = useAction(linkMemberAction);
 
-	const [showForm, setShowForm] = createSignal(false);
-	const [showLinkForm, setShowLinkForm] = createSignal<string | null>(null);
 	const [error, setError] = createSignal("");
 	const [success, setSuccess] = createSignal("");
 	const [resendingId, setResendingId] = createSignal<string | null>(null);
-
-	async function handleCreate(e: Event) {
-		e.preventDefault();
-		setError("");
-		const fd = new FormData(e.target as HTMLFormElement);
-		const result = (await createCompany(fd)) as { error?: string } | undefined;
-		if (result?.error) setError(result.error);
-	}
 
 	async function handleResend(id: string) {
 		setError("");
@@ -74,26 +65,18 @@ export default function Companies() {
 						Client organizations + portal access
 					</p>
 				</div>
-				<button class="btn btn-primary" onClick={() => setShowForm(!showForm())}>
-					{showForm() ? "Cancel" : "New Company"}
-				</button>
+				<CreateDialog
+					label="New Company"
+					title="Create Company"
+					successMessage="Company created."
+					onSubmit={(fd) => createCompany(fd) as Promise<{ error?: string } | undefined>}
+				>
+					<div class="form-group">
+						<label for="name">Company Name</label>
+						<input type="text" id="name" name="name" required placeholder="Indiana University" />
+					</div>
+				</CreateDialog>
 			</div>
-
-			<Show when={showForm()}>
-				<div class="card" style={{ "margin-bottom": "32px" }}>
-					<h3 style={{ "margin-bottom": "16px" }}>Create Company</h3>
-					<form onSubmit={handleCreate}>
-						<div class="form-group">
-							<label for="name">Company Name</label>
-							<input type="text" id="name" name="name" required placeholder="Indiana University" />
-						</div>
-						<Show when={error()}>
-							<p class="login-error" style={{ "margin-bottom": "12px" }}>{error()}</p>
-						</Show>
-						<button type="submit" class="btn btn-primary">Create</button>
-					</form>
-				</div>
-			</Show>
 
 			<Suspense fallback={<p class="muted">Loading…</p>}>
 				<Show when={companies()} fallback={<p class="muted">Loading…</p>}>

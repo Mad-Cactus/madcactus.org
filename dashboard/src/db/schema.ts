@@ -66,7 +66,10 @@ export const invoiceStatus = pgEnum("invoice_status", [
 
 // Single source of truth for stage values — the column default, the check
 // constraint, and the UI advance buttons all derive from this array.
+// "candidate" = scraped from LinkedIn search, awaiting Collin's ICP review;
+// only icpApproved rows may get an automated connection invite.
 export const OUTREACH_STAGES = [
+	"candidate",
 	"proposed",
 	"sent",
 	"watching",
@@ -96,17 +99,22 @@ export const outreachProspects = pgTable(
 		// secret the brain's /activity endpoint expects (x-activity-key). Lives
 		// here, not in an env secret — one row per prospect, editable in the UI.
 		brainActivityKey: text("brain_activity_key"),
-		videoUrl: text("video_url"),
-		// what to say about the video in the email / why it exists (agent- or human-written)
-		videoDescription: text("video_description"),
-		// email link points at /v/:id → 302 here after logging the click
-		videoViewCount: integer("video_view_count").notNull().default(0),
-		videoFirstViewedAt: timestamp("video_first_viewed_at", { withTimezone: true }),
-		videoLastViewedAt: timestamp("video_last_viewed_at", { withTimezone: true }),
-		videoWatchSeconds: integer("video_watch_seconds").notNull().default(0),
-		videoMaxPosition: integer("video_max_position").notNull().default(0),
-		videoDurationSeconds: integer("video_duration_seconds"),
-		videoCompleted: boolean("video_completed").notNull().default(false),
+		// outreach videos live in the `videos` table (first-class component;
+		// telemetry + watch links there). Legacy /v/<prospect-id> email links
+		// still resolve via the watch route's prospect fallback.
+		// campaign this prospect came from (set null when the campaign is deleted)
+		campaignId: uuid("campaign_id").references(() => campaigns.id, { onDelete: "set null" }),
+		// ── ICP qualification (researched by Collin or the sourcing loop — never asked of the lead) ──
+		region: text("region").notNull().default("unknown"),
+		revenueBand: text("revenue_band").notNull().default("unknown"),
+		techTeam: text("tech_team").notNull().default("unknown"), // none|small|large|unknown
+		aiInterest: text("ai_interest").notNull().default("unknown"), // none|some|high|unknown
+		// yes = the sourcing automation MAY send a connection invite (human fit review gate)
+		icpApproved: boolean("icp_approved").notNull().default(false),
+		// where the row came from ("li-search 2026-09-19", campaign name, …)
+		sourceNote: text("source_note"),
+		// set once the connect automation sent the invite — never invite twice
+		invitedAt: timestamp("invited_at", { withTimezone: true }),
 		notes: text("notes"),
 		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp("updated_at", { withTimezone: true })
@@ -128,6 +136,94 @@ export const outreachProspects = pgTable(
 // columns would use numeric, but this app's amounts never exceed 7 digits.
 // Upgrade to numeric if billion-dollar invoices become a concern.
 
+// ── Funnels (staged ICP verification, freight first) ───────────────
+// A funnel is an ordered stage list; a run is one pull of companies; items
+// move through stages via verdict rows. 6/6 passes → auto-promote to
+// outreach_prospects with icpApproved=true. All state is DB rows, so pulls
+// and verification resume where they stopped.
+
+// how a stage verdict can be produced: source = evidence arrived with the
+// pull; api = batch driver (Apollo); agent = Orca browser/web prompt; human =
+// typed in by hand. Stage.method is the batch-automatable one ("Run stage"
+// button); humans can record any method.
+export const FUNNEL_METHODS = ["source", "api", "agent", "human"] as const;
+export type FunnelMethod = (typeof FUNNEL_METHODS)[number];
+
+export type FunnelStage = { key: string; label: string; gate: string; method: FunnelMethod };
+
+export const funnels = pgTable("funnels", {
+	id: uuid("id").primaryKey().defaultRandom(),
+	name: text("name").notNull().unique(),
+	description: text("description"),
+	stages: jsonb("stages").$type<FunnelStage[]>().notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const funnelRuns = pgTable(
+	"funnel_runs",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		funnelId: uuid("funnel_id")
+			.notNull()
+			.references(() => funnels.id, { onDelete: "cascade" }),
+		// importyeti | fmcsa | paste | mixed
+		source: text("source").notNull().default("paste"),
+		status: text("status").notNull().default("open"), // open | closed
+		note: text("note"),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+		closedAt: timestamp("closed_at", { withTimezone: true }),
+	},
+	(t) => [check("funnel_run_status_check", sql`${t.status} in ('open', 'closed')`)],
+);
+
+export const funnelItems = pgTable(
+	"funnel_items",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		runId: uuid("run_id")
+			.notNull()
+			.references(() => funnelRuns.id, { onDelete: "cascade" }),
+		companyName: text("company_name").notNull(),
+		city: text("city"),
+		state: text("state"),
+		sourceUrl: text("source_url"),
+		// importyeti | fmcsa | paste
+		sourceKind: text("source_kind"),
+		// the pulled evidence (address, authority type, BOL counts) — kept so
+		// stage verdicts are recomputable without re-scraping
+		rawData: jsonb("raw_data"),
+		// set at promotion → outreach_prospects
+		prospectId: uuid("prospect_id").references(() => outreachProspects.id, { onDelete: "set null" }),
+		promotedAt: timestamp("promoted_at", { withTimezone: true }),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+	(t) => [uniqueIndex("funnel_items_run_company_uq").on(t.runId, t.companyName)],
+);
+
+export const funnelStageResults = pgTable(
+	"funnel_stage_results",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		itemId: uuid("item_id")
+			.notNull()
+			.references(() => funnelItems.id, { onDelete: "cascade" }),
+		stage: text("stage").notNull(),
+		verdict: text("verdict").notNull(), // pass | fail
+		evidenceUrl: text("evidence_url"),
+		note: text("note"),
+		method: text("method").notNull().default("human"),
+		checkedAt: timestamp("checked_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+	(t) => [
+		uniqueIndex("funnel_stage_results_item_stage_uq").on(t.itemId, t.stage),
+		check("funnel_stage_verdict_check", sql`${t.verdict} in ('pass', 'fail')`),
+		check(
+			"funnel_stage_method_check",
+			sql`${t.method} in ${sql.raw(`(${FUNNEL_METHODS.map((m) => `'${m}'`).join(", ")})`)}`,
+		),
+	],
+);
+
 // ── Companies (the org / client company) ───────────────────────────
 
 export const companies = pgTable("companies", {
@@ -142,6 +238,51 @@ export const companies = pgTable("companies", {
 		.defaultNow()
 		.$onUpdate(() => new Date()),
 });
+
+// ── Outreach campaigns (email sequences) ──────────────────────────
+// The CRM board tracks people progressing through stages; campaigns track
+// the sequence itself — which companies are in it, when the next email goes
+// out, and what it should say. Prospects link here via campaignId.
+// One touch of a campaign's email sequence — the frozen copy lives ON the
+// campaign (templates jsonb), not in a doc. step is the sequence position.
+export type CampaignTouch = { step: number; subject: string; body: string };
+
+export const campaigns = pgTable("campaigns", {
+	id: uuid("id").primaryKey().defaultRandom(),
+	name: text("name").notNull(),
+	description: text("description"),
+	templates: jsonb("templates").$type<CampaignTouch[]>().notNull().default([]),
+	createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp("updated_at", { withTimezone: true })
+		.notNull()
+		.defaultNow()
+		.$onUpdate(() => new Date()),
+});
+
+export const campaignCompanies = pgTable(
+	"campaign_companies",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		campaignId: uuid("campaign_id")
+			.notNull()
+			.references(() => campaigns.id, { onDelete: "cascade" }),
+		// denormalized name on purpose: campaign targets often aren't in the
+		// CRM yet — a prospect row gets created (and linked) only once outreach
+		// actually starts
+		companyName: text("company_name").notNull(),
+		contactEmail: text("contact_email"),
+		sequenceStep: integer("sequence_step").notNull().default(1),
+		nextSendAt: timestamp("next_send_at", { withTimezone: true }),
+		// what the next email should say / which template
+		nextEmailNote: text("next_email_note"),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date()),
+	},
+	(t) => [uniqueIndex("campaign_company_uq").on(t.campaignId, t.companyName)],
+);
 
 // ── Client members (the person / portal login) ─────────────────────
 
@@ -412,6 +553,22 @@ export const docs = pgTable(
 		// snapshot of the live web version at publish/republish time — later edits
 		// change `markdown` but keep rendering the old version until republished
 		webMarkdown: text("web_markdown"),
+		// Cactus Dispatch issue number — minted once at first publish (max+1
+		// across newsletters) and never reused, so unlisting an issue doesn't
+		// renumber the rest. Null until first publish; newsletters only.
+		issueNumber: integer("issue_number"),
+		// ── Channel appendix (newsletters): per-channel copy AFTER the body —
+		// the CTA block. Never injected into body markdown; rendered after it
+		// by renderIssueBody(). Empty for pre-appendix issues.
+		emailAppendix: text("email_appendix").notNull().default(""),
+		webAppendix: text("web_appendix").notNull().default(""),
+		// ── Send tracking — reality checks for the learnings loop. Opens come
+		// from the seal pixel (/api/track/open), per-person clicks from the /l/
+		// redirect (newsletter_events). resendBroadcastId = ops metadata (find the
+		// issue's broadcast in Resend's dashboard); primary signals stay
+		// meetings/replies/clients.
+		resendBroadcastId: text("resend_broadcast_id"),
+		opens: integer("opens").notNull().default(0),
 		scheduledFor: timestamp("scheduled_for", { withTimezone: true }),
 		publishedAt: timestamp("published_at", { withTimezone: true }),
 		publishError: text("publish_error"),
@@ -424,6 +581,10 @@ export const docs = pgTable(
 			.defaultNow()
 			.$onUpdate(() => new Date()),
 	},
+	(table) => [
+		// two newsletters can never claim the same issue number
+		uniqueIndex("docs_issue_number_key").on(table.issueNumber).where(sql`issue_number is not null`),
+	],
 );
 
 // Short links: /l/<slug> 302s to target and counts the click. UTMs live in
@@ -438,6 +599,12 @@ export const shortLinks = pgTable("short_links", {
 	docId: uuid("doc_id").references(() => docs.id, { onDelete: "set null" }),
 	createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// Social clicks stay aggregate on short_links.clicks (anonymous traffic —
+// no identity exists). Per-person newsletter events — opens from the seal
+// pixel and email clicks from the /l/ redirect (?r={{email}}, Resend's
+// per-recipient variable) — land in newsletter_events, the one per-recipient
+// newsletter log, so "who opened/clicked" joins against ICP prospects directly.
 
 // OAuth tokens for scheduled publishing targets (LinkedIn). One row per
 // provider — access tokens are short-lived (~60d) and refreshed on use.
@@ -615,6 +782,9 @@ export const brainFacts = pgTable(
 		// freeform genre within the surface ("marketing" vs "informational" …);
 		// null = applies to every genre on that surface
 		genre: text("genre"),
+		// optional learning tag: 'subject' | 'cta' — what the lesson is about
+		// (email subjects vs calls-to-action). Null = general lesson.
+		topic: text("topic"),
 		// provenance INTO workspace tables: 'email_messages' | 'text_versions' |
 		// 'documents' | 'manual'
 		sourceTable: text("source_table").notNull(),
@@ -799,6 +969,8 @@ export const emailMessages = pgTable(
 		fromEmail: text("from_email"),
 		toEmails: text("to_emails"),
 		bodyText: text("body_text").notNull().default(""),
+		// raw text/html part; NULL = never checked (pre-column rows), '' = text-only
+		bodyHtml: text("body_html"),
 		date: timestamp("date", { withTimezone: true }).notNull(),
 		isSent: boolean("is_sent").notNull().default(false),
 		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -825,6 +997,12 @@ export const emailOutbox = pgTable(
 		sendAt: timestamp("send_at", { withTimezone: true }),
 		gmailMessageId: text("gmail_message_id"),
 		error: text("error"),
+		// campaign linkage: every campaign send is a real outbox row pointing at
+		// its campaign_companies row — stats and reply detection join through here
+		campaignCompanyId: uuid("campaign_company_id").references(() => campaignCompanies.id, {
+			onDelete: "set null",
+		}),
+		campaignStep: integer("campaign_step"),
 		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp("updated_at", { withTimezone: true })
 			.notNull()
@@ -881,6 +1059,126 @@ export const slackMessages = pgTable(
 	],
 );
 
+// ── Brain lead magnet — /brain form submissions (one funnel: everything
+// points here). You build the brain from the answers + public data; the
+// delivered brain URL doubles as outreach pipeline entry (prospectId).
+export const brainRequestStatus = pgEnum("brain_request_status", [
+	"new",
+	"building",
+	"delivered",
+	"declined",
+]);
+
+export const brainRequests = pgTable(
+	"brain_requests",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		// every form answer, verbatim — the extracted columns below are the
+		// queryable subset for the pipeline views
+		answers: jsonb("answers").notNull().default({}),
+		company: text("company").notNull(),
+		contactEmail: text("contact_email").notNull(),
+		jobTitle: text("job_title"),
+		headcount: text("headcount"),
+		status: brainRequestStatus("status").notNull().default("new"),
+		// which issue drove the request (utm on the /brain link) — attribution
+		sourceDocId: uuid("source_doc_id").references(() => docs.id, { onDelete: "set null" }),
+		// set when the shipped brain becomes an outreach prospect
+		prospectId: uuid("prospect_id").references(() => outreachProspects.id, { onDelete: "set null" }),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+	(t) => [index("idx_brain_requests_status").on(t.status, t.createdAt)],
+);
+
+// Per-recipient newsletter event log — opens (seal pixel, /api/track/open)
+// and email clicks (/l/ redirect). One row per doc+recipient for opens (the
+// unique event id doubles as the dedup key, so prefetches and repeats never
+// inflate); one row per human click. Not Resend webhooks — no webhook in the
+// loop.
+export const newsletterEvents = pgTable(
+	"newsletter_events",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		eventId: text("event_id").notNull().unique(), // dedup key: `pixel:<docId>:<recipient>` / `click:<slug>:<recipient>:<ts>`
+		type: text("type").notNull(), // "open" | "click" — pre-2026-09 open rows say "pixel.open"; nothing filters on type
+		// who fired it ({{email}} substitution) — matches opens/clicks against ICP prospects
+		recipient: text("recipient"),
+		docId: uuid("doc_id").references(() => docs.id, { onDelete: "set null" }),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+);
+
+// ── Cross-references between first-class components ────────────────
+// Registry (src/registry) is the source of truth for what a `kind` is;
+// this table stores only references — mentions (@[kind:id]) and ad-hoc
+// links. Ownership stays in real FKs on component tables (cascade
+// deletes); entity_links rows persist when a target is deleted (the card
+// renders a "deleted" state) — that's the ownership-vs-reference split.
+// ponytail: ids are text, not uuid — short-link ids are slugs; every other
+// kind's uuid stores fine in text.
+export const entityLinks = pgTable(
+	"entity_links",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		fromKind: text("from_kind").notNull(),
+		fromId: text("from_id").notNull(),
+		toKind: text("to_kind").notNull(),
+		toId: text("to_id").notNull(),
+		// "mentions" (synced from doc @[kind:id] syntax) | freeform agent/human links
+		linkType: text("link_type").notNull().default("mentions"),
+		context: text("context"),
+		createdBy: text("created_by").notNull().default("human"), // "human" | "agent"
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+	(t) => [
+		uniqueIndex("entity_links_uq").on(t.fromKind, t.fromId, t.toKind, t.toId, t.linkType),
+		index("idx_entity_links_from").on(t.fromKind, t.fromId),
+		index("idx_entity_links_to").on(t.toKind, t.toId),
+	],
+);
+
+// ── Outreach videos (first-class — not prospect columns) ──────────
+// One row per outreach Loom/recording. Telemetry lives here (watch pages
+// /v/:id beacon into it); the prospect link is ownership (set null when
+// the prospect is deleted, so the video and its history survive).
+export const VIDEO_STATUSES = ["unwatched", "watching", "watched", "completed"] as const;
+export type VideoStatus = (typeof VIDEO_STATUSES)[number];
+
+export const videos = pgTable(
+	"videos",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		title: text("title").notNull(),
+		description: text("description"),
+		// cap.so share link, direct .mp4 URL, or Supabase videos bucket URL
+		url: text("url").notNull(),
+		// bucket path when the file was uploaded through /api/upload-video
+		storagePath: text("storage_path"),
+		// derived from telemetry by the beacon handlers: unwatched → watching
+		// (opened) → watched (real playback) → completed
+		status: text("status").notNull().default("unwatched"),
+		viewCount: integer("view_count").notNull().default(0),
+		firstViewedAt: timestamp("first_viewed_at", { withTimezone: true }),
+		lastViewedAt: timestamp("last_viewed_at", { withTimezone: true }),
+		watchSeconds: integer("watch_seconds").notNull().default(0),
+		maxPosition: integer("max_position").notNull().default(0),
+		durationSeconds: integer("duration_seconds"),
+		completed: boolean("completed").notNull().default(false),
+		// the prospect this video was recorded for (ownership; nullable so a
+		// video can exist before its prospect does, and survives deletion)
+		prospectId: uuid("prospect_id").references(() => outreachProspects.id, { onDelete: "set null" }),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp("updated_at", { withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date()),
+	},
+	(t) => [
+		check("video_status_check", sql`${t.status} in ${sql.raw(`(${VIDEO_STATUSES.map((s) => `'${s}'`).join(", ")})`)}`),
+		index("idx_videos_prospect").on(t.prospectId),
+	],
+);
+
 // ── Inferred types (replaces hand-maintained interfaces) ───────────
 
 export type Company = typeof companies.$inferSelect;
@@ -902,9 +1200,18 @@ export type DocumentType = Document["type"];
 export type DocumentVisibility = Document["visibility"];
 export type InvoiceStatus = Invoice["status"];
 export type OutreachProspect = typeof outreachProspects.$inferSelect;
+export type Funnel = typeof funnels.$inferSelect;
+export type FunnelRun = typeof funnelRuns.$inferSelect;
+export type FunnelItem = typeof funnelItems.$inferSelect;
+export type FunnelStageResult = typeof funnelStageResults.$inferSelect;
+export type Video = typeof videos.$inferSelect;
+export type Campaign = typeof campaigns.$inferSelect;
+export type CampaignCompany = typeof campaignCompanies.$inferSelect;
 export type Doc = typeof docs.$inferSelect;
 export type TextVersion = typeof textVersions.$inferSelect;
 export type EmailAccount = typeof emailAccounts.$inferSelect;
 export type EmailThread = typeof emailThreads.$inferSelect;
 export type EmailMessage = typeof emailMessages.$inferSelect;
 export type EmailOutbox = typeof emailOutbox.$inferSelect;
+export type BrainRequest = typeof brainRequests.$inferSelect;
+export type NewsletterEvent = typeof newsletterEvents.$inferSelect;

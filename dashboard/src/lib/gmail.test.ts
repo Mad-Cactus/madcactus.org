@@ -1,7 +1,7 @@
 // Self-check for gmail payload parsing + mime building (pure functions).
 // Run: DATABASE_URL=postgres://dummy bun test src/lib/gmail.test.ts
 import { describe, expect, test } from "bun:test";
-import { buildMime, extractText, addr, latestMessage, isTrashed, threadSubject } from "./gmail";
+import { buildMime, extractText, extractHtml, addr, latestMessage, isTrashed, threadSubject } from "./gmail";
 import { toBase64 } from "./crypto";
 
 const part = (mimeType: string, data: string): any => ({
@@ -40,6 +40,22 @@ describe("extractText", () => {
 
 	test("empty payload → empty string", () => {
 		expect(extractText(msg([]))).toBe("");
+	});
+});
+
+describe("extractHtml", () => {
+	test("returns the raw text/html part", () => {
+		const p = msg([], [part("text/html", "<b>hi</b>"), part("text/plain", "plain")]);
+		expect(extractHtml(p)).toBe("<b>hi</b>");
+	});
+
+	test("walks nested multipart", () => {
+		const p = msg([], [part("multipart/alternative", ""), part("text/html", "<p>nested</p>")]);
+		expect(extractHtml(p)).toBe("<p>nested</p>");
+	});
+
+	test("no html part → empty string", () => {
+		expect(extractHtml(msg([], [part("text/plain", "plain")]))).toBe("");
 	});
 });
 

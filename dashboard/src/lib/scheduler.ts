@@ -2,7 +2,7 @@
 // docs (LinkedIn/newsletter) AND scheduled Gmail drafts atomically, dispatches
 // each, then marks published/sent or failed (+ email alert). Stale in-flight
 // rows (process died mid-dispatch) are failed after 5 min.
-import { and, eq, inArray, lte } from "drizzle-orm";
+import { and, eq, inArray, lte, sql } from "drizzle-orm";
 import { db } from "~/db";
 import { docs, emailOutbox } from "~/db/schema";
 import { alertEmail, alertPublishFailure, publishDoc } from "~/lib/publish";
@@ -37,15 +37,30 @@ export async function tick(): Promise<{ docs: number; emails: number }> {
 
 	for (const doc of claimed) {
 		try {
-			await publishDoc(doc);
+			// mint the dispatch issue number BEFORE dispatch — the email template
+			// shows "ISSUE NN" in its eyebrow (post-dispatch would be too late)
+			if (doc.kind === "newsletter" && doc.issueNumber == null) {
+				const [minted] = await db
+					.update(docs)
+					.set({ issueNumber: sql`(select coalesce(max(issue_number), 0) + 1 from docs where kind = 'newsletter')` })
+					.where(eq(docs.id, doc.id))
+					.returning({ issueNumber: docs.issueNumber });
+				doc.issueNumber = minted?.issueNumber ?? null;
+			}
+			const externalId = await publishDoc(doc);
 			// snapshot the live web version for newsletters — later edits change
-			// `markdown` only; the page updates when it's republished
+			// `markdown` only; the page updates when it's republished. The Resend
+			// broadcast id is kept as ops metadata (find the send in Resend).
 			await db
 				.update(docs)
 				.set({
 					status: "published",
 					publishedAt: new Date(),
 					...(doc.kind === "newsletter" ? { webMarkdown: doc.markdown } : {}),
+					// broadcast ids are UUIDs ("web" returns "web", LinkedIn a post urn)
+					...(doc.kind === "newsletter" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(externalId)
+						? { resendBroadcastId: externalId }
+						: {}),
 				})
 				.where(eq(docs.id, doc.id));
 			docsPublished++;

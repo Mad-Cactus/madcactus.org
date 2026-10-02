@@ -32,6 +32,7 @@ export default function CommandPalette() {
 			go("/admin/projects", "Go to Projects"),
 			go("/admin/meetings", "Go to Meetings"),
 			go("/admin/outreach", "Go to Outreach"),
+			go("/admin/campaigns", "Go to Campaigns"),
 			go("/admin/api-keys", "Go to API Keys"),
 			{
 				label: "New doc",
@@ -117,6 +118,7 @@ export default function CommandPalette() {
 					a: "/admin",
 					m: "/admin/meetings",
 					o: "/admin/outreach",
+					c: "/admin/campaigns",
 					p: "/admin/projects",
 				};
 				const href = routes[e.key.toLowerCase()];
@@ -142,7 +144,7 @@ export default function CommandPalette() {
 			}}
 			label="Command menu"
 		>
-			<CommandInput value={search()} onValueChange={setSearch} placeholder="Type a command…" />
+			<CommandInput value={search()} onValueChange={setSearch} placeholder="Type a command…" spellcheck={false} />
 			<CommandList>
 				<CommandEmpty>No matches.</CommandEmpty>
 				<For each={cmds()}>

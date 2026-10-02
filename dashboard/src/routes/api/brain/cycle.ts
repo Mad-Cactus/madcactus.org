@@ -4,7 +4,7 @@ import { hashKey } from "~/lib/crypto";
 import { db } from "~/db";
 import { apiKeys, brainJobs } from "~/db/schema";
 import { getAuthedClient } from "~/lib/session";
-import { runCycle } from "~/lib/brain/distill";
+import { startCycle } from "~/lib/brain/cycle-runner";
 
 /**
  * Brain cycle trigger for schedulers (Supabase cron / GitHub Actions / Fly
@@ -47,43 +47,6 @@ async function authorize(request: Request): Promise<boolean> {
 		.where(and(eq(apiKeys.keyHash, hashKey(rawKey)), sql`${apiKeys.revokedAt} IS NULL`))
 		.limit(1);
 	return !!keyRow && keyRow.memberId === null;
-}
-
-export async function startCycle(opts: {
-	wait?: boolean;
-	reprocessTranscripts?: boolean;
-	slack: boolean;
-}): Promise<{ id: string } | Record<string, unknown>> {
-	const [job] = await db
-		.insert(brainJobs)
-		.values({ phase: "cycle", status: "running", payload: { reprocessTranscripts: opts.reprocessTranscripts === true } })
-		.returning({ id: brainJobs.id });
-
-	const run = async () => {
-		try {
-			const result = await runCycle({
-				reprocessTranscripts: opts.reprocessTranscripts,
-				slack: opts.slack,
-			});
-			await db
-				.update(brainJobs)
-				.set({ status: "done", payload: result, error: null })
-				.where(eq(brainJobs.id, job.id));
-		} catch (e) {
-			await db
-				.update(brainJobs)
-				.set({ status: "failed", error: e instanceof Error ? e.message : String(e) })
-				.where(eq(brainJobs.id, job.id));
-		}
-	};
-
-	if (opts.wait) {
-		await run();
-		const [row] = await db.select().from(brainJobs).where(eq(brainJobs.id, job.id));
-		return { ok: true, cycle: row?.payload ?? {} };
-	}
-	void run();
-	return { id: job.id };
 }
 
 export const POST = async (event: APIEvent) => {

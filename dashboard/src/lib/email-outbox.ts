@@ -37,7 +37,7 @@ export async function scheduleOutboxDraft(
 	const body = opts.body ?? row.body;
 	if (opts.body !== undefined) await saveDraftBody(outboxId, body);
 
-	const lint = await lintVoiceText(body);
+	const lint = await lintVoiceText(body, { surface: "email" });
 	if (lint.avoidCount > 0 && !opts.overrideLint) {
 		return { ok: false, blocked: "voice_lint", violations: lint.violations };
 	}
@@ -94,7 +94,7 @@ export async function sendOutboxInner(
 
 	// voice send gate: un-fixed avoid-violations block the send. The human can
 	// override — that override is recorded as signal for adapting the rules.
-	const lint = await lintVoiceText(body);
+	const lint = await lintVoiceText(body, { surface: "email" });
 	if (lint.avoidCount > 0 && !opts.overrideLint) {
 		return { ok: false, blocked: "voice_lint", violations: lint.violations };
 	}
@@ -108,7 +108,9 @@ export async function sendOutboxInner(
 		const [thread] = await db.select().from(emailThreads).where(eq(emailThreads.id, row.threadId));
 		if (thread) {
 			const full = await threadWithMessages(account, thread.id);
-			inReplyToGmailId = full?.messages.filter((m) => !m.isSent).at(-1)?.gmailId;
+			// last inbound so the reply threads onto their message; a sent-only
+			// thread (follow-up to unanswered cold email) threads onto my own send
+			inReplyToGmailId = full?.messages.filter((m) => !m.isSent).at(-1)?.gmailId ?? full?.messages.at(-1)?.gmailId;
 		}
 	}
 
@@ -173,6 +175,8 @@ export async function sendOutboxInner(
 				gmailId: gmailMessageId,
 				toEmails: row.toEmail,
 				bodyText: body,
+				// plain-text send: '' marks the row "checked" so open-backfill never refetches
+				bodyHtml: "",
 				date: new Date(),
 				isSent: true,
 			})
@@ -192,7 +196,8 @@ export async function sendOutboxInner(
 /**
  * Agent ingest (brain MCP create_email_draft): store an outbox row; the human
  * reviews/edits/sends in the UI. v1 of the draft's tracked history = the
- * agent's original body.
+ * agent's original body. The MCP layer lints BEFORE calling this (hard gate,
+ * same as docs) — so everything landing here is already clean.
  */
 export async function createEmailDraft(input: {
 	to: string;
@@ -203,7 +208,9 @@ export async function createEmailDraft(input: {
 	cc?: string;
 	bcc?: string;
 	context?: string;
-}): Promise<{ outboxId: string; lint: Awaited<ReturnType<typeof lintVoiceText>> }> {
+	campaignCompanyId?: string;
+	campaignStep?: number;
+}): Promise<{ outboxId: string }> {
 	"use server";
 	const [outbox] = await db
 		.insert(emailOutbox)
@@ -215,6 +222,8 @@ export async function createEmailDraft(input: {
 			subject: input.subject,
 			body: input.body,
 			chatUuid: input.chatUuid,
+			campaignCompanyId: input.campaignCompanyId,
+			campaignStep: input.campaignStep,
 		})
 		.returning();
 	// v1 of the draft's tracked history = the agent's original body
@@ -225,9 +234,40 @@ export async function createEmailDraft(input: {
 			.set({ loroSnapshot: tracked.loroSnapshot, version: tracked.version })
 			.where(eq(emailOutbox.id, outbox.id));
 	}
-	// advisory: the agent gets voice violations back and can revise + resubmit
-	const lint = await lintVoiceText(input.body);
-	return { outboxId: outbox.id, lint };
+	return { outboxId: outbox.id };
+}
+
+/**
+ * Agent revision of an existing draft (brain MCP create_email_draft with
+ * draft_id): updates fields + body in place, body lands as an agent version —
+ * no second outbox row.
+ */
+export async function updateEmailDraft(input: {
+	outboxId: string;
+	to: string;
+	subject: string;
+	body: string;
+	cc?: string;
+	bcc?: string;
+	campaignCompanyId?: string;
+	campaignStep?: number;
+}): Promise<{ outboxId: string; updated: true; version: number | null } | { error: string }> {
+	"use server";
+	const [row] = await db.select().from(emailOutbox).where(eq(emailOutbox.id, input.outboxId));
+	if (!row) return { error: "draft not found — call create_email_draft without draft_id to make a new one" };
+	if (row.status === "sent") return { error: "draft already sent" };
+	await db
+		.update(emailOutbox)
+		.set({
+			toEmail: input.to,
+			subject: input.subject,
+			...(input.cc !== undefined ? { ccEmail: input.cc } : {}),
+			...(input.bcc !== undefined ? { bccEmail: input.bcc } : {}),
+			...(input.campaignCompanyId !== undefined ? { campaignCompanyId: input.campaignCompanyId, campaignStep: input.campaignStep } : {}),
+		})
+		.where(eq(emailOutbox.id, input.outboxId));
+	const version = await saveDraftBody(input.outboxId, input.body, "agent");
+	return { outboxId: input.outboxId, updated: true, version };
 }
 
 /**
