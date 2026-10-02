@@ -23,6 +23,7 @@ export const FREIGHT_STAGES: FunnelStage[] = [
 	{ key: "revenue_band", label: "Revenue", gate: "$10-70M estimate; rev/employee $150-500k sanity", method: "api" },
 	{ key: "tech_team", label: "Tech team", gate: "≤2 title hits for CTO/VP Eng/IT Director/engineer/developer", method: "api" },
 	{ key: "owner_led", label: "Owner-led", gate: "Founder/CEO still running it, not a PE roll-up", method: "agent" },
+	{ key: "ai_signal", label: "AI signal", gate: "≥1 employee self-labels AI (Prospeo roster); site evidence corroborates only; vendor-hint recorded separately", method: "api" },
 ];
 
 /** Funnels API accepts an admin session (UI) or an mc_ API key (scripts/agents). */
@@ -215,11 +216,20 @@ export async function applyVerdictConsequences(itemId: string, stages: FunnelSta
 	const [item] = await db.select().from(funnelItems).where(eq(funnelItems.id, itemId)).limit(1);
 	if (!item) return;
 	const results = await db
-		.select({ stage: funnelStageResults.stage, verdict: funnelStageResults.verdict })
+		.select({ stage: funnelStageResults.stage, verdict: funnelStageResults.verdict, note: funnelStageResults.note })
 		.from(funnelStageResults)
 		.where(eq(funnelStageResults.itemId, itemId));
 	const allPass = stages.every((s) => results.some((r) => r.stage === s.key && r.verdict === "pass"));
 	const anyFail = results.some((r) => r.verdict === "fail");
+
+	// ai_signal note tier → aiInterest (tier1=high, tier2=some) — only on a
+	// pass; a tier2 FAIL note (site-only rescue evidence) must never set it.
+	const aiRow = results.find((r) => r.stage === "ai_signal");
+	const aiInterest = aiRow?.verdict === "pass" && aiRow.note?.startsWith("tier1")
+		? "high"
+		: aiRow?.verdict === "pass" && aiRow.note?.startsWith("tier2")
+			? "some"
+			: null;
 
 	if (allPass && !anyFail) {
 		const raw = (item.rawData ?? {}) as Record<string, unknown>;
@@ -242,6 +252,7 @@ export async function applyVerdictConsequences(itemId: string, stages: FunnelSta
 					region: item.state ?? "unknown",
 					revenueBand: noteFor("revenue_band"),
 					techTeam: noteFor("tech_team"),
+					...(aiInterest ? { aiInterest } : {}),
 					icpApproved: true,
 				})
 				.where(eq(outreachProspects.id, item.prospectId));
@@ -254,6 +265,7 @@ export async function applyVerdictConsequences(itemId: string, stages: FunnelSta
 					region: item.state ?? "unknown",
 					revenueBand: noteFor("revenue_band"),
 					techTeam: noteFor("tech_team"),
+					...(aiInterest ? { aiInterest } : {}),
 					icpApproved: true,
 					sourceNote: `funnel-run ${new Date().toISOString().slice(0, 10)}`,
 					campaignId: campaign?.id ?? null,
