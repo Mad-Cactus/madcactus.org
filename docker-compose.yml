@@ -12,7 +12,8 @@
 
 services:
   db:
-    image: postgres:17-alpine
+    # pgvector build — prod uses the vector ext (brain embeddings)
+    image: pgvector/pgvector:pg17
     # 5433 on the host — stays out of the way of any local Postgres
     ports:
       - "5434:5432"

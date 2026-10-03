@@ -68,6 +68,8 @@
 /* ── Sidebar — gallery-ink dark band (editorial split) ── */
 .sidebar {
   width: 240px;
+  /* wide pages must never squeeze the nav off-screen */
+  flex-shrink: 0;
   background: var(--bg-elevated);
   display: flex;
   flex-direction: column;
@@ -287,6 +289,10 @@
   flex: 1;
   padding: 40px 48px;
   max-width: 1100px;
+  /* allow children to shrink below their content width — without this a wide
+     page (board, tables) pushes .layout wider than the viewport and the
+     sidebar gets clipped */
+  min-width: 0;
 }
 
 /* ── Typography ── */
@@ -572,6 +578,18 @@
   align-items: flex-start;
   overflow-x: auto;
   padding-bottom: 12px;
+  /* full-bleed: escape .content's 1100px cap + padding so all seven stages
+     are reachable; the negative margins are undone by padding-inline */
+  margin-inline: -48px;
+  padding-inline: 48px;
+  scrollbar-width: thin;
+}
+.board::-webkit-scrollbar {
+  height: 8px;
+}
+.board::-webkit-scrollbar-thumb {
+  background: rgba(127, 127, 127, 0.35);
+  border-radius: 4px;
 }
 
 .board-col {
@@ -625,6 +643,8 @@
   /* text selection steals the mousedown → drag never starts */
   user-select: none;
   -webkit-user-select: none;
+  /* pointer-drag: let touch moves become drags, not page scroll */
+  touch-action: none;
 }
 
 .board-card.dragging {
@@ -800,6 +820,18 @@ select {
 select option {
   background: var(--bg-card);
   color: var(--text);
+}
+
+/* small inline number inputs (funnel batch limits) — readable digits */
+input[type="number"].num {
+    width: 64px;
+    padding: 6px 8px;
+    text-align: center;
+    font-size: 14px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text, #111);
+    background: var(--bg-card, #fff);
+    appearance: textfield;
 }
 
 input[type="date"] {
@@ -1366,3 +1398,260 @@ textarea.doc-title { resize: none; overflow: hidden; display: block; height: aut
 }
 .doc-toolbar button:hover { background: rgba(255, 255, 255, 0.12); }
 .doc-toolbar button.active { background: rgba(188, 156, 92, 0.4); }
+
+/* voice-lint inline underline (LintedTextarea mirror marks) */
+.lint-underline {
+	background: transparent;
+	color: inherit;
+	text-decoration: underline wavy rgba(170, 51, 51, 0.9);
+	text-decoration-skip-ink: none;
+	text-underline-offset: 3px;
+	padding: 0;
+}
+
+/* voice-lint underline overlay (LexicalDocEditor) — marks are positioned
+   over measured DOM ranges; no text inside, so a wavy border-bottom stands in
+   for text-decoration */
+.lint-overlay {
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+	overflow: hidden;
+}
+.lint-underline-overlay {
+	position: absolute;
+	border-bottom: 2px wavy rgba(170, 51, 51, 0.9);
+	background: transparent;
+	pointer-events: auto;
+}
+
+/* ── Create dialog — shared button → modal → toast pattern (components/CreateDialog.tsx) ── */
+.modal {
+	border: 1px solid var(--gold-border);
+	border-left: 3px solid var(--gold);
+	background: var(--bg-card);
+	color: var(--text);
+	padding: 0;
+	width: min(560px, calc(100vw - 48px));
+	max-height: calc(100vh - 64px);
+	overflow-y: auto;
+}
+
+.modal::backdrop {
+	background: rgba(10, 10, 10, 0.4);
+}
+
+.modal-title {
+	font-family: var(--font-serif);
+	font-weight: 400;
+	font-size: 22px;
+	margin: 0;
+	padding: 20px 24px 0;
+}
+
+.modal-body {
+	padding: 16px 24px 24px;
+}
+
+.modal-footer {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+	padding: 14px 24px;
+	border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+/* ── Toasts — global queue in src/lib/toast.ts, rendered by components/Toaster.tsx ── */
+.toaster {
+	position: fixed;
+	bottom: 16px;
+	right: 16px;
+	display: grid;
+	gap: 8px;
+	z-index: 1000;
+	max-width: 380px;
+}
+
+.toast {
+	background: var(--bg-elevated);
+	color: #fff;
+	border: 1px solid var(--gold-border);
+	border-left: 3px solid var(--green);
+	padding: 10px 14px;
+	font-family: var(--font-sans);
+	font-size: 13px;
+	cursor: pointer;
+	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+	word-break: break-word;
+}
+
+.toast-error {
+	border-left-color: var(--red);
+}
+
+.toast-info {
+	border-left-color: var(--gold);
+}
+
+/* ── Component mentions (@[kind:id] chips) ────────────────────────── */
+/* editor chip (MentionNode) + public render anchor (mention-render.ts) */
+.doc-mention,
+.component-mention {
+	display: inline;
+	white-space: nowrap;
+	border-radius: 6px;
+	padding: 1px 6px 2px;
+	font-size: 0.92em;
+	background: rgba(188, 156, 92, 0.12);
+	border: 1px solid rgba(188, 156, 92, 0.35);
+	cursor: default;
+}
+.doc-mention:hover,
+.component-mention:hover {
+	background: rgba(188, 156, 92, 0.22);
+}
+a.component-mention-link,
+.component-mention-link {
+	color: inherit;
+	text-decoration: none;
+}
+a.component-mention-link:hover {
+	text-decoration: underline;
+}
+.component-mention-status {
+	margin-left: 5px;
+	font-size: 0.82em;
+	opacity: 0.75;
+}
+.doc-mention-deleted {
+	opacity: 0.55;
+	text-decoration: line-through;
+	background: rgba(120, 120, 120, 0.12);
+	border-color: rgba(120, 120, 120, 0.35);
+}
+.doc-mention[data-status]::after {
+	content: " · " attr(data-status);
+	font-size: 0.82em;
+	opacity: 0.7;
+}
+
+/* @ typeahead dropdown (LexicalDocEditor) */
+.mention-picker {
+	position: fixed;
+	z-index: 60;
+	min-width: 280px;
+	max-width: 380px;
+	max-height: 260px;
+	overflow-y: auto;
+	display: grid;
+	gap: 2px;
+	background: #201d19;
+	border: 1px solid rgba(255, 255, 255, 0.09);
+	border-radius: 8px;
+	padding: 4px;
+	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.mention-picker button {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	width: 100%;
+	text-align: left;
+	background: none;
+	border: none;
+	border-radius: 6px;
+	color: #eee;
+	padding: 6px 8px;
+	font-size: 13px;
+	cursor: pointer;
+}
+.mention-picker button.selected,
+.mention-picker button:hover {
+	background: rgba(255, 255, 255, 0.08);
+}
+.mention-picker-kind {
+	flex: none;
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: #bc9c5c;
+}
+.mention-picker-title {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.mention-picker-status {
+	flex: none;
+	font-size: 11px;
+	opacity: 0.6;
+}
+
+/* hover card popover (editor chips) */
+.mention-popover {
+	position: fixed;
+	z-index: 61;
+	width: 280px;
+	background: #201d19;
+	border: 1px solid rgba(255, 255, 255, 0.09);
+	border-radius: 10px;
+	padding: 10px 12px;
+	box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+	display: grid;
+	gap: 4px;
+}
+.mention-popover-loading {
+	color: #999;
+	font-size: 12px;
+}
+.mention-popover-head {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+.mention-popover-kind {
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: #bc9c5c;
+}
+.mention-popover-status {
+	margin-left: auto;
+	font-size: 11px;
+	color: #eee;
+	background: rgba(188, 156, 92, 0.18);
+	border-radius: 5px;
+	padding: 1px 7px;
+}
+.mention-popover-status.mention-popover-deleted {
+	background: rgba(120, 120, 120, 0.25);
+	text-decoration: line-through;
+}
+.mention-popover-title {
+	font-size: 14px;
+	font-weight: 600;
+	color: #eee;
+}
+.mention-popover-subtitle {
+	font-size: 12px;
+	color: #999;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.mention-popover-meta {
+	display: flex;
+	align-items: baseline;
+	gap: 10px;
+	font-size: 11px;
+	color: #777;
+}
+.mention-popover-meta a {
+	color: #bc9c5c;
+	text-decoration: none;
+}
+.mention-popover-meta a:hover {
+	text-decoration: underline;
+}

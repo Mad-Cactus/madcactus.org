@@ -1,11 +1,13 @@
 import { For, Show, createSignal, onMount, onCleanup } from "solid-js";
-import { useNavigate } from "@solidjs/router";
+import { useNavigate, createAsync } from "@solidjs/router";
 import LexicalDocEditor from "~/components/LexicalDocEditor";
 import ConfirmButton from "~/components/ConfirmButton";
 import { LinkedInPreview, NewsletterEmailPreview, NewsletterWebPreview, type PreviewMode } from "~/components/DocPreviews";
 import type { DocEditorApi } from "~/components/LexicalDocEditor";
-import { getDocQuery } from "~/lib/docs-queries";
+import { getDocQuery, getDocStatsQuery } from "~/lib/docs-queries";
 import { computeBreaks } from "~/lib/doc-pages";
+import { VoiceLintPanel } from "~/components/VoiceLintPanel";
+import { docSurface, type LintResult } from "~/lib/voice-lint";
 
 type VersionRow = {
 	id: string;
@@ -41,6 +43,17 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 		return undefined;
 	};
 	const kind = () => doc().kind ?? null;
+	// per-doc reality checks (opens/clicks/requests or linked links) — footer
+	// section below the editor column
+	const stats = createAsync(() => getDocStatsQuery(props.id));
+	const newsletterStats = () => {
+		const s = stats();
+		return s?.kind === "newsletter" ? s : undefined;
+	};
+	const postStats = () => {
+		const s = stats();
+		return s?.kind === "post" ? s : undefined;
+	};
 	const [docStatus, setDocStatus] = createSignal(doc().status as string);
 	const [publishedAt, setPublishedAt] = createSignal(doc().publishedAt?.toISOString() ?? null);
 	const [schedFor, setSchedFor] = createSignal<string | null>(doc().scheduledFor?.toISOString() ?? null);
@@ -48,11 +61,49 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 	const [schedInput, setSchedInput] = createSignal("");
 	const [firstComment, setFirstComment] = createSignal("");
 	const [channel, setChannel] = createSignal<"email+web" | "web">(doc().publishChannel ?? "email+web");
+	// newsletter channel appendix ("After the body" panel): one textarea
+	// switched between the two stored fields, autosaved like the first comment
+	const [emailAppendix, setEmailAppendix] = createSignal("");
+	const [webAppendix, setWebAppendix] = createSignal("");
+	const [appendixChannel, setAppendixChannel] = createSignal<"email" | "web">("email");
+	let appendixTimer: ReturnType<typeof setTimeout> | undefined;
+	const saveAppendix = (channel: "email" | "web", content: string) => {
+		(channel === "email" ? setEmailAppendix : setWebAppendix)(content);
+		clearTimeout(appendixTimer);
+		appendixTimer = setTimeout(() => void post(props.id, { op: "set-appendix", channel, content }), 1200);
+	};
 	// live web snapshot — differs from markdown() when a published newsletter
 	// was edited but not republished yet
 	const [webMd, setWebMd] = createSignal(doc().webMarkdown ?? doc().markdown);
 	const hasUnpublishedEdits = () => kind() === "newsletter" && docStatus() === "published" && markdown() !== webMd();
 	const [genre, setGenre] = createSignal(doc().genre ?? "");
+	// inline voice lint — debounced re-check on every markdown/genre change
+	const [lint, setLint] = createSignal<LintResult | null>(null);
+	const [lintStale, setLintStale] = createSignal(false);
+	let lintTimer: ReturnType<typeof setTimeout> | undefined;
+	const lintDoc = (md: string, g?: string) => {
+		// the overlay needs offsets into the editor's PLAIN text (markdown syntax
+		// chars are consumed into formatting), so lint that when available
+		const text = docApi?.text() ?? md;
+		if (!md.trim()) {
+			setLint(null);
+			setLintStale(false);
+			return;
+		}
+		setLintStale(true);
+		clearTimeout(lintTimer);
+		lintTimer = setTimeout(async () => {
+			const res = await fetch("/api/lint", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ text, surface: docSurface(kind()), genre: (g ?? genre()) || undefined }),
+			});
+			if (res.ok) {
+				setLint(await res.json());
+				setLintStale(false);
+			}
+		}, 700);
+	};
 	const [liConnected, setLiConnected] = createSignal<boolean | null>(null);
 	const [preview, setPreview] = createSignal<PreviewMode | null>(null);
 	let saveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -111,9 +162,10 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 	};
 	const scheduleLayout = () => {
 		clearTimeout(layoutTimer);
-		// while editing, reconcile after a 1s pause (stale breaks would otherwise
-		// leave whitespace holes); unfocused changes settle in 200ms
-		layoutTimer = setTimeout(runLayout, editing() ? 1000 : 200);
+		// while editing, reconcile quickly — a slow debounce lets page-2 text drift
+		// up into the sheet gap while deleting (caretViewAnchor keeps the caret
+		// planted during re-layout); unfocused changes settle in 200ms
+		layoutTimer = setTimeout(runLayout, editing() ? 150 : 200);
 	};
 	onMount(() => {
 		const onResize = () => scheduleLayout();
@@ -132,12 +184,15 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 				if (d.shareToken) setShareUrl(`${location.origin}/share/${d.shareToken}`);
 				if (d.status === "scheduled" && d.scheduledFor) setSchedInput(toLocalInput(new Date(d.scheduledFor)));
 				setFirstComment(d.firstComment ?? "");
+				setEmailAppendix(d.emailAppendix ?? "");
+				setWebAppendix(d.webAppendix ?? "");
 				setChannel(d.publishChannel ?? "email+web");
 				setGenre(d.genre ?? "");
 				if (titleEl) {
 					titleEl.style.height = "auto";
 					titleEl.style.height = `${titleEl.scrollHeight}px`;
 				}
+				lintDoc(d.markdown, d.genre ?? "");
 				clearInterval(stop);
 			}
 		}, 50);
@@ -284,6 +339,7 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 					onChange={(e) => {
 						setGenre(e.currentTarget.value);
 						void post(props.id, { op: "set-genre", genre: e.currentTarget.value });
+						lintDoc(markdown(), e.currentTarget.value);
 					}}
 				/>
 				<datalist id="doc-genres">
@@ -436,8 +492,8 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 					class="doc-title"
 					ref={titleRef}
 					rows={1}
-					placeholder="Untitled"
-					title="Click to rename"
+					placeholder={kind() === "newsletter" ? "Subject / title" : "Untitled"}
+					title={kind() === "newsletter" ? "The email subject — same text as the web headline" : "Click to rename"}
 					onInput={(e) => {
 						const el = e.currentTarget;
 						el.style.height = "auto";
@@ -467,6 +523,7 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 						// version on every open
 						if (md === markdown()) return;
 						setMarkdown(md);
+						lintDoc(md);
 						// autosave to the DB, not just local state — a refresh must not
 						// lose the doc
 						clearTimeout(saveTimer);
@@ -478,8 +535,11 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 						setEditorRoot(api.root);
 					}}
 					onLayoutDirty={scheduleLayout}
+					violations={lint()?.violations ?? []}
 				/>
 			</div>
+			{/* voice lint sits outside the pager so its height never affects page breaks */}
+			<VoiceLintPanel result={lint()} stale={lintStale()} />
 			{/* first comment is a plain doc field — shown whether or not LinkedIn is
 			    connected yet (gating on liConnected unmounted it once the check resolved) */}
 			<Show when={kind() === "post"}>
@@ -495,6 +555,80 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 					/>
 				</div>
 			</Show>
+			<Show when={kind() === "newsletter"}>
+				<div class="doc-firstcomment">
+					<label for="channel-appendix">After the body</label>
+					<div style={{ display: "flex", gap: "8px", "align-items": "center" }}>
+						<select
+							class="doc-sched-input"
+							style={{ width: "110px" }}
+							aria-label="Appendix channel"
+							value={appendixChannel()}
+							onChange={(e) => setAppendixChannel(e.currentTarget.value as "email" | "web")}
+						>
+							<option value="email">Email</option>
+							<option value="web">Web</option>
+						</select>
+						<textarea
+							rows={3}
+							class="doc-sched-input"
+							style={{ width: "100%" }}
+							placeholder="CTA block rendered after the issue body — markdown"
+							value={appendixChannel() === "email" ? emailAppendix() : webAppendix()}
+							onInput={(e) => saveAppendix(appendixChannel(), e.currentTarget.value)}
+						/>
+					</div>
+				</div>
+			</Show>
+			<Show when={newsletterStats()}>
+				{(s) => (
+					<div class="doc-firstcomment" style={{ display: "block", gap: 0 }}>
+						<label for="doc-stats">Stats</label>
+						<p class="muted" style={{ margin: "4px 0 8px" }} id="doc-stats">
+							{s().opens} opens · {s().clicks} clicks · {s().requests} brain requests
+						</p>
+						<Show when={s().perPerson.length}>
+							<table style={{ "font-size": "12px", "border-collapse": "collapse", width: "100%" }}>
+								<thead>
+									<tr class="muted" style={{ "text-align": "left" }}>
+										<th style={{ padding: "2px 12px 2px 0", "font-weight": 500 }}>Recipient</th>
+										<th style={{ padding: "2px 12px 2px 0", "font-weight": 500 }}>Opens</th>
+										<th style={{ padding: "2px 0", "font-weight": 500 }}>Clicks</th>
+									</tr>
+								</thead>
+								<tbody>
+									<For each={s().perPerson}>
+										{(p) => (
+											<tr>
+												<td style={{ padding: "2px 12px 2px 0" }}>{p.recipient ?? "(anon)"}</td>
+												<td style={{ padding: "2px 12px 2px 0" }}>{p.opens}</td>
+												<td style={{ padding: "2px 0" }}>{p.clicks}</td>
+											</tr>
+										)}
+									</For>
+								</tbody>
+							</table>
+						</Show>
+					</div>
+				)}
+			</Show>
+			<Show when={postStats()}>
+				{(s) => (
+					<div class="doc-firstcomment">
+						<label for="doc-links">Linked links</label>
+						<span class="muted" id="doc-links">
+							<For each={s().links}>
+								{(l, i) => (
+									<span>
+										{i() > 0 ? " · " : ""}/l/{l.slug} ({l.clicks})
+									</span>
+								)}
+							</For>
+							<Show when={!s().links.length}>no short links point at this post</Show>
+						</span>
+					</div>
+				)}
+			</Show>
 				</div>
 				<Show when={preview()}>
 					<aside class="doc-history wide">
@@ -506,7 +640,7 @@ export const DocEditor = (props: { id: string; doc: NonNullable<Awaited<ReturnTy
 								<LinkedInPreview markdown={markdown()} title={doc().title} firstComment={firstComment()} />
 							</Show>
 							<Show when={preview() === "email"}>
-								<NewsletterEmailPreview markdown={markdown()} title={doc().title} />
+								<NewsletterEmailPreview markdown={markdown()} title={doc().title} appendix={emailAppendix()} issueNumber={doc().issueNumber} />
 							</Show>
 							<Show when={preview() === "web"}>
 								<NewsletterWebPreview docId={props.id} />

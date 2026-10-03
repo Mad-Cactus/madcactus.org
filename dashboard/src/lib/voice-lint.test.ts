@@ -94,3 +94,25 @@ describe("normalizePattern", () => {
 		expect(normalizePattern({ rule: "x".repeat(301), pattern: "x" })).toBeNull();
 	});
 });
+
+describe("lint match ranges + lesson link", () => {
+	test("literal violation carries index/length for underlining", () => {
+		const v = lintAgainstPatterns("Glad you asked — Looking forward to it.", [
+			{ id: "p1", rule: "no looking forward", pattern: "Looking forward to", patternType: "literal", direction: "avoid", beforeText: null, afterText: null, lessonText: "Sign off with a concrete next step instead." },
+		]);
+		expect(v.length).toBe(1);
+		expect(v[0].matched).toBe("Looking forward to");
+		expect(v[0].index).toBe("Glad you asked — ".length);
+		expect(v[0].length).toBe("Looking forward to".length);
+		expect(v[0].lesson).toBe("Sign off with a concrete next step instead.");
+	});
+	test("regex violation index points at the match", () => {
+		const v = lintAgainstPatterns("hey, so can we start tomorrow", [
+			{ id: "p2", rule: "no permission-seeking so", pattern: "( so |, so )(can|could) we", patternType: "regex", direction: "avoid", beforeText: null, afterText: null },
+		]);
+		expect(v.length).toBe(1);
+		expect(v[0].index).toBe(3);
+		expect(v[0].matched).toBe(", so can we");
+		expect(v[0].lesson).toBeNull();
+	});
+});

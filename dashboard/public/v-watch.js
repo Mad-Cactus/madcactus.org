@@ -3,7 +3,7 @@
 // open contributes nothing. Flushes on pause/ended/hide/pagehide via
 // sendBeacon. The open beacon flips sent → watching server-side.
 (function () {
-	var id = document.currentScript && document.currentScript.dataset.prospectId;
+	var id = document.currentScript && document.currentScript.dataset.videoId;
 	var video = document.querySelector("video");
 	if (!id || !video) return;
 	var api = "/api/video-event";

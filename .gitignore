@@ -30,3 +30,4 @@ pnpm-debug.log*
 
 # meeting-publisher runtime state (logs, pushed ids, API key)
 tools/meeting-publisher/state/
+.env.local

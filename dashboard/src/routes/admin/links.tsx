@@ -2,6 +2,7 @@ import { Title } from "@solidjs/meta";
 import { createAsync } from "@solidjs/router";
 import { For, Show, createSignal, onMount } from "solid-js";
 import ConfirmButton from "~/components/ConfirmButton";
+import CreateDialog from "~/components/CreateDialog";
 import Layout from "~/components/Layout";
 import { getUserQuery } from "~/lib/queries";
 
@@ -17,8 +18,6 @@ export default function AdminLinks() {
 	const user = createAsync(() => getUserQuery(), { deferStream: true });
 	const [links, setLinks] = createSignal<Link[]>([]);
 	const [docOptions, setDocOptions] = createSignal<Doc[]>([]);
-	const [error, setError] = createSignal("");
-	const [msg, setMsg] = createSignal("");
 
 	async function refresh() {
 		const r = await fetch("/api/links");
@@ -30,21 +29,21 @@ export default function AdminLinks() {
 	}
 	onMount(() => {
 		void refresh();
-		// last-used builder values — next post only needs a new campaign
+		// last-used builder values — next post only needs a new campaign. The
+		// form lives inside the create dialog now; find it via its dest field.
 		try {
 			const s = JSON.parse(localStorage.getItem("link-builder") ?? "{}") as Record<string, string>;
-			const form = document.getElementById("link-form") as HTMLFormElement | null;
+			const form = document.querySelector<HTMLInputElement>('input[name="dest"]')?.form ?? null;
 			if (!form) return;
 			for (const k of ["dest", "source", "medium", "campaign"])
 				if (s[k]) (form.elements.namedItem(k) as HTMLInputElement).value = s[k];
 		} catch {}
 	});
 
-	async function save(e: Event) {
-		e.preventDefault();
-		setError("");
-		setMsg("");
-		const fd = new FormData(e.target as HTMLFormElement);
+	/** Builds + saves the link; returns { error } or { success } (CreateDialog
+	 *  toasts the /l/<slug> share URL). */
+	async function save(form: HTMLFormElement): Promise<{ error?: string; success?: string }> {
+		const fd = new FormData(form);
 		const str = (k: string) => String(fd.get(k) ?? "").trim();
 		// full-URL override wins; otherwise compose destination + UTMs
 		let target = str("target");
@@ -73,10 +72,9 @@ export default function AdminLinks() {
 			body: JSON.stringify({ target, docId: str("docId") || null }),
 		});
 		const body = (await r.json()) as { error?: string; slug?: string };
-		if (!r.ok) return setError(body.error ?? "Save failed");
-		setMsg(`Saved — share link: ${location.origin}/l/${body.slug}`);
+		if (!r.ok) return { error: body.error ?? "Save failed" };
 		await refresh();
-		(e.target as HTMLFormElement).reset();
+		return { success: `Saved — share link: ${location.origin}/l/${body.slug}` };
 	}
 
 	async function remove(slug: string) {
@@ -128,39 +126,37 @@ export default function AdminLinks() {
 	return (
 		<Layout user={user()}>
 			<Title>Links — Mad Cactus</Title>
-			<h1 class="page-title">Short Links</h1>
-			<p class="page-subtitle">
-				Clean /l/&lt;slug&gt; URLs for first comments and posts — UTMs hide behind the redirect, clicks count per link.
-			</p>
-
-			<details open style={{ "margin-bottom": "24px" }}>
-				<summary style={{ cursor: "pointer", "font-weight": "600" }}>Create a link</summary>
-				<form id="link-form" onSubmit={save} style={{ display: "grid", gap: "8px", "max-width": "640px", "margin-top": "12px" }}>
-					<label style={{ display: "grid", gap: "4px" }}>
-						Destination page
-						<input name="dest" value="https://madcactus.org/newsletter" style={{ padding: "8px" }} />
-					</label>
-					<div style={{ display: "grid", "grid-template-columns": "1fr 1fr 1fr", gap: "8px" }}>
-						<label style={{ display: "grid", gap: "4px" }}>
-							Source
-							<input name="source" value="linkedin" style={{ padding: "8px" }} />
-						</label>
-						<label style={{ display: "grid", gap: "4px" }}>
-							Medium
-							<input name="medium" value="social" style={{ padding: "8px" }} />
-						</label>
-						<label style={{ display: "grid", gap: "4px" }}>
-							Campaign
-							<input name="campaign" placeholder="td2" style={{ padding: "8px" }} />
-						</label>
+			<h1 class="page-title" style={{ display: "flex", "justify-content": "space-between", "align-items": "center", "gap": "16px", "margin-bottom": "4px" }}>
+				Short Links
+				<CreateDialog label="Create a link" title="Create a link" submitLabel="Save link" onSubmit={(_fd, form) => save(form)}>
+					<div class="form-group">
+						<label for="link_dest">Destination page</label>
+						<input id="link_dest" name="dest" value="https://madcactus.org/newsletter" spellcheck={false} />
 					</div>
-					<details>
-						<summary style={{ cursor: "pointer", "font-size": "13px" }}>Or paste a full target URL (UTMs included) instead</summary>
-						<input name="target" placeholder="https://…?utm_source=…" style={{ padding: "8px", width: "100%", "margin-top": "8px" }} />
+					<div class="form-row">
+						<div class="form-group">
+							<label for="link_source">Source</label>
+							<input id="link_source" name="source" value="linkedin" spellcheck={false} />
+						</div>
+						<div class="form-group">
+							<label for="link_medium">Medium</label>
+							<input id="link_medium" name="medium" value="social" spellcheck={false} />
+						</div>
+						<div class="form-group">
+							<label for="link_campaign">Campaign</label>
+							<input id="link_campaign" name="campaign" placeholder="td2" spellcheck={false} />
+						</div>
+					</div>
+					<details style={{ "margin-bottom": "16px" }}>
+						<summary class="muted" style={{ cursor: "pointer", "font-size": "13px" }}>Or paste a full target URL (UTMs included) instead</summary>
+						<div class="form-group" style={{ "margin-top": "8px" }}>
+							<label for="link_target">Full target URL</label>
+							<input id="link_target" name="target" placeholder="https://…?utm_source=…" spellcheck={false} />
+						</div>
 					</details>
-					<label style={{ display: "grid", gap: "4px" }}>
-						Attached post / newsletter
-						<select name="docId" style={{ padding: "8px" }}>
+					<div class="form-group">
+						<label for="link_doc">Attached post / newsletter</label>
+						<select id="link_doc" name="docId">
 							<option value="">— none (standalone link) —</option>
 							<For each={docOptions()}>
 								{(d) => (
@@ -170,17 +166,12 @@ export default function AdminLinks() {
 								)}
 							</For>
 						</select>
-					</label>
-					<Show when={error()}>
-						<p style={{ color: "#b91c1c" }}>{error()}</p>
-					</Show>
-					<button type="submit" style={{ padding: "8px 16px", cursor: "pointer" }}>Save link</button>
-				</form>
-			</details>
-
-			<Show when={msg()}>
-				<p class="muted">{msg()}</p>
-			</Show>
+					</div>
+				</CreateDialog>
+			</h1>
+			<p class="page-subtitle">
+				Clean /l/&lt;slug&gt; URLs for first comments and posts — UTMs hide behind the redirect, clicks count per link.
+			</p>
 
 			<table style={{ width: "100%", "border-collapse": "collapse" }}>
 				<thead>
@@ -234,7 +225,7 @@ export default function AdminLinks() {
 					<form onSubmit={saveEdit} style={{ display: "grid", gap: "8px" }}>
 						<label style={{ display: "grid", gap: "4px" }}>
 							Target URL
-							<input name="target" value={editing()!.target} required style={{ padding: "8px" }} />
+							<input name="target" value={editing()!.target} required style={{ padding: "8px" }} spellcheck={false} />
 						</label>
 						<label style={{ display: "grid", gap: "4px" }}>
 							Attached post / newsletter

@@ -48,8 +48,8 @@ export default function Home() {
 							Letting your team of five operate like a team of twenty-five.
 						</p>
 						{/* ponytail: plain img — Astro's responsive widths dropped; swap to <picture>/srcset if LCP suffers */}
-						<a href="/scorecard" class="cta-bracketed cta-hero" data-ph-event="cta_scorecard">
-							&#123; TAKE THE AI SCORECARD &#125;
+						<a href="/brain" class="cta-bracketed cta-hero" data-ph-event="cta_brain">
+							&#123; GET A FREE COMPANY BRAIN &#125;
 						</a>
 					</div>
 					<div class="hero-plate">
@@ -122,7 +122,7 @@ export default function Home() {
 						</p>
 					</div>
 					<form class="newsletter-band-form" id="newsletterBandForm">
-						<input type="email" name="email" placeholder="your@email.com" required autocomplete="email" />
+						<input type="email" name="email" placeholder="your@email.com" required autocomplete="email" spellcheck={false} />
 						<button type="submit" class="cta-bracketed" data-ph-event="newsletter_signup_home">
 							&#123; SUBSCRIBE &#125;
 						</button>
@@ -175,18 +175,17 @@ export default function Home() {
 				<div class="lead-inner">
 					<div class="lead-left">
 						<h3 class="lead-heading">
-							How much is manual work
+							What could your team do
 							<br />
-							<em>costing your firm?</em>
+							<em>with a company brain?</em>
 						</h3>
 					</div>
 					<div class="lead-right">
 						<p>
-							Take our free AI Readiness Scorecard. In five minutes, you'll see exactly where your team wastes the
-							most time, the estimated annual cost, and where AI can have the biggest impact.
+							We build you a custom company brain: your data, docs, and institutional knowledge unified into one intelligence layer your team actually uses. One built free every week, in the order requests arrive.
 						</p>
-						<a href="/scorecard" class="cta-bracketed" data-ph-event="cta_scorecard">
-							&#123; TAKE THE AI SCORECARD &#125;
+						<a href="/brain" class="cta-bracketed" data-ph-event="cta_brain">
+							&#123; GET A FREE COMPANY BRAIN &#125;
 						</a>
 					</div>
 				</div>
