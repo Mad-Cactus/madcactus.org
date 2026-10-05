@@ -33,11 +33,33 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 	const [pulling, setPulling] = createSignal(false);
 	const [page, setPage] = createSignal(0);
 	const PAGE = 25;
-	const [tab, setTab] = createSignal<"import" | "enrich">("enrich");
+	const [tab, setTab] = createSignal<"import" | "enrich" | "schedule">("enrich");
 	const [stageTab, setStageTab] = createSignal("");
 	const [verdictMethod, setVerdictMethod] = createSignal("human");
 	const [redoTarget, setRedoTarget] = createSignal<Result | null>(null);
 	const [detailItem, setDetailItem] = createSignal<Item | null>(null);
+	type Schedule = { enabled: boolean; discoverySource: string | null; discoveryIntervalDays: number; enrichPerDay: number; techPerDay: number; lastDiscoveryAt: string | null; lastEnrichAt: string | null } | null;
+	const [schedule, setSchedule] = createSignal<Schedule>(null);
+
+	async function loadSchedule() {
+		const r = await fetch(`/api/funnels/runs/${props.params.id}/schedule`);
+		if (r.ok) setSchedule(((await r.json()) as { schedule: Schedule }).schedule);
+	}
+
+	async function saveSchedule(e: Event) {
+		e.preventDefault();
+		const fd = new FormData(e.target as HTMLFormElement);
+		const body = await post(`/api/funnels/runs/${props.params.id}/schedule`, {
+			enabled: fd.get("enabled") === "on",
+			discoverySource: String(fd.get("discoverySource") || "") || null,
+			discoveryIntervalDays: Number(fd.get("discoveryIntervalDays") || 7),
+			enrichPerDay: Number(fd.get("enrichPerDay") || 50),
+			techPerDay: Number(fd.get("techPerDay") || 15),
+		});
+		if (body.error) return errT(body.error);
+		okT("Schedule saved");
+		await loadSchedule();
+	}
 	const [headFilter, setHeadFilter] = createSignal<{ stage: string; mode: "filled" | "awaiting" } | null>(null);
 	const cycleHeadFilter = (stage: string) => {
 		setPage(0);
@@ -86,7 +108,10 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 		setResults(body.results);
 		setSummary(body.summary);
 	}
-	onMount(() => void refresh());
+	onMount(() => {
+		void refresh();
+		void loadSchedule();
+	});
 
 	const resultFor = (itemId: string, stage: string) => results().find((r) => r.itemId === itemId && r.stage === stage);
 	const queueFor = (stage: string) =>
@@ -227,6 +252,7 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 				<div class="form-row" style={{ "margin-bottom": "16px", gap: "8px" }}>
 					<button type="button" class={`btn btn-sm ${tab() === "import" ? "btn-primary" : ""}`} onClick={() => setTab("import")}>Import</button>
 					<button type="button" class={`btn btn-sm ${tab() === "enrich" ? "btn-primary" : ""}`} onClick={() => setTab("enrich")}>Enrichment</button>
+					<button type="button" class={`btn btn-sm ${tab() === "schedule" ? "btn-primary" : ""}`} onClick={() => setTab("schedule")}>Schedule</button>
 				</div>
 			</Show>
 
@@ -373,7 +399,110 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 				</Show>
 			</Show>
 
+		<Show when={tab() === "schedule"}>
+			<div class="card" style={{ "margin-bottom": "16px" }}>
+				<h2 style={{ "font-size": "15px", margin: "0 0 8px" }}>Schedule</h2>
+				<p class="muted" style={{ "font-size": "13px", margin: "0 0 12px" }}>
+					Runs itself on the server scheduler (no agent needed): discovery pulls new companies, enrichment advances the gates once a day.
+					{" "}Last discovery: {schedule()?.lastDiscoveryAt ? new Date(schedule()!.lastDiscoveryAt!).toLocaleString() : "never"}
+					{" · "}last enrichment: {schedule()?.lastEnrichAt ? new Date(schedule()!.lastEnrichAt!).toLocaleString() : "never"}.
+				</p>
+				<form onSubmit={saveSchedule}>
+					<div class="form-row" style={{ "flex-wrap": "wrap", gap: "10px" }}>
+						<label class="muted" style={{ "font-size": "13px" }}>
+							<input type="checkbox" name="enabled" checked={schedule()?.enabled ?? false} /> enabled
+						</label>
+						<label class="muted" style={{ "font-size": "13px" }}>
+							discovery
+							<select name="discoverySource">
+								<option value="" selected={!schedule()?.discoverySource}>none</option>
+								<option value="fmcsa" selected={schedule()?.discoverySource === "fmcsa"}>FMCSA census (new Indiana brokers)</option>
+							</select>
+						</label>
+						<label class="muted" style={{ "font-size": "13px" }}>
+							every <input name="discoveryIntervalDays" type="number" class="num" min="1" value={schedule()?.discoveryIntervalDays ?? 7} /> days
+						</label>
+						<label class="muted" style={{ "font-size": "13px" }}>
+							<input name="enrichPerDay" type="number" class="num" min="1" value={schedule()?.enrichPerDay ?? 50} /> enrich/day (Prospeo)
+						</label>
+						<label class="muted" style={{ "font-size": "13px" }}>
+							<input name="techPerDay" type="number" class="num" min="1" value={schedule()?.techPerDay ?? 15} /> tech-team/day (Apollo)
+						</label>
+						<button type="submit" class="btn btn-sm btn-primary">Save schedule</button>
+					</div>
+				</form>
+			</div>
+		</Show>
+
+		<Show when={detailItem()}>
+			{(it) => (
+				<div
+					style={{ position: "fixed", inset: "0", background: "rgba(0,0,0,0.4)", display: "flex", "align-items": "center", "justify-content": "center", "z-index": "100" }}
+					onClick={(e) => e.target === e.currentTarget && setDetailItem(null)}
+				>
+					<div class="card" style={{ width: "560px", "max-width": "92vw", "max-height": "86vh", overflow: "auto", margin: "0" }}>
+						<h3 style={{ "font-size": "15px", margin: "0 0 4px" }}>
+							{it().companyName}
+							<Show when={it().promotedAt}> ★</Show>
+						</h3>
+						<p class="muted" style={{ margin: "0 0 12px", "font-size": "13px" }}>
+							{[it().city, it().state].filter(Boolean).join(", ")} · {it().sourceKind ?? "manual"}
+							<Show when={it().sourceUrl}>{" · "}<a href={it().sourceUrl!} target="_blank" rel="noreferrer">source</a></Show>
+						</p>
+						<For each={stages()}>
+							{(s) => {
+								const r = () => resultFor(it().id, s.key);
+								return (
+									<div style={{ "border-top": "1px solid var(--border, #eee)", padding: "10px 0" }}>
+										<strong style={{ "font-size": "13px" }}>{s.label}</strong>{" "}
+										<span class="muted" style={{ "font-size": "12px" }}>{s.gate}</span>
+										<Show
+											when={r()}
+											fallback={
+												<Show when={run()?.status === "open"} fallback={<span class="muted" style={{ "font-size": "13px" }}> – awaiting</span>}>
+													<form class="form-row" onSubmit={(e) => record(e, s.key, it().id, verdictMethod())} style={{ "margin-top": "6px" }}>
+														<input name="note" placeholder={`note (${s.label.toLowerCase()} value/evidence)`} style={{ "max-width": "240px" }} />
+														<input name="evidenceUrl" placeholder="evidence URL" style={{ "max-width": "200px" }} />
+														<button type="submit" class="btn btn-sm btn-primary" name="verdict" value="pass">✓ pass</button>
+														<button type="submit" class="btn btn-sm" name="verdict" value="fail">✗ fail</button>
+													</form>
+												</Show>
+											}
+										>
+											{(res) => (
+												<div class="form-row" style={{ "font-size": "13px", "align-items": "center", "margin-top": "4px" }}>
+													<span>{res().verdict === "pass" ? "✓" : "✗"}</span>
+													<span class="muted">{res().note ?? ""}</span>
+													<span class="badge">{res().method}</span>
+													<Show when={res().evidenceUrl}>
+														<a href={res().evidenceUrl!} target="_blank" rel="noreferrer">evidence</a>
+													</Show>
+													<span class="muted">{res().checkedAt.slice(0, 10)}</span>
+													<button type="button" class="delete-btn" title="Redo — clears this stage verdict" onClick={() => { setDetailItem(null); setRedoTarget(res()); }}>✕</button>
+												</div>
+											)}
+										</Show>
+									</div>
+								);
+							}}
+						</For>
+						<div class="form-row" style={{ "margin-top": "12px" }}>
+							<label class="muted" style={{ "font-size": "12px" }}>
+								manual verdicts record as
+								<select value={verdictMethod()} onChange={(e) => setVerdictMethod((e.target as HTMLSelectElement).value)}>
+									<option value="human">human</option>
+									<option value="agent">agent</option>
+								</select>
+							</label>
+							<button type="button" class="btn btn-sm" onClick={() => setDetailItem(null)}>Close</button>
+						</div>
+					</div>
+				</div>
+			)}
+		</Show>
+
 		<Show when={redoTarget()}>
+
 			{(r) => (
 				<div
 					style={{ position: "fixed", inset: "0", background: "rgba(0,0,0,0.4)", display: "flex", "align-items": "center", "justify-content": "center", "z-index": "100" }}

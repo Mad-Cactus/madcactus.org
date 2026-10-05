@@ -224,6 +224,30 @@ export const funnelStageResults = pgTable(
 	],
 );
 
+// Per-funnel automation config: what the scheduler pulls, how often, and how
+// much enrichment to spend per day. One row per funnel (unique funnelId).
+export const funnelSchedules = pgTable(
+	"funnel_schedules",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		funnelId: uuid("funnel_id")
+			.notNull()
+			.unique()
+			.references(() => funnels.id, { onDelete: "cascade" }),
+		enabled: boolean("enabled").notNull().default(false),
+		// fmcsa | null (none)
+		discoverySource: text("discovery_source"),
+		discoveryIntervalDays: integer("discovery_interval_days").notNull().default(7),
+		enrichPerDay: integer("enrich_per_day").notNull().default(50),
+		techPerDay: integer("tech_per_day").notNull().default(15),
+		lastDiscoveryAt: timestamp("last_discovery_at", { withTimezone: true }),
+		lastEnrichAt: timestamp("last_enrich_at", { withTimezone: true }),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+	(t) => [check("funnel_schedule_source_check", sql`${t.discoverySource} is null or ${t.discoverySource} = 'fmcsa'`)],
+);
+
 // ── Companies (the org / client company) ───────────────────────────
 
 export const companies = pgTable("companies", {
