@@ -7,13 +7,21 @@ import { db } from "~/db";
 import { docs, emailOutbox } from "~/db/schema";
 import { alertEmail, alertPublishFailure, publishDoc } from "~/lib/publish";
 import { sendOutboxInner } from "~/lib/email-outbox";
+import { runScheduledFunnels } from "~/lib/funnel-scheduler";
 
 const TICK_MS = 60_000;
 const STALE_MS = 5 * 60_000;
 
-export async function tick(): Promise<{ docs: number; emails: number }> {
+export async function tick(): Promise<{ docs: number; emails: number; funnels: number }> {
 	let docsPublished = 0;
 	let emailsSent = 0;
+
+	// scheduled funnel automation (discovery + daily enrichment) — pure code,
+	// failures are logged inside and never break the publish/email work below
+	const funnelRes = await runScheduledFunnels().catch((e) => {
+		console.error("[scheduler] funnel automation failed:", e);
+		return { funnels: 0, discovered: 0, verdicts: 0 };
+	});
 	// reclaim crashed dispatches
 	await db
 		.update(docs)
@@ -111,7 +119,7 @@ export async function tick(): Promise<{ docs: number; emails: number }> {
 		}
 	}
 
-	return { docs: docsPublished, emails: emailsSent };
+	return { docs: docsPublished, emails: emailsSent, funnels: funnelRes.funnels };
 }
 
 const KEY = Symbol.for("madcactus.publish-scheduler");

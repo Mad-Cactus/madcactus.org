@@ -136,6 +136,118 @@ export const outreachProspects = pgTable(
 // columns would use numeric, but this app's amounts never exceed 7 digits.
 // Upgrade to numeric if billion-dollar invoices become a concern.
 
+// ── Funnels (staged ICP verification, freight first) ───────────────
+// A funnel is an ordered stage list; a run is one pull of companies; items
+// move through stages via verdict rows. 6/6 passes → auto-promote to
+// outreach_prospects with icpApproved=true. All state is DB rows, so pulls
+// and verification resume where they stopped.
+
+// how a stage verdict can be produced: source = evidence arrived with the
+// pull; api = batch driver (Apollo); agent = Orca browser/web prompt; human =
+// typed in by hand. Stage.method is the batch-automatable one ("Run stage"
+// button); humans can record any method.
+export const FUNNEL_METHODS = ["source", "api", "agent", "human"] as const;
+export type FunnelMethod = (typeof FUNNEL_METHODS)[number];
+
+export type FunnelStage = { key: string; label: string; gate: string; method: FunnelMethod };
+
+export const funnels = pgTable("funnels", {
+	id: uuid("id").primaryKey().defaultRandom(),
+	name: text("name").notNull().unique(),
+	description: text("description"),
+	stages: jsonb("stages").$type<FunnelStage[]>().notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const funnelRuns = pgTable(
+	"funnel_runs",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		funnelId: uuid("funnel_id")
+			.notNull()
+			.references(() => funnels.id, { onDelete: "cascade" }),
+		// importyeti | fmcsa | paste | mixed
+		source: text("source").notNull().default("paste"),
+		status: text("status").notNull().default("open"), // open | closed
+		note: text("note"),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+		closedAt: timestamp("closed_at", { withTimezone: true }),
+	},
+	(t) => [check("funnel_run_status_check", sql`${t.status} in ('open', 'closed')`)],
+);
+
+export const funnelItems = pgTable(
+	"funnel_items",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		runId: uuid("run_id")
+			.notNull()
+			.references(() => funnelRuns.id, { onDelete: "cascade" }),
+		companyName: text("company_name").notNull(),
+		city: text("city"),
+		state: text("state"),
+		sourceUrl: text("source_url"),
+		// importyeti | fmcsa | paste
+		sourceKind: text("source_kind"),
+		// the pulled evidence (address, authority type, BOL counts) — kept so
+		// stage verdicts are recomputable without re-scraping
+		rawData: jsonb("raw_data"),
+		// set at promotion → outreach_prospects
+		prospectId: uuid("prospect_id").references(() => outreachProspects.id, { onDelete: "set null" }),
+		promotedAt: timestamp("promoted_at", { withTimezone: true }),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+	(t) => [uniqueIndex("funnel_items_run_company_uq").on(t.runId, t.companyName)],
+);
+
+export const funnelStageResults = pgTable(
+	"funnel_stage_results",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		itemId: uuid("item_id")
+			.notNull()
+			.references(() => funnelItems.id, { onDelete: "cascade" }),
+		stage: text("stage").notNull(),
+		verdict: text("verdict").notNull(), // pass | fail
+		evidenceUrl: text("evidence_url"),
+		note: text("note"),
+		method: text("method").notNull().default("human"),
+		checkedAt: timestamp("checked_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+	(t) => [
+		uniqueIndex("funnel_stage_results_item_stage_uq").on(t.itemId, t.stage),
+		check("funnel_stage_verdict_check", sql`${t.verdict} in ('pass', 'fail')`),
+		check(
+			"funnel_stage_method_check",
+			sql`${t.method} in ${sql.raw(`(${FUNNEL_METHODS.map((m) => `'${m}'`).join(", ")})`)}`,
+		),
+	],
+);
+
+// Per-funnel automation config: what the scheduler pulls, how often, and how
+// much enrichment to spend per day. One row per funnel (unique funnelId).
+export const funnelSchedules = pgTable(
+	"funnel_schedules",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		funnelId: uuid("funnel_id")
+			.notNull()
+			.unique()
+			.references(() => funnels.id, { onDelete: "cascade" }),
+		enabled: boolean("enabled").notNull().default(false),
+		// fmcsa | null (none)
+		discoverySource: text("discovery_source"),
+		discoveryIntervalDays: integer("discovery_interval_days").notNull().default(7),
+		enrichPerDay: integer("enrich_per_day").notNull().default(50),
+		techPerDay: integer("tech_per_day").notNull().default(15),
+		lastDiscoveryAt: timestamp("last_discovery_at", { withTimezone: true }),
+		lastEnrichAt: timestamp("last_enrich_at", { withTimezone: true }),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+	(t) => [check("funnel_schedule_source_check", sql`${t.discoverySource} is null or ${t.discoverySource} = 'fmcsa'`)],
+);
+
 // ── Companies (the org / client company) ───────────────────────────
 
 export const companies = pgTable("companies", {
@@ -1112,6 +1224,10 @@ export type DocumentType = Document["type"];
 export type DocumentVisibility = Document["visibility"];
 export type InvoiceStatus = Invoice["status"];
 export type OutreachProspect = typeof outreachProspects.$inferSelect;
+export type Funnel = typeof funnels.$inferSelect;
+export type FunnelRun = typeof funnelRuns.$inferSelect;
+export type FunnelItem = typeof funnelItems.$inferSelect;
+export type FunnelStageResult = typeof funnelStageResults.$inferSelect;
 export type Video = typeof videos.$inferSelect;
 export type Campaign = typeof campaigns.$inferSelect;
 export type CampaignCompany = typeof campaignCompanies.$inferSelect;

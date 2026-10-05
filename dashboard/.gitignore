@@ -30,3 +30,4 @@ Thumbs.db
 
 # pull-env backup of hand-edited .env (may contain keys)
 .env.bak
+scripts/funnel-data.json

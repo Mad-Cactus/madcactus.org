@@ -21,6 +21,7 @@ import {
 	emailThreads,
 	emailOutbox,
 	campaigns,
+	funnelRuns,
 	outreachProspects,
 	OUTREACH_STAGE_LABELS,
 	videos,
@@ -227,6 +228,21 @@ const deliverable = defineComponent({
 	ownerLinks: [{ key: "projectId", column: deliverables.projectId, kind: "project" }],
 });
 
+const funnelRun = defineComponent({
+	kind: "funnel-run",
+	label: "Funnel run",
+	description:
+		"One pull of companies through a staged ICP funnel — items verify stage by stage; all-stage survivors auto-promote into outreach.",
+	table: funnelRuns,
+	title: (r) => r.note ?? `Run ${r.id.slice(0, 8)}`,
+	subtitle: (r) => `funnel run · ${r.source}`,
+	status: { get: (r) => r.status },
+	adminPath: (r) => `/admin/funnels/${r.id}`,
+	search: { columns: [funnelRuns.note, funnelRuns.source] },
+	// no ownerLinks: the parent funnel is static config (six stages), not an
+	// addressable component — linking to an unregistered kind renders deleted cards
+});
+
 // NOTE: brain tables (brain_pages, brain_facts, …) are deliberately NOT
 // registered — distilled knowledge is a separate subsystem with its own
 // vocabulary (entity slugs). Unifying the two is a later, deliberate
@@ -247,6 +263,7 @@ export const COMPONENTS: Record<string, AnyComponentDefinition> = {
 	"short-link": shortLink as AnyComponentDefinition,
 	invoice: invoice as AnyComponentDefinition,
 	deliverable: deliverable as AnyComponentDefinition,
+	"funnel-run": funnelRun as AnyComponentDefinition,
 };
 
 export function getComponent(kind: string): AnyComponentDefinition | undefined {
