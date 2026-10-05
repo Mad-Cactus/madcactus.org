@@ -13,12 +13,19 @@ async function throttle() {
 	if (wait > 0) await Bun.sleep(wait);
 	lastCall = Date.now();
 }
+/** Test hook: clear the rate-limit spacing between mocked calls. */
+export function _resetThrottle() {
+	lastCall = 0;
+}
 
 export function prospeoConfigured() {
 	return Boolean(process.env.PROSPEO_API_KEY);
 }
 
 export type ProspeoCompany = {
+	// Prospeo's internal company id — the exact-match key for /search-person
+	// roster lookups (names matching can pull in unrelated same-name companies).
+	companyId: string | null;
 	employeeCount: number | null;
 	employeeRange: string | null;
 	revenueMin: number | null;
@@ -36,6 +43,7 @@ function mapCompany(c: Record<string, unknown>): ProspeoCompany {
 	const rev = (c.revenue_range as { min?: number; max?: number } | null) ?? {};
 	const loc = (c.location as { city?: string; state?: string } | null) ?? {};
 	return {
+		companyId: typeof c.company_id === "string" ? c.company_id : null,
 		employeeCount: typeof c.employee_count === "number" ? c.employee_count : null,
 		employeeRange: range,
 		revenueMin: typeof rev.min === "number" ? rev.min : null,
@@ -114,6 +122,76 @@ export async function prospeoEnrichCompany(companyName: string): Promise<Prospeo
 	}
 	const d = JSON.parse(body) as { company?: Record<string, unknown> };
 	return d.company ? mapCompany(d.company) : null;
+}
+
+/* ── People roster (/search-person) — the AI-signal stage's only source ──
+ * One credit per request that returns ≥1 person, 0 on no-match; Prospeo
+ * dedupes an identical result page free for 30 days. The roster is cached on
+ * the funnel item, so re-runs and later reads cost nothing. */
+
+export type ProspeoPerson = {
+	name: string;
+	title: string | null;
+	headline: string | null;
+	historyTitles: string[];
+};
+
+export type ProspeoRoster = { people: ProspeoPerson[]; total: number };
+
+export type RosterRefs = { companyId?: string | null; domain?: string | null; name: string };
+
+/** Company filter, preference order: oid (exact) → website URL → name. The
+ *  name fallback can overmatch same-name companies; the note names the people
+ *  it returned, so a bad match is a 10-second eyeball away. */
+function rosterCompanyFilter(refs: RosterRefs) {
+	if (refs.companyId) return { company_oids: { include: [refs.companyId] } };
+	if (refs.domain) {
+		const host = refs.domain.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+		return { websites: { include: [`https://${host}/`] } };
+	}
+	return { names: { include: [refs.name] } };
+}
+
+/** Page 1 (25 people) of everyone at the company. NO_RESULTS → empty roster,
+ *  not an error. 429/quota throws — the route's error path surfaces it. */
+export async function prospeoCompanyRoster(refs: RosterRefs): Promise<ProspeoRoster> {
+	let body = "";
+	for (let attempt = 0; ; attempt++) {
+		await throttle();
+		const r = await fetch("https://api.prospeo.io/search-person", {
+			method: "POST",
+			headers: { "Content-Type": "application/json", "X-KEY": process.env.PROSPEO_API_KEY! },
+			body: JSON.stringify({ page: 1, filters: { company: rosterCompanyFilter(refs) } }),
+		});
+		if (r.status === 429 && attempt < 4) {
+			await Bun.sleep(15_000 * (attempt + 1));
+			continue;
+		}
+		body = await r.text();
+		if (r.status === 400) {
+			const d = JSON.parse(body || "{}") as { error_code?: string };
+			if (d.error_code === "NO_RESULTS") return { people: [], total: 0 };
+			throw new Error(`prospeo search-person: ${d.error_code ?? "bad request"}`);
+		}
+		if (!r.ok) throw new Error(`prospeo search-person HTTP ${r.status}: ${body.slice(0, 120)}`);
+		break;
+	}
+	const d = JSON.parse(body) as {
+		results?: { person?: Record<string, unknown> }[];
+		pagination?: { total_count?: number };
+	};
+	const people = (d.results ?? [])
+		.map((res) => res.person)
+		.filter((p): p is Record<string, unknown> => Boolean(p))
+		.map((p) => ({
+			name: (p.full_name as string | undefined) ?? "",
+			title: (p.current_job_title as string | null) ?? null,
+			headline: (p.headline as string | null) ?? null,
+			historyTitles: [...new Set(((p.job_history as { title?: string; current?: boolean }[] | undefined) ?? [])
+				.filter((j) => !j.current && j.title)
+				.map((j) => j.title!))].slice(0, 5),
+		}));
+	return { people, total: d.pagination?.total_count ?? people.length };
 }
 
 /** "11-50" → 30 (midpoint). Falls back when employee_count is null. */

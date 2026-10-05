@@ -70,8 +70,8 @@ Score 5 min/company by hand; batch 20 in an hour. Automatable later via Clay/Apo
 | Industry brain-reuse | Same as shipped brain | New skeleton needed |
 | Visible success | Fast 25 / Inc 5000 / awards | Unknown |
 | Visible scatter | Public chaos signals (growth, hiring, ops mess) | None visible |
-| Owner access | Founder/CEO reachable, no gatekeepers | Layered exec team |
-| Timing | Hiring first dev / just lost a system / compliance crunch | Nothing pressing |
+| Owner access | Founder/CEO still running it, not a PE roll-up (funnel gate: `owner_led`) | Layered exec team / PE roll-up |
+| Timing / AI signal | An employee self-labels AI on LinkedIn, any role (funnel gate: `ai_signal` — see below) | Nothing pressing; zero AI signal anywhere |
 
 ## Weekly loop (feeds ASPTR-212)
 
@@ -80,3 +80,17 @@ Score 5 min/company by hand; batch 20 in an hour. Automatable later via Clay/Apo
 3. 5-min tech-gap verification on survivors.
 4. Score, take top 5.
 5. Build brains on public data, Loom, send. Gift = the setup; business = everything after.
+
+## AI signal — the locked promotion rule (funnel stage `ai_signal`)
+
+**The only promotion signal is an employee who self-labels AI** — any role. A small technical team using AI is the expected good case (BCW: Director of Ecommerce + offshore dev, 2 matches), not a disqualifier. An employee who writes AI into their own LinkedIn chose to say it; companies that don't care write nothing anywhere (Koola: 0 matches, never viewed the brain). One Prospeo `/search-person` call per company, cached on the item — every re-run, re-score, and later read costs 0 credits (Prospeo also dedupes identical pages free for 30 days). The upstream `tech_team` gate (≤2 tech titles) stays the structural defense against real product teams.
+
+| Evidence | Verdict | aiInterest |
+| --- | --- | --- |
+| ≥1 employee AI match + site corroboration | pass | high |
+| ≥1 employee AI match, nothing else | pass | some |
+| Site-only evidence (AI copy, widget, privacy clause) | fail — `tier2` note for manual rescue | — |
+| Visible, zero signal | fail, `tier3` | — |
+| No domain, no roster, no evidence | fail, `tier4` ("barely have a phone") | — |
+
+**Vendor-hint is a separate, note-only signal** — a brand-matched outbound `.ai` product domain (finemark.ai) or AI-product marketing (Finemark, ShipSigma) lands in the note as `vendor-hint: …` for slot-time judgment and never changes a verdict. The website scan corroborates only: it upgrades recorded strength (`some`→`high`), never passes a company; privacy-clause and chat-widget hits are weak and don't corroborate either. Expected pass volume: tens, not hundreds — the study found 93% of the visible 1,367-company tail had no signal at all, and only 11 of 73 visible companies had raw matches.
