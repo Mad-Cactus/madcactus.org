@@ -387,7 +387,7 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 							<div class="form-row" style={{ "margin-bottom": "12px" }}>
 								<Show when={s().method === "api" && run()?.status === "open"}>
 									<button type="button" class="btn btn-sm btn-primary" disabled={busyStage() === s().key} onClick={() => runStage(s().key)}>
-										{busyStage() === s().key ? "Running…" : `Run stage (${s().key === "tech_team" ? "Apollo" : "Prospeo"})`}
+										{busyStage() === s().key ? "Running…" : "Run stage (Prospeo)"}
 									</button>{" "}
 									<label class="muted" style={{ "font-size": "12px" }}>
 										<input id={`${s().key}-limit`} type="number" class="num" min="1" max="500" value="50" /> per click
@@ -426,7 +426,7 @@ export default function AdminFunnelRun(props: { params: { id: string } }) {
 							<input name="enrichPerDay" type="number" class="num" min="1" value={schedule()?.enrichPerDay ?? 50} /> enrich/day (Prospeo)
 						</label>
 						<label class="muted" style={{ "font-size": "13px" }}>
-							<input name="techPerDay" type="number" class="num" min="1" value={schedule()?.techPerDay ?? 15} /> tech-team/day (Apollo)
+							<input name="techPerDay" type="number" class="num" min="1" value={schedule()?.techPerDay ?? 15} /> tech-team/day (roster)
 						</label>
 						<button type="submit" class="btn btn-sm btn-primary">Save schedule</button>
 					</div>
