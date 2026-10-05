@@ -1,0 +1,56 @@
+name: desktop build
+
+# Build the Tauri wrapper on PRs / pushes that touch desktop/ — catches Rust
+# and config breakage before merge. Bundles land as workflow-run artifacts,
+# no release is created. Dashboard-only changes skip this (the wrapper points
+# at the hosted dashboard, so they don't affect the binary).
+
+on:
+  pull_request:
+    paths: ['desktop/**', '.github/workflows/desktop-build.yml']
+  push:
+    branches-ignore: [main]
+    tags-ignore: ['v*']
+    paths: ['desktop/**', '.github/workflows/desktop-build.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    permissions:
+      contents: read
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './desktop/src-tauri -> target'
+
+      - working-directory: desktop
+        run: bun install --frozen-lockfile
+
+      - uses: tauri-apps/tauri-action@v0.6.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: desktop
+          tagName: '' # empty → build only, no release
+          args: --target aarch64-apple-darwin
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64-bundles
+          path: desktop/src-tauri/target/*/release/bundle/dmg/*.dmg
+          if-no-files-found: error
