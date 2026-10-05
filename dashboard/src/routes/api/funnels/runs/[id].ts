@@ -6,7 +6,7 @@ import type { APIEvent } from "@solidjs/start/server";
 import { asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "~/db";
 import { funnelItems, funnelRuns, funnelStageResults } from "~/db/schema";
-import { funnelAuthed, getRunStages, getSummary } from "~/lib/funnels";
+import { ensureFreightFunnel, funnelAuthed, getRunStages, getSummary } from "~/lib/funnels";
 
 function json(body: unknown, status = 200) {
 	return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -14,6 +14,7 @@ function json(body: unknown, status = 200) {
 
 export const GET = async (event: APIEvent) => {
 	if (!(await funnelAuthed(event.request))) return json({ error: "Unauthorized" }, 401);
+	await ensureFreightFunnel(); // sync stage-definition changes (e.g. new stages)
 	const info = await getRunStages(event.params.id);
 	if (!info) return json({ error: "Run not found" }, 404);
 	const items = await db
