@@ -1,0 +1,80 @@
+name: desktop release
+
+# desktop/ changes merged to main → auto-bump the patch version (vX.Y.Z),
+# stamp it into tauri.conf.json so Finder/About shows the build's version,
+# and publish a GitHub Release with the macOS arm64 dmg.
+# Push a v* tag by hand for a "big" release (minor/major) — that build ships
+# the tag's version as-is and does not auto-bump.
+
+on:
+  push:
+    branches: [main]
+    paths: ['desktop/**']
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tag history drives the patch bump
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './desktop/src-tauri -> target'
+
+      - working-directory: desktop
+        run: bun install --frozen-lockfile
+
+      - name: pick release tag
+        id: tag
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            tag="${GITHUB_REF#refs/tags/}"
+          else
+            prev=$(git tag -l 'v*' --sort=-v:refname | head -1)
+            if [[ -z "$prev" ]]; then tag="v0.1.0"; else tag="${prev%.*}.$((${prev##*.} + 1))"; fi
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - name: stamp bundle version
+        run: |
+          jq --arg v "${{ steps.tag.outputs.version }}" '.version = $v' \
+            desktop/src-tauri/tauri.conf.json > tauri.conf.tmp
+          mv tauri.conf.tmp desktop/src-tauri/tauri.conf.json
+
+      - uses: tauri-apps/tauri-action@v0.6.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: desktop
+          tagName: ${{ steps.tag.outputs.tag }}
+          releaseName: aspectrr Admin ${{ steps.tag.outputs.tag }}
+          releaseBody: |
+            Built from commit ${{ github.sha }}.
+
+            ## Install
+
+            - Download the `.aarch64.dmg`, drag to Applications.
+            - First launch: right-click → Open (the app is unsigned).
+            - Check the version in Finder → Get Info.
+          releaseDraft: false
+          prerelease: false
+          args: --target aarch64-apple-darwin
