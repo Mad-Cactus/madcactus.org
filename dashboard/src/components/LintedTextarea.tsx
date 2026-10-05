@@ -70,7 +70,14 @@ export const LintedTextarea = (props: {
 				{"\n "}
 			</div>
 			<textarea
-				ref={ta}
+				ref={(el) => {
+					ta = el;
+					// SSR writes value as an attribute, which browsers ignore on
+					// textarea — set the property after hydration so saved text shows
+					// (the campaigns page SSRs inside collapsed <details>); no-op for
+					// the email overlay usage
+					el.value = props.value;
+				}}
 				placeholder={props.placeholder}
 				aria-label={props.ariaLabel}
 				rows={props.rows ?? 12}

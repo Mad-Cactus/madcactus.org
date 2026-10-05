@@ -3,24 +3,60 @@ import { createAsync, useAction } from "@solidjs/router";
 import { For, Show, Suspense, createSignal } from "solid-js";
 import CreateDialog from "~/components/CreateDialog";
 import Layout from "~/components/Layout";
+import { LintedTextarea } from "~/components/LintedTextarea";
+import { VoiceLintPanel } from "~/components/VoiceLintPanel";
 import { getUserQuery } from "~/lib/queries";
 import {
 	getCampaignsQuery,
 	createCampaignAction,
+	updateCampaignAction,
 	deleteCampaignAction,
 	addCampaignCompanyAction,
 	updateCampaignCompanyAction,
 	deleteCampaignCompanyAction,
 	setCampaignTemplatesAction,
-	type CampaignTemplatesResult,
 } from "~/lib/admin-queries";
 import { stageLabel, type CampaignCompany, type CampaignTouch, type OutreachStage } from "~/db/schema";
 import type { CompanySendStats } from "~/lib/campaign-stats";
 import { fillTemplate, templateSlots } from "~/lib/campaign-fill";
+import type { LintResult } from "~/lib/voice-lint";
 import { fmtDate } from "~/lib/video-summary";
 
 /** getCampaignsQuery row: company + its Gmail-grounded send/reply state. */
 type CampaignCompanyWithStats = CampaignCompany & { sendStats: CompanySendStats | null };
+
+/** one campaigns query row */
+type CampaignData = {
+	id: string;
+	name: string;
+	description: string | null;
+	templates: CampaignTouch[];
+	companies: CampaignCompanyWithStats[];
+	prospects: { id: string; company: string; stage: string }[];
+};
+
+/** company-row edits — datetime-local/number values stay raw strings so a
+ *  half-typed value never round-trips through Number() into the DB */
+type RowEdit = { contactEmail?: string; sequenceStep?: string; nextSendAt?: string; nextEmailNote?: string };
+
+/** All editing state lives in the page component, never inside a card: every
+ *  autosave revalidates getCampaignsQuery, which replaces the row objects,
+ *  and <For> is reference-keyed — so cards remount on their own save and
+ *  anything held inside one would be wiped. Inputs read local ?? props. */
+type CampaignStore = {
+	openMap: () => Record<string, boolean>;
+	meta: () => Record<string, { name?: string; description?: string }>;
+	rows: () => Record<string, RowEdit>;
+	saveState: () => Record<string, string>;
+	touchLint: () => Record<string, LintResult | null>;
+	lintStale: () => Record<string, boolean>;
+	touches: (c: { id: string; templates: CampaignTouch[] }) => CampaignTouch[];
+	toggleOpen: (id: string, open: boolean) => void;
+	editMetaField: (id: string, patch: { name?: string; description?: string }) => void;
+	saveTouches: (id: string, ts: CampaignTouch[]) => void;
+	lintTouch: (id: string, i: number, body: string) => void;
+	editCompanyField: (id: string, patch: RowEdit) => void;
+};
 
 /** datetime-local submits wall clock; pin it to an instant (ISO+Z). */
 function withInstantIso(fd: FormData): FormData {
@@ -37,9 +73,6 @@ function toInputValue(d: Date | null): string {
 	return `${x.getFullYear()}-${p(x.getMonth() + 1)}-${p(x.getDate())}T${p(x.getHours())}:${p(x.getMinutes())}`;
 }
 
-/** Preview values for a touch: the selected company's stored facts when
- *  available, sample copy otherwise. Unfilled slots stay visible as
- *  {{slot}} — the preview shows what is still missing, never fakes it. */
 /** Preview values for a touch: the selected company's stored facts when
  *  available, sample copy otherwise. Unfilled slots stay visible as
  *  {{slot}} — the preview shows what is still missing, never fakes it. */
@@ -68,42 +101,34 @@ function previewValues(company: { companyName: string; contactEmail: string | nu
 
 function TemplatesPanel(props: {
 	campaign: { id: string; templates: CampaignTouch[]; companies: CampaignCompanyWithStats[] };
+	store: CampaignStore;
 }) {
-	const save = useAction(setCampaignTemplatesAction);
-	const [touches, setTouches] = createSignal<CampaignTouch[]>(
-		props.campaign.templates.length > 0 ? [...props.campaign.templates] : [{ step: 1, subject: "", body: "" }],
-	);
+	const st = props.store;
+	const touches = () => st.touches(props.campaign);
 	const [previewFor, setPreviewFor] = createSignal<number | null>(null);
 	const [previewCompany, setPreviewCompany] = createSignal<string>("");
-	const [error, setError] = createSignal("");
-	const [violations, setViolations] = createSignal<{ step: number; message: string }[]>([]);
-	const [message, setMessage] = createSignal("");
 
 	const selectedCompany = () =>
 		props.campaign.companies.find((c) => c.id === previewCompany()) ?? null;
 
+	const setTouches = (ts: CampaignTouch[]) => st.saveTouches(props.campaign.id, ts);
 	const setTouch = (i: number, patch: Partial<CampaignTouch>) =>
-		setTouches((ts) => ts.map((t, j) => (j === i ? { ...t, ...patch } : t)));
-
-	async function handleSave(e: Event) {
-		e.preventDefault();
-		setError("");
-		setViolations([]);
-		setMessage("");
-		const fd = new FormData(e.target as HTMLFormElement);
-		const r = (await save(fd)) as CampaignTemplatesResult;
-		if ("error" in r) {
-			setError(r.error);
-			setViolations(r.violations ?? []);
-		} else setMessage(r.success);
-	}
+		setTouches(touches().map((t, j) => (j === i ? { ...t, ...patch } : t)));
+	const removeTouch = (i: number) => {
+		const next = touches().filter((_, j) => j !== i);
+		setTouches(next);
+		// indices shifted — re-lint so underlines stay under the right bodies
+		next.forEach((t, j) => st.lintTouch(props.campaign.id, j, t.body));
+	};
+	const lintKey = (i: number) => `${props.campaign.id}:${i}`;
 
 	return (
-		<form onSubmit={handleSave} style={{ "margin-top": "16px" }}>
-			<input type="hidden" name="campaign_id" value={props.campaign.id} />
-			<input type="hidden" name="touch_count" value={touches().length} />
+		<div style={{ "margin-top": "16px" }}>
 			<div style={{ display: "flex", "align-items": "baseline", gap: "10px" }}>
 				<h3 style={{ margin: "0", "font-size": "14px", "font-weight": "600" }}>Templates — the frozen copy, on this campaign</h3>
+				<Show when={st.saveState()[`t:${props.campaign.id}`]}>
+					<span class="muted" style={{ "font-size": "12px" }}>{st.saveState()[`t:${props.campaign.id}`]}</span>
+				</Show>
 				<Show when={props.campaign.companies.length}>
 					<label class="muted" style={{ "font-size": "12px", "margin-left": "auto" }}>
 						preview fill:{" "}
@@ -119,12 +144,10 @@ function TemplatesPanel(props: {
 			<For each={touches()}>
 				{(t, i) => (
 					<div style={{ "border": "1px solid rgba(127,127,127,0.2)", "border-radius": "8px", "padding": "12px", "margin-top": "10px" }}>
-						<input type="hidden" name={`touch_${i()}_step`} value={t.step} />
 						<div style={{ display: "flex", gap: "8px", "align-items": "center" }}>
 							<span class="muted" style={{ "font-size": "12px", "min-width": "64px" }}>touch {t.step}</span>
 							<input
 								type="text"
-								name={`touch_${i()}_subject`}
 								placeholder="Subject"
 								value={t.subject}
 								onInput={(e) => setTouch(i(), { subject: e.currentTarget.value })}
@@ -138,26 +161,23 @@ function TemplatesPanel(props: {
 								{previewFor() === i() ? "Hide preview" : "Preview"}
 							</button>
 							<Show when={touches().length > 1}>
-								<button
-									type="button"
-									class="btn btn-sm"
-									onClick={() => setTouches((ts) => ts.filter((_, j) => j !== i()))}
-								>
+								<button type="button" class="btn btn-sm" onClick={() => removeTouch(i())}>
 									✕
 								</button>
 							</Show>
 						</div>
-						{/* SSR writes value as an attribute, which browsers ignore on textarea —
-						   the ref sets the property after hydration so saved bodies actually show */}
-						<textarea
-							name={`touch_${i()}_body`}
-							placeholder={"Email body — {{slots}} for the per-company fill"}
+						<LintedTextarea
+							ariaLabel={`Touch ${t.step} body`}
+							placeholder="Email body — {{slots}} for the per-company fill"
 							value={t.body}
-							ref={(el) => (el.value = t.body)}
-							onInput={(e) => setTouch(i(), { body: e.currentTarget.value })}
-							rows={t.body.split("\n").length + 2}
-							style={{ width: "100%", "margin-top": "8px", "font-family": "var(--font-mono, monospace)", "font-size": "12px" }}
+							violations={st.touchLint()[lintKey(i())]?.violations ?? []}
+							onInput={(v) => {
+								setTouch(i(), { body: v });
+								st.lintTouch(props.campaign.id, i(), v);
+							}}
+							rows={Math.max(6, t.body.split("\n").length + 2)}
 						/>
+						<VoiceLintPanel result={st.touchLint()[lintKey(i())] ?? null} stale={st.lintStale()[lintKey(i())]} />
 						<Show when={t.body.trim()}>
 							<span class="muted" style={{ "font-size": "11px" }}>slots: {templateSlots(t.body).join(", ") || "none"}</span>
 						</Show>
@@ -174,11 +194,6 @@ function TemplatesPanel(props: {
 								</div>
 							</div>
 						</Show>
-						<For each={violations().filter((v) => v.step === t.step)}>
-							{(v) => (
-								<div class="login-error" style={{ "font-size": "12px", "margin-top": "6px" }}>voice lint: {v.message}</div>
-							)}
-						</For>
 					</div>
 				)}
 			</For>
@@ -186,72 +201,70 @@ function TemplatesPanel(props: {
 				<button
 					type="button"
 					class="btn btn-sm"
-					onClick={() => setTouches((ts) => [...ts, { step: ts.length + 1, subject: "", body: "" }])}
+					onClick={() => setTouches([...touches(), { step: touches().length + 1, subject: "", body: "" }])}
 				>
 					Add touch
 				</button>
-				<button type="submit" class="btn btn-primary btn-sm">Save templates</button>
-				<span class="muted" style={{ "font-size": "12px" }}>Saved copy is voice-linted — violations reject the whole save.</span>
+				<span class="muted" style={{ "font-size": "12px" }}>Every edit autosaves. Voice lint is advisory — the panel flags, you decide.</span>
 			</div>
-			<Show when={error()}>
-				<p class="login-error" style={{ "font-size": "12px", margin: "8px 0 0" }}>{error()}</p>
-			</Show>
-			<Show when={message()}>
-				<p class="muted" style={{ "font-size": "12px", margin: "8px 0 0" }}>{message()}</p>
-			</Show>
-		</form>
+		</div>
 	);
 }
 
-function CampaignRow(props: { company: CampaignCompanyWithStats }) {
-	const update = useAction(updateCampaignCompanyAction);
+function CampaignRow(props: { company: CampaignCompanyWithStats; store: CampaignStore }) {
 	const remove = useAction(deleteCampaignCompanyAction);
-	const [error, setError] = createSignal("");
+	const st = props.store;
+	const row = () => st.rows()[props.company.id];
+	const saveText = () => st.saveState()[`r:${props.company.id}`];
 	return (
 		<div style={{ display: "grid", gap: "4px", padding: "10px 0", "border-bottom": "1px solid rgba(127, 127, 127, 0.15)" }}>
-			<form
-				onSubmit={async (e) => {
-					e.preventDefault();
-					setError("");
-					const r = (await update(withInstantIso(new FormData(e.target as HTMLFormElement)))) as { error?: string };
-					if (r.error) setError(r.error);
-				}}
-				style={{ display: "flex", gap: "8px", "flex-wrap": "wrap", "align-items": "center" }}
-			>
-				<input type="hidden" name="id" value={props.company.id} />
+			<div style={{ display: "flex", gap: "8px", "flex-wrap": "wrap", "align-items": "center" }}>
 				<span style={{ "font-weight": "600", "min-width": "160px" }}>{props.company.companyName}</span>
 				<input
 					type="email"
-					name="contact_email"
 					placeholder="contact email"
-					value={props.company.contactEmail ?? ""}
+					value={row()?.contactEmail ?? props.company.contactEmail ?? ""}
+					onInput={(e) => st.editCompanyField(props.company.id, { contactEmail: e.currentTarget.value })}
 					style={{ width: "200px" }}
 					spellcheck={false}
 				/>
 				<label class="muted" style={{ "font-size": "12px" }}>
-					step <input type="number" name="sequence_step" min="1" value={props.company.sequenceStep} style={{ width: "52px" }} />
+					step{" "}
+					<input
+						type="number"
+						min="1"
+						value={row()?.sequenceStep ?? props.company.sequenceStep}
+						onInput={(e) => st.editCompanyField(props.company.id, { sequenceStep: e.currentTarget.value })}
+						style={{ width: "52px" }}
+					/>
 				</label>
-				<input type="datetime-local" name="next_send_at" value={toInputValue(props.company.nextSendAt)} />
+				<input
+					type="datetime-local"
+					value={row()?.nextSendAt ?? toInputValue(props.company.nextSendAt)}
+					onChange={(e) => st.editCompanyField(props.company.id, { nextSendAt: e.currentTarget.value })}
+				/>
 				<input
 					type="text"
-					name="next_email_note"
 					placeholder="what the next email should say"
-					value={props.company.nextEmailNote ?? ""}
+					value={row()?.nextEmailNote ?? props.company.nextEmailNote ?? ""}
+					onInput={(e) => st.editCompanyField(props.company.id, { nextEmailNote: e.currentTarget.value })}
 					style={{ flex: "1", "min-width": "180px" }}
 				/>
-				<button type="submit" class="btn btn-sm">Save</button>
 				<button
 					type="button"
 					class="btn btn-sm"
-					onClick={async () => {
+					onClick={() => {
 						const fd = new FormData();
 						fd.set("id", props.company.id);
-						await remove(fd);
+						void remove(fd);
 					}}
 				>
 					✕
 				</button>
-			</form>
+				<Show when={saveText()}>
+					<span class="muted" style={{ "font-size": "12px" }}>{saveText()}</span>
+				</Show>
+			</div>
 			<div style={{ display: "flex", gap: "10px", "flex-wrap": "wrap", "align-items": "baseline" }}>
 				<Show when={props.company.nextSendAt}>
 					<span class="muted" style={{ "font-size": "12px" }}>
@@ -284,31 +297,40 @@ function CampaignRow(props: { company: CampaignCompanyWithStats }) {
 					</Show>
 				</Show>
 			</div>
-			<Show when={error()}>
-				<span class="login-error" style={{ "font-size": "12px" }}>{error()}</span>
-			</Show>
 		</div>
 	);
 }
 
-function Campaign(props: {
-	campaign: {
-		id: string;
-		name: string;
-		description: string | null;
-		templates: CampaignTouch[];
-		companies: CampaignCompanyWithStats[];
-		prospects: { id: string; company: string; stage: string }[];
-	};
-}) {
+function Campaign(props: { campaign: CampaignData; store: CampaignStore }) {
 	const addCampaignCompany = useAction(addCampaignCompanyAction);
 	const removeCampaign = useAction(deleteCampaignAction);
+	const st = props.store;
 	const c = () => props.campaign;
+	const name = () => st.meta()[c().id]?.name ?? c().name;
+	const description = () => st.meta()[c().id]?.description ?? c().description ?? "";
+	const saveText = () => st.saveState()[`c:${c().id}`];
 	return (
-		<details class="card" style={{ padding: "20px", "margin-bottom": "16px" }} open>
+		<details
+			class="card"
+			style={{ padding: "20px", "margin-bottom": "16px" }}
+			open={st.openMap()[c().id]}
+			onToggle={(e) => {
+				const open = e.currentTarget.open;
+				st.toggleOpen(c().id, open);
+				// lint saved bodies once on first open — violations already in the
+				// DB show without waiting for a keystroke
+				if (open)
+					st.touches(c()).forEach((t, i) => {
+						if (t.body.trim() && st.touchLint()[`${c().id}:${i}`] === undefined) st.lintTouch(c().id, i, t.body);
+					});
+			}}
+		>
 			<summary style={{ cursor: "pointer", display: "flex", "align-items": "baseline", gap: "10px" }}>
-				<h2 style={{ margin: "0", "font-family": "var(--font-serif)", "font-weight": "400", "font-size": "20px", display: "inline" }}>{c().name}</h2>
-				<span class="muted" style={{ "font-size": "12px" }}>
+				<h2 style={{ margin: "0", "font-family": "var(--font-serif)", "font-weight": "400", "font-size": "20px", display: "inline", "white-space": "nowrap" }}>{name()}</h2>
+				<span class="muted" title={description()} style={{ "font-size": "12px", flex: "1", "min-width": "0", overflow: "hidden", "text-overflow": "ellipsis", "white-space": "nowrap" }}>
+					{description()}
+				</span>
+				<span class="muted" style={{ "font-size": "12px", "white-space": "nowrap" }}>
 					{c().companies.length} target{c().companies.length === 1 ? "" : "s"} · {c().templates.length} touch{c().templates.length === 1 ? "" : "es"} · {c().prospects.length} on board
 				</span>
 				<button
@@ -326,16 +348,36 @@ function Campaign(props: {
 					Delete campaign
 				</button>
 			</summary>
-			<Show when={c().description}>
-				<p class="muted" style={{ "font-size": "13px", "margin": "6px 0 0" }}>{c().description}</p>
-			</Show>
 
-			<TemplatesPanel campaign={{ id: c().id, templates: c().templates, companies: c().companies }} />
+			<div style={{ display: "flex", gap: "10px", "align-items": "center", "margin-top": "12px" }}>
+				<input
+					type="text"
+					aria-label="Campaign name"
+					placeholder="Campaign name"
+					value={name()}
+					onInput={(e) => st.editMetaField(c().id, { name: e.currentTarget.value })}
+					style={{ flex: "1", "font-family": "var(--font-serif)", "font-size": "18px", padding: "4px 8px", border: "1px solid rgba(127,127,127,0.25)", "border-radius": "6px" }}
+				/>
+				<Show when={saveText()}>
+					<span class="muted" style={{ "font-size": "12px", "white-space": "nowrap" }}>{saveText()}</span>
+				</Show>
+			</div>
+			<textarea
+				aria-label="Campaign description"
+				placeholder="What this campaign is for"
+				value={description()}
+				ref={(el) => (el.value = description())}
+				onInput={(e) => st.editMetaField(c().id, { description: e.currentTarget.value })}
+				rows={2}
+				style={{ width: "100%", "margin-top": "8px", "font-size": "13px", "box-sizing": "border-box" }}
+			/>
+
+			<TemplatesPanel campaign={{ id: c().id, templates: c().templates, companies: c().companies }} store={st} />
 
 			<div style={{ "margin-top": "16px" }}>
 				<h3 style={{ margin: "0 0 4px", "font-size": "14px", "font-weight": "600" }}>Companies</h3>
 				<For each={c().companies}>
-					{(company) => <CampaignRow company={company} />}
+					{(company) => <CampaignRow company={company} store={st} />}
 				</For>
 				<Show when={!c().companies.length}>
 					<p class="muted" style={{ "font-size": "13px" }}>No targets yet — add the first company below.</p>
@@ -398,11 +440,135 @@ export default function AdminCampaigns() {
 	const user = createAsync(() => getUserQuery(), { deferStream: true });
 	const campaigns = createAsync(() => getCampaignsQuery(), { deferStream: true });
 	const createCampaign = useAction(createCampaignAction);
+	const updateCampaign = useAction(updateCampaignAction);
+	const saveTemplates = useAction(setCampaignTemplatesAction);
+	const updateCompany = useAction(updateCampaignCompanyAction);
+
+	// page-level autosave state — see CampaignStore comment for why this
+	// cannot live inside the cards
+	const [openMap, setOpenMap] = createSignal<Record<string, boolean>>({});
+	const [metaEdits, setMetaEdits] = createSignal<Record<string, { name?: string; description?: string }>>({});
+	const [touchEdits, setTouchEdits] = createSignal<Record<string, CampaignTouch[]>>({});
+	const [rowEdits, setRowEdits] = createSignal<Record<string, RowEdit>>({});
+	const [saveState, setSaveState] = createSignal<Record<string, string>>({});
+	const [touchLint, setTouchLint] = createSignal<Record<string, LintResult | null>>({});
+	const [lintStale, setLintStale] = createSignal<Record<string, boolean>>({});
+	const saveTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+	const lintTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+
+	const setSave = (key: string, v: string) => setSaveState({ ...saveState(), [key]: v });
+	const savedAt = () => `saved ${new Date().toLocaleTimeString()}`;
+	const complete = (t: CampaignTouch) => t.subject.trim() !== "" && t.body.trim() !== "";
+
+	const touchesFor = (c: { id: string; templates: CampaignTouch[] }): CampaignTouch[] =>
+		touchEdits()[c.id] ?? (c.templates.length > 0 ? [...c.templates] : [{ step: 1, subject: "", body: "" }]);
+
+	const editMetaField = (id: string, patch: { name?: string; description?: string }) => {
+		setMetaEdits({ ...metaEdits(), [id]: { ...metaEdits()[id], ...patch } });
+		const key = `c:${id}`;
+		clearTimeout(saveTimers[key]);
+		setSave(key, "saving…");
+		saveTimers[key] = setTimeout(async () => {
+			const m = metaEdits()[id];
+			if (!m) return;
+			const src = campaigns()?.find((c) => c.id === id);
+			const fd = new FormData();
+			fd.set("id", id);
+			fd.set("name", m.name ?? src?.name ?? "");
+			fd.set("description", m.description ?? src?.description ?? "");
+			const r = (await updateCampaign(fd)) as { error?: string; success?: string };
+			setSave(key, r.error ?? savedAt());
+		}, 900);
+	};
+
+	const saveTouches = (id: string, ts: CampaignTouch[]) => {
+		setTouchEdits({ ...touchEdits(), [id]: ts });
+		const key = `t:${id}`;
+		clearTimeout(saveTimers[key]);
+		// hold the flush while any touch is incomplete — a mid-retype blank
+		// subject/body must not hit the server's structural validation
+		if (ts.some((t) => !complete(t))) {
+			setSave(key, "incomplete touch — not saved");
+			return;
+		}
+		setSave(key, "saving…");
+		saveTimers[key] = setTimeout(async () => {
+			const cur = touchEdits()[id];
+			if (!cur || cur.some((t) => !complete(t))) return;
+			const fd = new FormData();
+			fd.set("campaign_id", id);
+			fd.set("touch_count", String(cur.length));
+			cur.forEach((t, i) => {
+				fd.set(`touch_${i}_step`, String(t.step));
+				fd.set(`touch_${i}_subject`, t.subject);
+				fd.set(`touch_${i}_body`, t.body);
+			});
+			const r = (await saveTemplates(fd)) as { error?: string; success?: string };
+			setSave(key, r.error ?? savedAt());
+		}, 900);
+	};
+
+	const lintTouch = (id: string, i: number, body: string) => {
+		const key = `${id}:${i}`;
+		setLintStale({ ...lintStale(), [key]: true });
+		clearTimeout(lintTimers[key]);
+		lintTimers[key] = setTimeout(async () => {
+			const res = await fetch("/api/lint", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ text: body, surface: "email" }),
+			});
+			if (res.ok) {
+				setTouchLint({ ...touchLint(), [key]: await res.json() });
+				setLintStale({ ...lintStale(), [key]: false });
+			}
+		}, 700);
+	};
+
+	const editCompanyField = (id: string, patch: RowEdit) => {
+		setRowEdits({ ...rowEdits(), [id]: { ...rowEdits()[id], ...patch } });
+		const key = `r:${id}`;
+		clearTimeout(saveTimers[key]);
+		setSave(key, "saving…");
+		saveTimers[key] = setTimeout(async () => {
+			const cur = rowEdits()[id];
+			if (!cur) return;
+			// a half-typed step must not silently coerce to 1 server-side
+			if (cur.sequenceStep !== undefined && !(Number.isInteger(Number(cur.sequenceStep)) && Number(cur.sequenceStep) >= 1)) {
+				setSave(key, "incomplete step — not saved");
+				return;
+			}
+			const src = campaigns()?.flatMap((c) => c.companies).find((x) => x.id === id);
+			const fd = new FormData();
+			fd.set("id", id);
+			fd.set("contact_email", cur.contactEmail ?? src?.contactEmail ?? "");
+			fd.set("sequence_step", cur.sequenceStep ?? String(src?.sequenceStep ?? 1));
+			fd.set("next_send_at", cur.nextSendAt ?? toInputValue(src?.nextSendAt ?? null));
+			fd.set("next_email_note", cur.nextEmailNote ?? src?.nextEmailNote ?? "");
+			const r = (await updateCompany(withInstantIso(fd))) as { error?: string; success?: string };
+			setSave(key, r.error ?? savedAt());
+		}, 900);
+	};
+
+	const store: CampaignStore = {
+		openMap,
+		meta: metaEdits,
+		rows: rowEdits,
+		saveState,
+		touchLint,
+		lintStale,
+		touches: touchesFor,
+		toggleOpen: (id, open) => setOpenMap({ ...openMap(), [id]: open }),
+		editMetaField,
+		saveTouches,
+		lintTouch,
+		editCompanyField,
+	};
 
 	return (
 		<Layout user={user()}>
 			<Title>Campaigns — Mad Cactus</Title>
-			<div style={{ display: "flex", "justify-content": "space-between", "align-items": "center", "gap": "16px", "margin-bottom": "32px" }}>
+			<div style={{ display: "flex", "justify-content": "space-between", "align-items": "center", gap: "16px", "margin-bottom": "32px" }}>
 				<div>
 					<h1 class="page-title">Outreach Campaigns</h1>
 					<p class="page-subtitle" style={{ "margin-bottom": "0" }}>
@@ -428,7 +594,7 @@ export default function AdminCampaigns() {
 
 			<Suspense fallback={<p class="muted">Loading…</p>}>
 				<Show when={campaigns()?.length} fallback={<p class="muted">No campaigns yet — create one above.</p>}>
-					<For each={campaigns()}>{(c) => <Campaign campaign={c} />}</For>
+					<For each={campaigns()}>{(c) => <Campaign campaign={c} store={store} />}</For>
 				</Show>
 			</Suspense>
 		</Layout>
