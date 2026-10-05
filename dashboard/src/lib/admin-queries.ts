@@ -36,7 +36,6 @@ import { normalizeBrainTools } from "~/lib/brain-activity";
 import { contactSuggestionsFor, latestThreadFor } from "~/lib/outreach-email";
 import { triggerSyncIfStale } from "~/lib/email-queries";
 import { campaignStats } from "~/lib/campaign-stats";
-import { lintVoiceText } from "~/lib/voice-lint-db";
 import { setProspectVideo } from "~/lib/videos";
 import type { Video } from "~/db/schema";
 
@@ -1003,13 +1002,14 @@ export const getCampaignsQuery = query(async () => {
 	}));
 }, "admin-campaigns");
 
-export type CampaignTemplatesResult =
-	| { success: string }
-	| { error: string; violations?: { step: number; message: string }[] };
+export type CampaignTemplatesResult = { success: string } | { error: string };
 
-/** Same write path as the MCP set_campaign_templates tool: every body is
- *  voice-linted (surface=email) before persisting; any violation rejects the
- *  whole save — no partial template state, nothing off-voice lands. */
+/** Admin campaigns editor write path: structural checks only (positive
+ *  step, subject+body on non-blank touches, blank block = removed touch).
+ *  Voice lint here is advisory client-side — saves always persist and the
+ *  live LintedTextarea panel shows violations while editing. The MCP
+ *  set_campaign_templates tool keeps its hard lint gate; agents write
+ *  through a different path. */
 export const setCampaignTemplatesAction = action(async (formData: FormData): Promise<CampaignTemplatesResult> => {
 	"use server";
 	await requireAdmin();
@@ -1026,14 +1026,6 @@ export const setCampaignTemplatesAction = action(async (formData: FormData): Pro
 		if (!subject || !body.trim()) return { error: `Touch ${step}: subject and body are required.` };
 		touches.push({ step, subject, body });
 	}
-	const violations: { step: number; message: string }[] = [];
-	for (const t of touches) {
-		const lint = await lintVoiceText(t.body, { surface: "email" });
-		for (const v of lint.violations) violations.push({ step: t.step, message: v.rule });
-	}
-	if (violations.length > 0) {
-		return { error: "Rejected — voice lint flagged this copy. Fix the flagged lines and save again.", violations };
-	}
 	await db.update(campaigns).set({ templates: touches }).where(eq(campaigns.id, campaignId));
 	await revalidate(getCampaignsQuery.key);
 	return { success: `Templates saved — ${touches.length} touch${touches.length === 1 ? "" : "es"}.` };
@@ -1049,6 +1041,19 @@ export const createCampaignAction = action(async (formData: FormData) => {
 	await revalidate(getCampaignsQuery.key);
 	return { success: `Campaign "${name}" created.` };
 }, "createCampaign");
+
+export const updateCampaignAction = action(async (formData: FormData) => {
+	"use server";
+	await requireAdmin();
+	const id = String(formData.get("id") || "");
+	if (!id) return { error: "Campaign id is required." };
+	const name = String(formData.get("name") || "").trim();
+	if (!name) return { error: "Campaign name is required." };
+	const description = String(formData.get("description") || "").trim() || null;
+	await db.update(campaigns).set({ name, description }).where(eq(campaigns.id, id));
+	await revalidate(getCampaignsQuery.key);
+	return { success: "Saved." };
+}, "updateCampaign");
 
 export const deleteCampaignAction = action(async (formData: FormData) => {
 	"use server";
