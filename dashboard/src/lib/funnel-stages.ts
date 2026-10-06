@@ -5,8 +5,8 @@ import { eq, sql } from "drizzle-orm";
 import { db } from "~/db";
 import { funnelItems, funnelStageResults } from "~/db/schema";
 import { applyVerdictConsequences, getQueue, getRunStages } from "~/lib/funnels";
-import { apolloConfigured, apolloHeadcount, apolloTechTitleHits } from "~/lib/enrich-apollo";
 import {
+	cleanName,
 	prospeoCompanyRoster,
 	prospeoConfigured,
 	prospeoEnrichBatch,
@@ -77,8 +77,7 @@ export async function runStageBatch(runId: string, stageKey: string, limit = 50)
 	const stage = info?.stages.find((s) => s.key === stageKey);
 	if (!info || !stage) return { ok: false, error: "Run not found or unknown stage" };
 	if (stage.method !== "api") return { ok: false, error: `Stage ${stageKey} is not an api stage` };
-	if (stageKey === "tech_team" && !apolloConfigured()) return { ok: false, error: "Tech-team stage needs APOLLO_API_KEY" };
-	if (stageKey !== "tech_team" && !prospeoConfigured()) return { ok: false, error: `${stageKey} stage needs PROSPEO_API_KEY` };
+	if (!prospeoConfigured()) return { ok: false, error: `${stageKey} stage needs PROSPEO_API_KEY` };
 
 	const queue = await getQueue(runId, stageKey);
 	if (!queue) return { ok: false, error: "Run not found" };
@@ -109,18 +108,12 @@ export async function runStageBatch(runId: string, stageKey: string, limit = 50)
 			let verdict: "pass" | "fail" = "fail";
 			let note = "";
 			if (stageKey === "headcount") {
-				if (prospeoConfigured()) {
-					const co = enriched.get(item.id) ?? null;
-					await cacheProspeo(item.id, co);
-					const n = co?.employeeCount ?? rangeMidpoint(co?.employeeRange ?? null);
-					// null = not in Prospeo → almost certainly <15 employees → honest fail
-					verdict = n !== null && n >= 15 && n <= 250 ? "pass" : "fail";
-					note = n !== null ? `${co?.employeeCount ?? `${co?.employeeRange} range`} → ~${n} employees (Prospeo)` : "not in Prospeo — likely under 15 employees";
-				} else {
-					const n = await apolloHeadcount(item.companyName);
-					verdict = n !== null && n >= 15 && n <= 250 ? "pass" : "fail";
-					note = n !== null ? `${n} employees (Apollo)` : "not in Apollo — likely under 15 employees";
-				}
+				const co = enriched.get(item.id) ?? null;
+				await cacheProspeo(item.id, co);
+				const n = co?.employeeCount ?? rangeMidpoint(co?.employeeRange ?? null);
+				// null = not in Prospeo → almost certainly <15 employees → honest fail
+				verdict = n !== null && n >= 15 && n <= 250 ? "pass" : "fail";
+				note = n !== null ? `${co?.employeeCount ?? `${co?.employeeRange} range`} → ~${n} employees (Prospeo)` : "not in Prospeo — likely under 15 employees";
 			} else if (stageKey === "revenue_band") {
 				// prefer the payload cached by the headcount run (free); enrich only if absent
 				const cached = ((item.rawData as Record<string, unknown> | null)?.prospeo ?? null) as
@@ -134,9 +127,23 @@ export async function runStageBatch(runId: string, stageKey: string, limit = 50)
 				verdict = co.revenueMax >= 10 * M && co.revenueMin <= 70 * M ? "pass" : "fail";
 				note = `$${Math.round(co.revenueMin / M)}–$${Math.round(co.revenueMax / M)}M (Prospeo)`;
 			} else if (stageKey === "tech_team") {
-				const hits = await apolloTechTitleHits(item.companyName);
-				verdict = hits !== null && hits > 2 ? "fail" : "pass";
-				note = hits !== null ? `${hits} tech-title hits (Apollo)` : "no tech titles found (Apollo)";
+				// roster-based gate: tech titles in Prospeo's 25-person sample —
+				// one vendor, zero extra API calls when ai_signal already cached
+				// the roster. Sample proxy for "no real tech team" (≤2 hits passes).
+				const raw0 = (item.rawData ?? {}) as Record<string, unknown>;
+				const p0 = (raw0.prospeo ?? null) as { companyId?: string | null; domain?: string | null } | null;
+				const refs0 = { companyId: p0?.companyId ?? null, domain: p0?.domain ?? null, name: cleanName(item.companyName) };
+				let roster0 = (raw0.roster ?? null) as ProspeoRoster | null;
+				if (!roster0) {
+					roster0 = await prospeoCompanyRoster(refs0);
+					await cacheRoster(item.id, roster0);
+				}
+				const TECH = /cto|cio|vp.?eng|engineer|developer|it director|software|data engineer|devops|programmer/i;
+				const hits = roster0.people.filter(
+					(p) => TECH.test(p.title ?? "") || p.historyTitles.some((t) => TECH.test(t)),
+				).length;
+				verdict = hits <= 2 ? "pass" : "fail";
+				note = `${hits} tech titles in ${roster0.people.length}-person sample (Prospeo)`;
 			} else if (stageKey === "ai_signal") {
 				const raw = (item.rawData ?? {}) as Record<string, unknown>;
 				const prospeo = (raw.prospeo ?? null) as { companyId?: string | null; domain?: string | null } | null;

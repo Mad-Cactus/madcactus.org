@@ -3,7 +3,8 @@
 // no-match (our queue is mostly misses = free screening), and one call
 // returns employee_count + revenue_range + founded + location.
 // Docs: https://prospeo.io/api-docs/enrich-company
-import { cleanName } from "./enrich-apollo";
+/** Strip legal suffixes — "10-4 GLOBAL LLC" finds nothing, "10-4 Global" does. */
+export const cleanName = (n: string) => n.replace(/\s+(LLC|L\.L\.C|INC|INC\.|CORP|CORPORATION|LTD|CO\.)\s*$/i, "").trim();
 
 // Prospeo rate-limits per minute (429) — space calls out and back off on 429.
 const MIN_INTERVAL = 10_000;
